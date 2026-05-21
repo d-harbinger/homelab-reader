@@ -2,7 +2,13 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
-import { ArrowLeft, ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
+import {
+  ArrowLeft,
+  ChevronLeft,
+  ChevronRight,
+  Trash2,
+  Notebook,
+} from "lucide-react";
 import {
   ReaderToolbar,
   readSetting,
@@ -13,6 +19,11 @@ import {
   HIGHLIGHT_ORDER,
   type HighlightColor,
 } from "@/lib/highlight-colors";
+import {
+  HighlightsPanel,
+  type PanelHighlight,
+  type PanelNote,
+} from "./HighlightsPanel";
 
 interface Props {
   bookId: string;
@@ -110,6 +121,12 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
   );
   const [selection, setSelection] = useState<SelectionState | null>(null);
   const [openMenu, setOpenMenu] = useState<OpenHighlightMenu | null>(null);
+  // Panel state — list of highlights and notes for this book. Mirrored
+  // by highlightsRef for the rendition-paint path; React state drives
+  // the panel UI.
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [highlights, setHighlights] = useState<PanelHighlight[]>([]);
+  const [notes, setNotes] = useState<PanelNote[]>([]);
 
   // Re-render an existing highlight (after a color change) by removing
   // the visual annotation and adding it back with the new fill color.
@@ -147,18 +164,29 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
     );
   }, []);
 
-  // Load saved highlights once the rendition is up, then paint them.
+  // Load saved highlights + notes once the rendition is up, then paint
+  // the highlights. Notes don't render in the book itself; they live in
+  // the side panel.
   const loadHighlights = useCallback(async () => {
     try {
-      const r = await fetch(
-        `/api/highlights?bookId=${encodeURIComponent(bookId)}`,
-      );
-      if (!r.ok) return;
-      const data = (await r.json()) as { highlights: StoredHighlight[] };
-      highlightsRef.current = new Map(data.highlights.map((h) => [h.id, h]));
-      for (const h of data.highlights) repaintHighlight(h);
+      const [hRes, nRes] = await Promise.all([
+        fetch(`/api/highlights?bookId=${encodeURIComponent(bookId)}`),
+        fetch(`/api/notes?bookId=${encodeURIComponent(bookId)}`),
+      ]);
+      if (hRes.ok) {
+        const data = (await hRes.json()) as { highlights: StoredHighlight[] };
+        highlightsRef.current = new Map(
+          data.highlights.map((h) => [h.id, h]),
+        );
+        setHighlights(data.highlights as PanelHighlight[]);
+        for (const h of data.highlights) repaintHighlight(h);
+      }
+      if (nRes.ok) {
+        const data = (await nRes.json()) as { notes: PanelNote[] };
+        setNotes(data.notes);
+      }
     } catch {
-      /* ok — highlights are non-blocking */
+      /* non-blocking */
     }
   }, [bookId, repaintHighlight]);
 
@@ -357,13 +385,12 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
       if (!r.ok) return;
       const row = (await r.json()) as StoredHighlight;
       highlightsRef.current.set(row.id, row);
+      setHighlights((prev) => [...prev, row as PanelHighlight]);
       repaintHighlight(row);
     } catch {
       /* fail silently — user can retry */
     } finally {
       setSelection(null);
-      // Clear the native selection in the iframe so the highlight
-      // shows cleanly without the blue selection overlay on top.
       try {
         renditionRef.current
           ?.getContents()
@@ -386,6 +413,7 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
       if (!current) return;
       const next = { ...current, color };
       highlightsRef.current.set(id, next);
+      setHighlights((prev) => prev.map((h) => (h.id === id ? next : h)));
       repaintHighlight(next);
     } finally {
       setOpenMenu(null);
@@ -397,6 +425,7 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
     try {
       await fetch(`/api/highlights/${id}`, { method: "DELETE" });
       highlightsRef.current.delete(id);
+      setHighlights((prev) => prev.filter((x) => x.id !== id));
       if (h?.anchor.cfi) {
         try {
           renditionRef.current?.annotations.remove(h.anchor.cfi, "highlight");
@@ -406,6 +435,58 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
       }
     } finally {
       setOpenMenu(null);
+    }
+  }
+
+  async function saveNote(
+    h: PanelHighlight,
+    body: string,
+    existingId: string | null,
+  ) {
+    try {
+      if (existingId) {
+        const r = await fetch(`/api/notes/${existingId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ body }),
+        });
+        if (!r.ok) return;
+        const row = (await r.json()) as PanelNote;
+        setNotes((prev) =>
+          prev.map((n) => (n.id === existingId ? { ...n, body: row.body } : n)),
+        );
+      } else {
+        const r = await fetch("/api/notes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            bookId,
+            anchor: h.anchor,
+            body,
+            context: h.text.slice(0, 200),
+          }),
+        });
+        if (!r.ok) return;
+        const row = (await r.json()) as PanelNote;
+        setNotes((prev) => [...prev, row]);
+      }
+    } catch {
+      /* transient */
+    }
+  }
+
+  async function deleteNote(id: string) {
+    try {
+      await fetch(`/api/notes/${id}`, { method: "DELETE" });
+      setNotes((prev) => prev.filter((n) => n.id !== id));
+    } catch {
+      /* transient */
+    }
+  }
+
+  function jumpToHighlight(h: PanelHighlight) {
+    if (h.anchor.cfi) {
+      renditionRef.current?.display(h.anchor.cfi);
     }
   }
 
@@ -425,8 +506,27 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
           mode={mode}
           onModeChange={setMode}
         />
-        <div className="text-xs text-zinc-600 tabular-nums">
-          {ready ? `${Math.round(percent * 100)}%` : "Loading…"}
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setPanelOpen((v) => !v)}
+            aria-label="Highlights and notes"
+            title="Highlights & notes"
+            className={`relative rounded p-1.5 transition-colors ${
+              panelOpen
+                ? "bg-zinc-800 text-zinc-100"
+                : "text-zinc-500 hover:bg-zinc-900 hover:text-zinc-200"
+            }`}
+          >
+            <Notebook size={14} />
+            {highlights.length > 0 && (
+              <span className="absolute -right-1 -top-1 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-amber-500/80 px-1 text-[9px] font-medium text-zinc-950">
+                {highlights.length}
+              </span>
+            )}
+          </button>
+          <div className="text-xs text-zinc-600 tabular-nums">
+            {ready ? `${Math.round(percent * 100)}%` : "Loading…"}
+          </div>
         </div>
       </header>
 
@@ -477,6 +577,18 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
           onDelete={() => deleteHighlight(openMenu.id)}
         />
       )}
+
+      <HighlightsPanel
+        open={panelOpen}
+        onClose={() => setPanelOpen(false)}
+        highlights={highlights}
+        notes={notes}
+        onJump={jumpToHighlight}
+        onColorChange={changeColor}
+        onDelete={deleteHighlight}
+        onNoteSave={saveNote}
+        onNoteDelete={deleteNote}
+      />
     </div>
   );
 }
