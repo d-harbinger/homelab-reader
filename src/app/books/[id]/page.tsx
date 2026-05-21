@@ -24,8 +24,8 @@ export default async function BookDetail({
 
   const coverUrl = book.coverPath ? `/api/covers/${book.id}` : null;
   const fileUrl = `/api/books/${book.id}/file`;
-  const readHref = book.format === "epub" ? `/books/${book.id}/read` : fileUrl;
-  const readLabel = book.format === "epub" ? "Read" : "Open PDF";
+  const readHref = `/books/${book.id}/read`;
+  const readLabel = "Read";
   const fileSize = formatBytes(book.fileSizeBytes);
 
   return (
