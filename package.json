@@ -14,12 +14,16 @@
   "dependencies": {
     "@prisma/client": "^6.19.2",
     "bcryptjs": "^3.0.3",
+    "chokidar": "^5.0.0",
+    "fast-xml-parser": "^5.8.0",
     "lucide-react": "^1.14.0",
     "next": "^15.5.18",
     "next-auth": "^5.0.0-beta.30",
+    "pdfjs-dist": "^5.7.284",
     "react": "19.1.0",
     "react-dom": "19.1.0",
-    "swr": "^2.4.0"
+    "swr": "^2.4.0",
+    "yauzl": "^3.3.1"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
@@ -28,6 +32,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/yauzl": "^2.10.3",
     "eslint": "^9",
     "eslint-config-next": "^15.5.18",
     "prisma": "^6.19.2",
