@@ -269,17 +269,14 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
       rendition.on("relocated", onRelocated);
 
       // Text selection → show popover with color picker.
-      const onSelected = (...args: unknown[]) => {
-        const cfiRange = args[0] as string;
-        const contents = args[1] as ContentsLike | undefined;
-        if (!contents || !cfiRange) return;
-
+      const showPopoverFor = (
+        cfiRange: string,
+        contents: ContentsLike,
+      ) => {
         const sel = contents.window.getSelection();
         const text = sel?.toString() ?? "";
         if (!text.trim()) return;
 
-        // Compute outer-page coordinates from the iframe-local range
-        // rect — popover renders in the outer document.
         let x = 0;
         let y = 0;
         try {
@@ -292,24 +289,60 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
           x = (ifr?.left ?? 0) + rect.left + rect.width / 2;
           y = (ifr?.top ?? 0) + rect.top;
         } catch {
-          /* fall through with 0,0 — better visible than dropped */
+          /* fall through */
         }
 
         setSelection({ cfiRange, text, x, y });
         setOpenMenu(null);
       };
+
+      const onSelected = (...args: unknown[]) => {
+        console.log("[epub] rendition 'selected' event", args);
+        const cfiRange = args[0] as string;
+        const contents = args[1] as ContentsLike | undefined;
+        if (!contents || !cfiRange) return;
+        showPopoverFor(cfiRange, contents);
+      };
       rendition.on("selected", onSelected);
+
+      // Belt-and-suspenders: a direct mouseup hook on each Contents
+      // iframe. epubjs's 'selected' event has a 250ms selectionchange
+      // debounce and skips collapsed ranges, but doesn't always fire
+      // for short selections inside paginated mode. This catches those.
+      const onContents = (...args: unknown[]) => {
+        const contents = args[0] as ContentsLike & {
+          cfiFromRange?: (r: Range) => string;
+        };
+        const handler = () => {
+          const sel = contents.window.getSelection();
+          if (!sel || sel.rangeCount === 0) return;
+          const range = sel.getRangeAt(0);
+          if (range.collapsed || !sel.toString().trim()) return;
+          const cfi = contents.cfiFromRange?.(range);
+          if (!cfi) return;
+          console.log("[epub] mouseup selection", { cfi });
+          showPopoverFor(cfi, contents);
+        };
+        contents.document.addEventListener("mouseup", handler);
+        contents.document.addEventListener("touchend", handler);
+      };
+      rendition.on("rendered", (...renderedArgs: unknown[]) => {
+        // The 'rendered' callback signature is (section, view); view has
+        // .contents available. Hook directly.
+        const view = renderedArgs[1] as { contents?: ContentsLike } | undefined;
+        if (view?.contents) onContents(view.contents);
+      });
 
       // After a paginated re-render (page turn), repaint all known
       // highlights in the now-visible spine section. epubjs persists
       // annotations across page turns within the same spine item, but
       // crossing chapters can lose them.
-      const onRendered = () => {
+      const onRenderedRepaint = () => {
         for (const h of highlightsRef.current.values()) {
           repaintHighlight(h);
         }
       };
-      rendition.on("rendered", onRendered);
+      rendition.on("rendered", onRenderedRepaint);
 
       const onKey = (e: KeyboardEvent) => {
         if (mode !== "paginated") return;
