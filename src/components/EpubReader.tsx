@@ -70,7 +70,8 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
         body: {
           color: "#e4e4e7",
           background: "#09090b",
-          "font-family": '"Inter", system-ui, sans-serif',
+          "font-family":
+            '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, system-ui, sans-serif',
           "line-height": "1.6",
         },
         a: { color: "#fbbf24" },
