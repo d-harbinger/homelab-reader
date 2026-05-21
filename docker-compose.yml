@@ -2,18 +2,69 @@
 # homelab-reader — Docker Compose
 # ═══════════════════════════════════════════════════════════
 #
-# Quick start:
-#   1. Edit the BOOKS_HOST_PATH below to point at your library folder
-#      (the host path that contains your .epub / .pdf files).
-#   2. docker compose up -d --build
-#   3. Open http://<host>:3333
+# ── First-time setup on the homelab ───────────────────────────
 #
-# Network binding defaults to 0.0.0.0 — LAN-accessible. If you're on a
-# shared network or want localhost-only, change to 127.0.0.1:3333:3000.
+#   # 1. Clone the repo onto the host (any directory)
+#   git clone git@github.com:d-harbinger/homelab-reader.git
+#   cd homelab-reader
 #
-# The /app/books mount is read-only: the scanner extracts metadata and
-# covers, never writes back to your library. Covers and the SQLite DB
-# live in the named volume `homelab-reader-data` at /app/data.
+#   # 2. Tell the container where your books live. Two equivalent ways:
+#
+#   #    a) Create a .env next to this docker-compose.yml — recommended,
+#   #       persists across reboots:
+#   echo 'BOOKS_HOST_PATH=/srv/books' > .env
+#
+#   #    b) Or set it inline for a single `up`:
+#   BOOKS_HOST_PATH=/srv/books docker compose up -d --build
+#
+#   #    (If you skip both, it falls back to ./books in this repo dir.)
+#
+#   # 3. Build and start
+#   docker compose up -d --build
+#
+#   # 4. Open the app
+#   #    http://<homelab-ip-or-hostname>:3333
+#   #    First scan can take a minute per ~100 books (cover rendering).
+#
+# ── Day-to-day operations ─────────────────────────────────────
+#
+#   docker compose logs -f homelab-reader      # tail logs
+#   docker compose restart homelab-reader      # restart only
+#   docker compose down                        # stop (keeps data volume)
+#   docker compose up -d --build               # apply code changes
+#
+# ── Updating ──────────────────────────────────────────────────
+#
+#   git pull
+#   docker compose up -d --build
+#   # The entrypoint runs `prisma migrate deploy` automatically;
+#   # any new migrations apply before the server boots. If migration
+#   # fails the container refuses to start and prints a banner.
+#
+# ── Adding books ──────────────────────────────────────────────
+#
+#   Drop .epub or .pdf files into the host folder you pointed
+#   BOOKS_HOST_PATH at. The scanner picks them up within a few
+#   seconds. To force a full rescan from the UI, click "Rescan"
+#   (top-right). To delete a book, remove the file from disk —
+#   the scanner reconciles on next boot or rescan.
+#
+# ── Network binding ───────────────────────────────────────────
+#
+#   Defaults to 0.0.0.0:3333 — LAN-accessible. If you want
+#   localhost-only on the host (e.g. behind a reverse proxy),
+#   change the `ports:` line below to "127.0.0.1:3333:3000".
+#
+# ── Where your data lives ─────────────────────────────────────
+#
+#   /app/books     bind mount, READ-ONLY  ← your library (host path)
+#   /app/data      named volume           ← SQLite DB + covers + AUTH_SECRET
+#
+#   The scanner never writes into /app/books. Covers and reading
+#   progress live in the named volume `homelab-reader-data`.
+#   Wipe DB to start fresh: `docker compose down && docker volume rm
+#   homelab-reader_homelab-reader-data` (books on disk are untouched).
+#
 # ═══════════════════════════════════════════════════════════
 
 # Pin the compose project name so the named volume below resolves to a
