@@ -1,13 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
-import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
 import {
   ReaderToolbar,
   readSetting,
   writeSetting,
 } from "./ReaderToolbar";
+import {
+  HIGHLIGHT_COLORS,
+  HIGHLIGHT_ORDER,
+  type HighlightColor,
+} from "@/lib/highlight-colors";
 
 interface Props {
   bookId: string;
@@ -17,11 +22,15 @@ interface Props {
 }
 
 // Loose epub.js types — the lib's own types are wide-open Any anyway.
+interface ContentsLike {
+  document: Document;
+  window: Window;
+  range(cfi: string): Range;
+}
 interface RenditionLike {
   display(target?: string | undefined): Promise<unknown>;
   next(): Promise<unknown>;
   prev(): Promise<unknown>;
-  flow(value: string): void;
   destroy(): void;
   on(event: string, fn: (...args: unknown[]) => void): void;
   off(event: string, fn: (...args: unknown[]) => void): void;
@@ -30,6 +39,18 @@ interface RenditionLike {
     select(name: string): void;
     fontSize(value: string): void;
   };
+  annotations: {
+    add(
+      type: string,
+      cfiRange: string,
+      data?: Record<string, unknown>,
+      cb?: (e: MouseEvent) => void,
+      className?: string,
+      styles?: Record<string, string>,
+    ): unknown;
+    remove(cfiRange: string, type: string): void;
+  };
+  getContents(): ContentsLike[];
 }
 interface BookLike {
   ready: Promise<unknown>;
@@ -42,8 +63,29 @@ interface BookLike {
   };
 }
 
-const FONT_STEPS = [80, 90, 100, 110, 120, 140, 160, 180, 200];
+interface StoredHighlight {
+  id: string;
+  color: HighlightColor;
+  text: string;
+  anchor: { type: string; cfi?: string };
+}
 
+interface SelectionState {
+  cfiRange: string;
+  text: string;
+  // Outer-page coordinates for the floating popover.
+  x: number;
+  y: number;
+}
+
+interface OpenHighlightMenu {
+  id: string;
+  color: HighlightColor;
+  x: number;
+  y: number;
+}
+
+const FONT_STEPS = [80, 90, 100, 110, 120, 140, 160, 180, 200];
 function stepFont(current: number, delta: number): number {
   const idx = FONT_STEPS.indexOf(current);
   const target = Math.max(0, Math.min(FONT_STEPS.length - 1, idx + delta));
@@ -55,6 +97,7 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
   const renditionRef = useRef<RenditionLike | null>(null);
   const bookRef = useRef<BookLike | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const highlightsRef = useRef<Map<string, StoredHighlight>>(new Map());
   const [ready, setReady] = useState(false);
   const [percent, setPercent] = useState(0);
   const [mode, setMode] = useState<"paginated" | "scrolled">(() =>
@@ -65,12 +108,60 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
   const [fontPercent, setFontPercent] = useState<number>(() =>
     readSetting<number>("epub.font", 100),
   );
+  const [selection, setSelection] = useState<SelectionState | null>(null);
+  const [openMenu, setOpenMenu] = useState<OpenHighlightMenu | null>(null);
 
-  // (Re)mount the rendition whenever the chosen reading mode changes.
-  // epubjs supports rendition.flow() at runtime, but switching from
-  // paginated to scrolled-doc after mount leaves stale DOM in the
-  // iframe. Recreating the rendition is cheaper than reasoning about
-  // its internal state.
+  // Re-render an existing highlight (after a color change) by removing
+  // the visual annotation and adding it back with the new fill color.
+  const repaintHighlight = useCallback((h: StoredHighlight) => {
+    const r = renditionRef.current;
+    if (!r || !h.anchor.cfi) return;
+    try {
+      r.annotations.remove(h.anchor.cfi, "highlight");
+    } catch {
+      /* might not be present yet */
+    }
+    r.annotations.add(
+      "highlight",
+      h.anchor.cfi,
+      { id: h.id },
+      (e: MouseEvent) => {
+        // Position the floating menu near the click. e.clientX/Y are
+        // in iframe coordinates — convert by adding the iframe's
+        // offset on the outer page.
+        const target = e.target as HTMLElement | null;
+        const iframe = target?.ownerDocument?.defaultView?.frameElement as
+          | HTMLIFrameElement
+          | null;
+        const ifr = iframe?.getBoundingClientRect();
+        setOpenMenu({
+          id: h.id,
+          color: h.color,
+          x: (ifr?.left ?? 0) + e.clientX,
+          y: (ifr?.top ?? 0) + e.clientY,
+        });
+        setSelection(null);
+      },
+      undefined,
+      { fill: HIGHLIGHT_COLORS[h.color].fill, "fill-opacity": "0.45" },
+    );
+  }, []);
+
+  // Load saved highlights once the rendition is up, then paint them.
+  const loadHighlights = useCallback(async () => {
+    try {
+      const r = await fetch(
+        `/api/highlights?bookId=${encodeURIComponent(bookId)}`,
+      );
+      if (!r.ok) return;
+      const data = (await r.json()) as { highlights: StoredHighlight[] };
+      highlightsRef.current = new Map(data.highlights.map((h) => [h.id, h]));
+      for (const h of data.highlights) repaintHighlight(h);
+    } catch {
+      /* ok — highlights are non-blocking */
+    }
+  }, [bookId, repaintHighlight]);
+
   useEffect(() => {
     let cancelled = false;
     const viewer = viewerRef.current;
@@ -80,9 +171,6 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
       const { default: ePub } = await import("epubjs");
       if (cancelled) return;
 
-      // ArrayBuffer input bypasses the URL-extension sniff that would
-      // otherwise make epubjs treat /api/books/[id]/file as an unzipped
-      // directory.
       const response = await fetch(fileUrl);
       if (!response.ok || cancelled) return;
       const buffer = await response.arrayBuffer();
@@ -96,8 +184,6 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
         height: "100%",
         spread: "auto",
         flow: mode === "scrolled" ? "scrolled-doc" : "paginated",
-        // In scroll mode let the viewer pane grow with content so the
-        // browser handles vertical scroll natively.
         manager: mode === "scrolled" ? "continuous" : "default",
       });
       renditionRef.current = rendition;
@@ -126,6 +212,8 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
           /* best-effort */
         });
 
+      await loadHighlights();
+
       const onRelocated = (...args: unknown[]) => {
         const location = args[0] as
           | { start?: { cfi?: string; percentage?: number } }
@@ -150,23 +238,58 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
           });
         }, 800);
       };
-
       rendition.on("relocated", onRelocated);
 
-      const onKey = (e: KeyboardEvent) => {
-        if (mode === "paginated") {
-          if (
-            e.key === "ArrowRight" ||
-            e.key === " " ||
-            e.key === "PageDown"
-          ) {
-            rendition.next();
-          } else if (e.key === "ArrowLeft" || e.key === "PageUp") {
-            rendition.prev();
-          }
+      // Text selection → show popover with color picker.
+      const onSelected = (...args: unknown[]) => {
+        const cfiRange = args[0] as string;
+        const contents = args[1] as ContentsLike | undefined;
+        if (!contents || !cfiRange) return;
+
+        const sel = contents.window.getSelection();
+        const text = sel?.toString() ?? "";
+        if (!text.trim()) return;
+
+        // Compute outer-page coordinates from the iframe-local range
+        // rect — popover renders in the outer document.
+        let x = 0;
+        let y = 0;
+        try {
+          const range = contents.range(cfiRange);
+          const rect = range.getBoundingClientRect();
+          const iframe = contents.document.defaultView?.frameElement as
+            | HTMLIFrameElement
+            | null;
+          const ifr = iframe?.getBoundingClientRect();
+          x = (ifr?.left ?? 0) + rect.left + rect.width / 2;
+          y = (ifr?.top ?? 0) + rect.top;
+        } catch {
+          /* fall through with 0,0 — better visible than dropped */
         }
-        // In scroll mode the browser handles ArrowDown/Up natively;
-        // don't fight it.
+
+        setSelection({ cfiRange, text, x, y });
+        setOpenMenu(null);
+      };
+      rendition.on("selected", onSelected);
+
+      // After a paginated re-render (page turn), repaint all known
+      // highlights in the now-visible spine section. epubjs persists
+      // annotations across page turns within the same spine item, but
+      // crossing chapters can lose them.
+      const onRendered = () => {
+        for (const h of highlightsRef.current.values()) {
+          repaintHighlight(h);
+        }
+      };
+      rendition.on("rendered", onRendered);
+
+      const onKey = (e: KeyboardEvent) => {
+        if (mode !== "paginated") return;
+        if (e.key === "ArrowRight" || e.key === " " || e.key === "PageDown") {
+          rendition.next();
+        } else if (e.key === "ArrowLeft" || e.key === "PageUp") {
+          rendition.prev();
+        }
       };
       window.addEventListener("keydown", onKey);
       rendition.on("keydown", (...args: unknown[]) =>
@@ -186,21 +309,105 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
       renditionRef.current = null;
       bookRef.current = null;
     };
-    // mode changes trigger a rendition rebuild; font size doesn't
-    // (handled by a separate effect below) so it stays out of deps.
+    // mode triggers a rebuild; font size is handled by a separate effect.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bookId, fileUrl, initialCfi, mode]);
 
-  // Font size — applied without rebuilding the rendition.
   useEffect(() => {
     renditionRef.current?.themes.fontSize(`${fontPercent}%`);
     writeSetting("epub.font", fontPercent);
   }, [fontPercent]);
 
-  // Persist mode separately so the rebuild above runs before we save.
   useEffect(() => {
     writeSetting("epub.mode", mode);
   }, [mode]);
+
+  // Dismiss popovers on outside click.
+  useEffect(() => {
+    if (!selection && !openMenu) return;
+    const onDocClick = () => {
+      setSelection(null);
+      setOpenMenu(null);
+    };
+    // Microtask to skip the click that opened the popover.
+    const t = setTimeout(
+      () => document.addEventListener("click", onDocClick, { once: true }),
+      0,
+    );
+    return () => {
+      clearTimeout(t);
+      document.removeEventListener("click", onDocClick);
+    };
+  }, [selection, openMenu]);
+
+  async function saveHighlight(color: HighlightColor) {
+    if (!selection) return;
+    const anchor = { type: "epub-cfi-range", cfi: selection.cfiRange };
+    try {
+      const r = await fetch("/api/highlights", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bookId,
+          anchor,
+          text: selection.text,
+          color,
+        }),
+      });
+      if (!r.ok) return;
+      const row = (await r.json()) as StoredHighlight;
+      highlightsRef.current.set(row.id, row);
+      repaintHighlight(row);
+    } catch {
+      /* fail silently — user can retry */
+    } finally {
+      setSelection(null);
+      // Clear the native selection in the iframe so the highlight
+      // shows cleanly without the blue selection overlay on top.
+      try {
+        renditionRef.current
+          ?.getContents()
+          .forEach((c) => c.window.getSelection()?.removeAllRanges());
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  async function changeColor(id: string, color: HighlightColor) {
+    try {
+      const r = await fetch(`/api/highlights/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ color }),
+      });
+      if (!r.ok) return;
+      const current = highlightsRef.current.get(id);
+      if (!current) return;
+      const next = { ...current, color };
+      highlightsRef.current.set(id, next);
+      repaintHighlight(next);
+    } finally {
+      setOpenMenu(null);
+    }
+  }
+
+  async function deleteHighlight(id: string) {
+    const h = highlightsRef.current.get(id);
+    try {
+      await fetch(`/api/highlights/${id}`, { method: "DELETE" });
+      highlightsRef.current.delete(id);
+      if (h?.anchor.cfi) {
+        try {
+          renditionRef.current?.annotations.remove(h.anchor.cfi, "highlight");
+        } catch {
+          /* not painted right now */
+        }
+      }
+    } finally {
+      setOpenMenu(null);
+    }
+  }
 
   return (
     <div className="fixed inset-0 flex flex-col bg-zinc-950 text-zinc-100">
@@ -214,9 +421,7 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
         </Link>
         <ReaderToolbar
           fontPercent={fontPercent}
-          onFontStep={(delta) =>
-            setFontPercent((p) => stepFont(p, delta))
-          }
+          onFontStep={(delta) => setFontPercent((p) => stepFont(p, delta))}
           mode={mode}
           onModeChange={setMode}
         />
@@ -254,6 +459,100 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
           style={{ width: `${(percent * 100).toFixed(2)}%` }}
         />
       </div>
+
+      {selection && (
+        <ColorPickerPopover
+          x={selection.x}
+          y={selection.y}
+          onPick={(c) => saveHighlight(c)}
+        />
+      )}
+
+      {openMenu && (
+        <HighlightMenu
+          x={openMenu.x}
+          y={openMenu.y}
+          activeColor={openMenu.color}
+          onPick={(c) => changeColor(openMenu.id, c)}
+          onDelete={() => deleteHighlight(openMenu.id)}
+        />
+      )}
+    </div>
+  );
+}
+
+function ColorPickerPopover({
+  x,
+  y,
+  onPick,
+}: {
+  x: number;
+  y: number;
+  onPick: (c: HighlightColor) => void;
+}) {
+  return (
+    <div
+      className="fixed z-50 flex items-center gap-1 rounded-lg border border-zinc-800 bg-zinc-950/95 p-1.5 shadow-2xl shadow-black/60 backdrop-blur"
+      style={{
+        left: Math.max(8, x - 80),
+        top: Math.max(8, y - 48),
+      }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {HIGHLIGHT_ORDER.map((c) => (
+        <button
+          key={c}
+          aria-label={HIGHLIGHT_COLORS[c].label}
+          onClick={() => onPick(c)}
+          className="h-7 w-7 rounded-full ring-1 ring-zinc-700 transition-transform hover:scale-110"
+          style={{ background: HIGHLIGHT_COLORS[c].swatch }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function HighlightMenu({
+  x,
+  y,
+  activeColor,
+  onPick,
+  onDelete,
+}: {
+  x: number;
+  y: number;
+  activeColor: HighlightColor;
+  onPick: (c: HighlightColor) => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div
+      className="fixed z-50 flex items-center gap-1 rounded-lg border border-zinc-800 bg-zinc-950/95 p-1.5 shadow-2xl shadow-black/60 backdrop-blur"
+      style={{
+        left: Math.max(8, x - 100),
+        top: Math.max(8, y - 48),
+      }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {HIGHLIGHT_ORDER.map((c) => (
+        <button
+          key={c}
+          aria-label={HIGHLIGHT_COLORS[c].label}
+          onClick={() => onPick(c)}
+          className={`h-7 w-7 rounded-full ring-2 transition-transform hover:scale-110 ${
+            c === activeColor ? "ring-zinc-100" : "ring-zinc-700"
+          }`}
+          style={{ background: HIGHLIGHT_COLORS[c].swatch }}
+        />
+      ))}
+      <span className="mx-1 h-5 w-px bg-zinc-800" aria-hidden />
+      <button
+        aria-label="Delete highlight"
+        onClick={onDelete}
+        className="rounded p-1.5 text-zinc-500 transition-colors hover:bg-zinc-900 hover:text-red-400"
+      >
+        <Trash2 size={14} />
+      </button>
     </div>
   );
 }
