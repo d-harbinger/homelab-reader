@@ -37,6 +37,9 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  // pdfjs-dist + yauzl are server-side only; let Next leave them as
+  // native node_modules instead of bundling.
+  serverExternalPackages: ["pdfjs-dist", "yauzl"],
   async headers() {
     return [{ source: "/(.*)", headers: securityHeaders }];
   },
