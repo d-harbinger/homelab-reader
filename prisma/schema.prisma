@@ -1,0 +1,142 @@
+// homelab-reader — initial schema
+//
+// Design notes:
+// - SQLite via Prisma, mirroring chimera's pattern.
+// - Books are discovered by filesystem scan; the source of truth for a
+//   book's location is its `filePath` (absolute or relative to BOOKS_PATH).
+//   `fileHash` lets us detect renames vs new files without re-importing
+//   notes/progress.
+// - Notes and Highlights are anchored differently per format:
+//     EPUB → EPUB CFI (canonical fragment identifier)
+//     PDF  → page index + selection bounds
+//   We store both via a single Anchor JSON blob; the reader-side helper
+//   parses it according to the parent Book's format.
+// - Progress is per-User+Book. Single-user today, but the User table is
+//   real so a future "share with household" doesn't require migration.
+// - ScanLocation lets the user point at multiple folders later
+//   (e.g. /books + /reference) without code changes.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String     @id @default(cuid())
+  username     String     @unique
+  passwordHash String
+  createdAt    DateTime   @default(now())
+
+  progress     Progress[]
+  notes        Note[]
+  highlights   Highlight[]
+}
+
+model Book {
+  id            String    @id @default(cuid())
+  filePath      String    @unique
+  fileHash      String?
+  fileSizeBytes Int?
+  format        String    // "epub" | "pdf"
+
+  title         String
+  subtitle      String?
+  language      String?
+  publisher     String?
+  publishedAt   DateTime?
+  description   String?
+  isbn          String?
+
+  // Cover stored on disk under /data/covers/<id>.<ext>
+  coverPath     String?
+
+  // EPUB-specific: total pages we estimated for progress %
+  // PDF-specific:  pdfjs page count
+  pageCount     Int?
+
+  addedAt       DateTime  @default(now())
+  scannedAt     DateTime  @default(now())
+
+  authors       Author[]  @relation("BookAuthors")
+  tags          Tag[]     @relation("BookTags")
+  notes         Note[]
+  highlights    Highlight[]
+  progress      Progress[]
+
+  @@index([title])
+  @@index([format])
+}
+
+model Author {
+  id    String @id @default(cuid())
+  name  String @unique
+  books Book[] @relation("BookAuthors")
+}
+
+model Tag {
+  id    String @id @default(cuid())
+  name  String @unique
+  books Book[] @relation("BookTags")
+}
+
+model Progress {
+  id         String   @id @default(cuid())
+  bookId     String
+  userId     String
+  // Last anchor reached. Same JSON shape as Note/Highlight.anchor.
+  anchor     String?
+  percent    Float    @default(0)
+  updatedAt  DateTime @updatedAt
+
+  book Book @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([bookId, userId])
+}
+
+model Note {
+  id        String   @id @default(cuid())
+  bookId    String
+  userId    String
+  // JSON: { type: "epub-cfi", cfi: "..." } or { type: "pdf-point", page, x, y }
+  anchor    String
+  // Quoted text snippet near the anchor (helps if anchor breaks later)
+  context   String?
+  body      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  book Book @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([bookId])
+}
+
+model Highlight {
+  id        String   @id @default(cuid())
+  bookId    String
+  userId    String
+  // JSON: { type: "epub-cfi-range", cfiStart, cfiEnd }
+  //   or  { type: "pdf-rect", page, rects: [...] }
+  anchor    String
+  text      String
+  color     String   @default("yellow")
+  createdAt DateTime @default(now())
+
+  book Book @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([bookId])
+}
+
+model ScanLocation {
+  id        String   @id @default(cuid())
+  path      String   @unique
+  enabled   Boolean  @default(true)
+  lastScan  DateTime?
+  createdAt DateTime @default(now())
+}
