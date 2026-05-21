@@ -1,0 +1,77 @@
+# Next.js
+.next/
+out/
+build/
+dist/
+
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Production data — SQLite DB and uploaded covers live here.
+# Path is bind-mounted in docker-compose.
+/data/
+*.db
+*.db-journal
+
+# Library mount point — bind-mounted in docker-compose to the host's
+# book folder. Never tracked.
+/books/
+
+# Environment files — generated per clone, contain secrets.
+.env
+.env.local
+.env.*.local
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.directory
+.Trash-*
+*~
+*.swp
+*.swo
+.*.swp
+.*.swo
+\#*\#
+.\#*
+*.bak
+*.orig
+*.rej
+
+# IDE state
+.vscode/
+.codium/
+.idea/
+*.iml
+*.code-workspace
+
+# Claude Code agent state — track project-level settings only.
+.claude/*
+!.claude/settings.json
+
+# Logs / scratch
+*.log
+*.hprof
+*.tmp
+.gsd-logs/
+
+# TypeScript build info
+*.tsbuildinfo
+next-env.d.ts
+
+# Per-developer private-pattern list — additional regexes the
+# scripts/hooks/pre-commit guard blocks. Per-clone secrets only.
+.privacy-patterns
+
+# Host-side screenshot drops (user pastes PNGs to project root for the
+# in-chat review flow). Never meant for the repo.
+/Screenshot_*.png
+/*.png
+
+# Test books accidentally dropped at repo root.
+/*.pdf
+/*.epub
+
+# Prisma — generated client lives in node_modules; nothing to ignore.
