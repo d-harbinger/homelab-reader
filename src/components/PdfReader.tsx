@@ -7,9 +7,10 @@ import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 
-// Point pdfjs at our same-origin worker route. CDN-served workers are
-// the react-pdf docs default — they don't fit a LAN-only homelab.
-pdfjs.GlobalWorkerOptions.workerSrc = "/api/pdfjs-worker";
+// Point pdfjs at the worker file we copy into /public during build (see
+// scripts/copy-pdfjs-worker.mjs). CDN-served workers are the react-pdf
+// docs default — they don't fit a LAN-only homelab.
+pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
 
 interface Props {
   bookId: string;
