@@ -171,6 +171,7 @@ async function extractFor(
     publisher: p.publisher,
     publishedAt: p.publishedAt,
     pageCount: p.pageCount,
+    cover: p.cover,
   };
 }
 

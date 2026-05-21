@@ -39,7 +39,7 @@ const nextConfig: NextConfig = {
   output: "standalone",
   // pdfjs-dist + yauzl are server-side only; let Next leave them as
   // native node_modules instead of bundling.
-  serverExternalPackages: ["pdfjs-dist", "yauzl"],
+  serverExternalPackages: ["pdfjs-dist", "yauzl", "pdf-to-img"],
   async headers() {
     return [{ source: "/(.*)", headers: securityHeaders }];
   },
