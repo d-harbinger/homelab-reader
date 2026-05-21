@@ -1,7 +1,17 @@
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getDefaultUserId } from "@/lib/default-user";
 import { EpubReader } from "@/components/EpubReader";
+import { PdfReaderLazy } from "@/components/PdfReaderLazy";
+
+interface EpubAnchor {
+  type: "epub-cfi";
+  cfi: string;
+}
+interface PdfAnchor {
+  type: "pdf-page";
+  page: number;
+}
 
 export default async function ReadPage({
   params,
@@ -12,38 +22,55 @@ export default async function ReadPage({
   const book = await prisma.book.findUnique({ where: { id } });
   if (!book) notFound();
 
-  // PDFs use the browser's native viewer for now — the in-app PDF reader
-  // is a later phase. Redirect to the raw file route.
-  if (book.format !== "epub") {
-    redirect(`/api/books/${book.id}/file`);
-  }
-
   const userId = await getDefaultUserId();
   const progress = await prisma.progress.findUnique({
     where: { bookId_userId: { bookId: book.id, userId } },
   });
 
-  let initialCfi: string | null = null;
-  if (progress?.anchor) {
-    try {
-      const parsed = JSON.parse(progress.anchor) as {
-        type?: string;
-        cfi?: string;
-      };
-      if (parsed.type === "epub-cfi" && typeof parsed.cfi === "string") {
-        initialCfi = parsed.cfi;
-      }
-    } catch {
-      // malformed anchor — start from the top
-    }
+  const parsedAnchor = parseAnchor(progress?.anchor);
+
+  if (book.format === "epub") {
+    const initialCfi =
+      parsedAnchor?.type === "epub-cfi" ? parsedAnchor.cfi : null;
+    return (
+      <EpubReader
+        bookId={book.id}
+        title={book.title}
+        fileUrl={`/api/books/${book.id}/file`}
+        initialCfi={initialCfi}
+      />
+    );
   }
 
-  return (
-    <EpubReader
-      bookId={book.id}
-      title={book.title}
-      fileUrl={`/api/books/${book.id}/file`}
-      initialCfi={initialCfi}
-    />
-  );
+  if (book.format === "pdf") {
+    const initialPage =
+      parsedAnchor?.type === "pdf-page" ? parsedAnchor.page : 1;
+    return (
+      <PdfReaderLazy
+        bookId={book.id}
+        title={book.title}
+        fileUrl={`/api/books/${book.id}/file`}
+        initialPage={initialPage}
+        scannerPageCount={book.pageCount}
+      />
+    );
+  }
+
+  notFound();
+}
+
+function parseAnchor(s: string | null | undefined): EpubAnchor | PdfAnchor | null {
+  if (!s) return null;
+  try {
+    const parsed = JSON.parse(s) as { type?: unknown; cfi?: unknown; page?: unknown };
+    if (parsed.type === "epub-cfi" && typeof parsed.cfi === "string") {
+      return { type: "epub-cfi", cfi: parsed.cfi };
+    }
+    if (parsed.type === "pdf-page" && typeof parsed.page === "number") {
+      return { type: "pdf-page", page: parsed.page };
+    }
+  } catch {
+    // malformed; treat as no anchor
+  }
+  return null;
 }
