@@ -108,7 +108,28 @@ export async function startWatcher(booksPath: string): Promise<void> {
     }
   });
 
-  w.on("ready", () => {
+  w.on("ready", async () => {
+    // Reconcile DB against disk: any Book row whose file doesn't exist
+    // anymore (deleted while the watcher was offline) gets removed. Without
+    // this, the library shows ghost rows from the last run.
+    try {
+      const { prisma } = await import("@/lib/prisma");
+      const rows = await prisma.book.findMany({ select: { id: true, filePath: true } });
+      const missing: string[] = [];
+      for (const r of rows) {
+        try {
+          await fs.access(r.filePath);
+        } catch {
+          missing.push(r.id);
+        }
+      }
+      if (missing.length > 0) {
+        await prisma.book.deleteMany({ where: { id: { in: missing } } });
+        console.log(`[scanner] reconciled — removed ${missing.length} missing book(s)`);
+      }
+    } catch (err) {
+      console.error("[scanner] reconcile failed", err);
+    }
     state().lastFullScanAt = new Date();
     console.log(`[scanner] initial scan complete`);
   });
