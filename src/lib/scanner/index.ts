@@ -117,6 +117,12 @@ export async function scanFile(filePath: string): Promise<void> {
           create: { name },
         })),
       },
+      tags: {
+        connectOrCreate: extracted.subjects.map((name) => ({
+          where: { name },
+          create: { name },
+        })),
+      },
     },
   });
 
@@ -143,6 +149,7 @@ interface ExtractedCommon {
   publishedAt?: Date;
   isbn?: string;
   pageCount?: number;
+  subjects: string[];
   cover?: { buffer: Buffer; ext: string };
 }
 
@@ -160,6 +167,7 @@ async function extractFor(
       description: e.description,
       publishedAt: e.publishedAt,
       isbn: e.isbn,
+      subjects: e.subjects,
       cover: e.cover,
     };
   }
@@ -171,6 +179,7 @@ async function extractFor(
     publisher: p.publisher,
     publishedAt: p.publishedAt,
     pageCount: p.pageCount,
+    subjects: [],
     cover: p.cover,
   };
 }

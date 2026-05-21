@@ -23,6 +23,11 @@ interface ContinueRow {
   percent: number;
 }
 
+interface TagSection {
+  tag: string;
+  books: BookCardData[];
+}
+
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 export default function Home() {
@@ -39,6 +44,11 @@ export default function Home() {
     fetcher,
     { refreshInterval: 10000 },
   );
+  const { data: tagsResp } = useSWR<{ sections: TagSection[] }>(
+    "/api/tags/sections",
+    fetcher,
+    { refreshInterval: 30000 },
+  );
 
   async function manualScan() {
     await fetch("/api/scan", { method: "POST" });
@@ -47,6 +57,7 @@ export default function Home() {
 
   const books = booksResp?.books ?? [];
   const continueReading = continueResp?.books ?? [];
+  const tagSections = tagsResp?.sections ?? [];
 
   return (
     <main className="mx-auto max-w-7xl px-6 py-10 space-y-12">
@@ -62,6 +73,10 @@ export default function Home() {
         books={continueReading}
         hideWhenEmpty
       />
+
+      {tagSections.map((s) => (
+        <Section key={s.tag} title={s.tag} books={s.books} />
+      ))}
 
       <Section title="Library" books={books} />
 

@@ -10,6 +10,7 @@ export interface EpubExtraction {
   description?: string;
   publishedAt?: Date;
   isbn?: string;
+  subjects: string[];
   cover?: { buffer: Buffer; ext: string };
 }
 
@@ -57,6 +58,7 @@ export async function extractEpub(filePath: string): Promise<EpubExtraction> {
     description: parsed.description,
     publishedAt: parsed.publishedAt,
     isbn: parsed.isbn,
+    subjects: parsed.subjects,
     cover,
   };
 }
@@ -120,6 +122,7 @@ interface ParsedOpf {
   description?: string;
   publishedAt?: Date;
   isbn?: string;
+  subjects: string[];
   manifest: ManifestItem[];
   coverIdHint?: string;
 }
@@ -186,6 +189,20 @@ function parseOpf(opfXml: string): ParsedOpf {
     }
   }
 
+  // <dc:subject> → genre/topic tags. EPUB allows multiple; some bundle
+  // them with commas/semicolons in a single tag, which we fan out so
+  // each becomes its own Tag row.
+  const subjectNodes = asArray(meta["dc:subject"] ?? meta.subject);
+  const subjects: string[] = [];
+  for (const node of subjectNodes) {
+    const txt = textOf(node);
+    if (!txt) continue;
+    for (const part of txt.split(/[,;/]|\s—\s/)) {
+      const cleaned = part.trim();
+      if (cleaned && cleaned.length <= 64) subjects.push(cleaned);
+    }
+  }
+
   // EPUB 2 cover hint: <meta name="cover" content="ITEM_ID"/>
   let coverIdHint: string | undefined;
   const metaTags = asArray(meta.meta);
@@ -221,6 +238,7 @@ function parseOpf(opfXml: string): ParsedOpf {
     description,
     publishedAt,
     isbn,
+    subjects,
     manifest,
     coverIdHint,
   };
