@@ -1,0 +1,59 @@
+# ═══════════════════════════════════════════════════════════
+# homelab-reader — Docker Compose
+# ═══════════════════════════════════════════════════════════
+#
+# Quick start:
+#   1. Edit the BOOKS_HOST_PATH below to point at your library folder
+#      (the host path that contains your .epub / .pdf files).
+#   2. docker compose up -d --build
+#   3. Open http://<host>:3333
+#
+# Network binding defaults to 0.0.0.0 — LAN-accessible. If you're on a
+# shared network or want localhost-only, change to 127.0.0.1:3333:3000.
+#
+# The /app/books mount is read-only: the scanner extracts metadata and
+# covers, never writes back to your library. Covers and the SQLite DB
+# live in the named volume `homelab-reader-data` at /app/data.
+# ═══════════════════════════════════════════════════════════
+
+# Pin the compose project name so the named volume below resolves to a
+# stable identifier regardless of the host's directory name (matches the
+# pattern chimera adopted after the volume-rename incident).
+name: homelab-reader
+
+services:
+  homelab-reader:
+    build: .
+    container_name: homelab-reader
+    init: true
+    ports:
+      - "0.0.0.0:3333:3000"
+    volumes:
+      # The SQLite DB + covers + auth-secret. Persistent named volume.
+      - homelab-reader-data:/app/data
+      # Your library. EDIT THIS to point at your books folder. Read-only.
+      - ${BOOKS_HOST_PATH:-./books}:/app/books:ro
+    environment:
+      - DATABASE_URL=file:/app/data/homelab-reader.db
+      - BOOKS_PATH=/app/books
+      - AUTH_SECRET=${AUTH_SECRET:-}
+      - AUTH_TRUST_HOST=true
+      - NODE_ENV=production
+    restart: unless-stopped
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/api/scan/status').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  homelab-reader-data:

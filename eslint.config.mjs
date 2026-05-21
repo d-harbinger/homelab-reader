@@ -16,6 +16,7 @@ const eslintConfig = [
       "out/**",
       "build/**",
       "data/**",
+      "public/**",
       "next-env.d.ts",
     ],
   },

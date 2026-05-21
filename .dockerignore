@@ -1,0 +1,48 @@
+# ── Source control ──
+.git
+.gitignore
+
+# ── Build / dependencies ──
+node_modules
+.next
+out
+build
+
+# ── Local secrets / env ──
+.env
+.env.*
+!.env.example
+
+# ── Local SQLite + covers (volume provides these at runtime) ──
+data
+*.db
+*.db-journal
+
+# ── Local books folder used in dev — never bake into the image ──
+books
+
+# ── Editor / OS junk ──
+.DS_Store
+Thumbs.db
+.vscode
+.idea
+.codium
+
+# ── Screenshots dropped during dev review ──
+Screenshot_*.png
+Screenshot_*.jpg
+
+# ── Backups / scratch ──
+.backups
+backups
+*.bak
+
+# ── Claude / agent state ──
+.claude
+
+# ── Build cache ──
+tsconfig.tsbuildinfo
+.gsd-logs
+
+# ── Privacy patterns are per-clone, not for the image ──
+.privacy-patterns
