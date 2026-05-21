@@ -6,10 +6,12 @@ import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
+import {
+  ReaderToolbar,
+  readSetting,
+  writeSetting,
+} from "./ReaderToolbar";
 
-// Point pdfjs at the worker file we copy into /public during build (see
-// scripts/copy-pdfjs-worker.mjs). CDN-served workers are the react-pdf
-// docs default — they don't fit a LAN-only homelab.
 pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
 
 interface Props {
@@ -20,6 +22,14 @@ interface Props {
   scannerPageCount: number | null;
 }
 
+const ZOOM_STEPS = [60, 75, 90, 100, 110, 125, 150, 175, 200, 250];
+
+function stepZoom(current: number, delta: number): number {
+  const idx = ZOOM_STEPS.indexOf(current);
+  const target = Math.max(0, Math.min(ZOOM_STEPS.length - 1, idx + delta));
+  return ZOOM_STEPS[target] ?? 100;
+}
+
 export function PdfReader({
   bookId,
   title,
@@ -28,13 +38,22 @@ export function PdfReader({
   scannerPageCount,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const pageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const [width, setWidth] = useState(0);
   const [page, setPage] = useState(initialPage);
   const [numPages, setNumPages] = useState(scannerPageCount ?? 0);
   const [loaded, setLoaded] = useState(false);
+  const [mode, setMode] = useState<"paginated" | "scrolled">(() =>
+    readSetting<string>("pdf.mode", "paginated") === "scrolled"
+      ? "scrolled"
+      : "paginated",
+  );
+  const [zoom, setZoom] = useState<number>(() =>
+    readSetting<number>("pdf.zoom", 100),
+  );
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Fit-to-width — observe container size, render the Page at that width.
+  // Fit-to-width baseline. The user's zoom slider is applied multiplicatively.
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -45,8 +64,11 @@ export function PdfReader({
     return () => ro.disconnect();
   }, []);
 
-  // Persist progress on page change, debounced — page-turn happy fingers
-  // shouldn't hammer the API.
+  // Persist preferences.
+  useEffect(() => writeSetting("pdf.mode", mode), [mode]);
+  useEffect(() => writeSetting("pdf.zoom", zoom), [zoom]);
+
+  // Progress save on page change. Debounced so a fast-flip burst saves once.
   useEffect(() => {
     if (!loaded || numPages === 0) return;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
@@ -60,7 +82,7 @@ export function PdfReader({
           percent: page / numPages,
         }),
       }).catch(() => {
-        /* transient — next page-turn retries */
+        /* transient */
       });
     }, 800);
     return () => {
@@ -68,8 +90,10 @@ export function PdfReader({
     };
   }, [page, bookId, numPages, loaded]);
 
-  // Keyboard nav.
+  // Keyboard nav — paginated mode only. Scroll mode lets the browser
+  // handle arrow keys natively for free-scroll feel.
   useEffect(() => {
+    if (mode !== "paginated") return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "ArrowRight" || e.key === "PageDown" || e.key === " ") {
         e.preventDefault();
@@ -81,7 +105,42 @@ export function PdfReader({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [numPages]);
+  }, [mode, numPages]);
+
+  // Scroll mode: jump to the saved page once the document loads.
+  useEffect(() => {
+    if (mode !== "scrolled" || !loaded) return;
+    const target = pageRefs.current.get(initialPage);
+    target?.scrollIntoView({ block: "start" });
+    // Intentionally only on initial load — subsequent page changes
+    // come from the IntersectionObserver below, not the other way.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded, mode]);
+
+  // Scroll mode: track the page closest to the top of the viewport so
+  // progress saves match what the user is actually reading.
+  useEffect(() => {
+    if (mode !== "scrolled" || !loaded) return;
+    const container = containerRef.current;
+    if (!container) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        // The entry with the largest intersection ratio is what's
+        // currently filling the viewport.
+        const top = entries
+          .filter((e) => e.isIntersecting)
+          .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+        if (!top) return;
+        const n = Number((top.target as HTMLElement).dataset.page);
+        if (Number.isFinite(n) && n !== page) setPage(n);
+      },
+      { root: container, threshold: [0.25, 0.5, 0.75] },
+    );
+
+    pageRefs.current.forEach((el) => observer.observe(el));
+    return () => observer.disconnect();
+  }, [mode, loaded, numPages, page]);
 
   const onDocLoad = useCallback(
     ({ numPages: n }: { numPages: number }) => {
@@ -95,7 +154,9 @@ export function PdfReader({
   const goPrev = () => setPage((p) => Math.max(p - 1, 1));
   const goNext = () => setPage((p) => Math.min(p + 1, numPages || p + 1));
 
-  const renderWidth = Math.min(Math.max(width - 80, 320), 1100);
+  // baseRenderWidth = fit-to-width, then user zoom factor applied.
+  const baseRenderWidth = Math.min(Math.max(width - 80, 320), 1100);
+  const renderWidth = (baseRenderWidth * zoom) / 100;
   const progressPct = numPages > 0 ? (page / numPages) * 100 : 0;
 
   return (
@@ -108,6 +169,12 @@ export function PdfReader({
           <ArrowLeft size={14} />
           <span className="hidden sm:inline">{title}</span>
         </Link>
+        <ReaderToolbar
+          fontPercent={zoom}
+          onFontStep={(delta) => setZoom((z) => stepZoom(z, delta))}
+          mode={mode}
+          onModeChange={setMode}
+        />
         <div className="text-xs text-zinc-600 tabular-nums">
           {numPages > 0 ? `${page} / ${numPages}` : "Loading…"}
         </div>
@@ -117,47 +184,79 @@ export function PdfReader({
         ref={containerRef}
         className="relative flex-1 overflow-auto"
       >
-        <div className="flex min-h-full items-start justify-center py-6">
-          <Document
-            file={fileUrl}
-            onLoadSuccess={onDocLoad}
-            loading={
-              <div className="p-8 text-sm text-zinc-600">Loading book…</div>
-            }
-            error={
-              <div className="p-8 text-sm text-amber-500">
-                Failed to load PDF
-              </div>
-            }
-            className="shadow-2xl shadow-black/60"
-          >
-            {width > 0 && (
-              <Page
-                pageNumber={page}
-                width={renderWidth}
-                renderAnnotationLayer={false}
-                renderTextLayer={true}
-              />
-            )}
-          </Document>
-        </div>
+        <Document
+          file={fileUrl}
+          onLoadSuccess={onDocLoad}
+          loading={
+            <div className="p-8 text-sm text-zinc-600">Loading book…</div>
+          }
+          error={
+            <div className="p-8 text-sm text-amber-500">
+              Failed to load PDF
+            </div>
+          }
+        >
+          {mode === "paginated" ? (
+            <div className="flex min-h-full items-start justify-center py-6">
+              {width > 0 && (
+                <div className="shadow-2xl shadow-black/60">
+                  <Page
+                    pageNumber={page}
+                    width={renderWidth}
+                    renderAnnotationLayer={false}
+                    renderTextLayer
+                  />
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-4 py-6">
+              {width > 0 &&
+                numPages > 0 &&
+                Array.from({ length: numPages }, (_, i) => i + 1).map(
+                  (p) => (
+                    <div
+                      key={p}
+                      data-page={p}
+                      ref={(el) => {
+                        if (el) pageRefs.current.set(p, el);
+                        else pageRefs.current.delete(p);
+                      }}
+                      className="shadow-2xl shadow-black/60"
+                    >
+                      <Page
+                        pageNumber={p}
+                        width={renderWidth}
+                        renderAnnotationLayer={false}
+                        renderTextLayer
+                      />
+                    </div>
+                  ),
+                )}
+            </div>
+          )}
+        </Document>
 
-        <button
-          aria-label="Previous page"
-          onClick={goPrev}
-          disabled={page <= 1}
-          className="absolute left-0 top-0 z-10 flex h-full w-24 items-center justify-start pl-4 text-zinc-700 opacity-0 transition-opacity hover:bg-gradient-to-r hover:from-zinc-900/50 hover:opacity-100 disabled:pointer-events-none disabled:opacity-0"
-        >
-          <ChevronLeft size={32} />
-        </button>
-        <button
-          aria-label="Next page"
-          onClick={goNext}
-          disabled={numPages > 0 && page >= numPages}
-          className="absolute right-0 top-0 z-10 flex h-full w-24 items-center justify-end pr-4 text-zinc-700 opacity-0 transition-opacity hover:bg-gradient-to-l hover:from-zinc-900/50 hover:opacity-100 disabled:pointer-events-none disabled:opacity-0"
-        >
-          <ChevronRight size={32} />
-        </button>
+        {mode === "paginated" && (
+          <>
+            <button
+              aria-label="Previous page"
+              onClick={goPrev}
+              disabled={page <= 1}
+              className="absolute left-0 top-0 z-10 flex h-full w-24 items-center justify-start pl-4 text-zinc-700 opacity-0 transition-opacity hover:bg-gradient-to-r hover:from-zinc-900/50 hover:opacity-100 disabled:pointer-events-none disabled:opacity-0"
+            >
+              <ChevronLeft size={32} />
+            </button>
+            <button
+              aria-label="Next page"
+              onClick={goNext}
+              disabled={numPages > 0 && page >= numPages}
+              className="absolute right-0 top-0 z-10 flex h-full w-24 items-center justify-end pr-4 text-zinc-700 opacity-0 transition-opacity hover:bg-gradient-to-l hover:from-zinc-900/50 hover:opacity-100 disabled:pointer-events-none disabled:opacity-0"
+            >
+              <ChevronRight size={32} />
+            </button>
+          </>
+        )}
       </div>
 
       <div className="h-0.5 w-full bg-zinc-900">
