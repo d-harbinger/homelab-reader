@@ -5,8 +5,11 @@ import { prisma } from "@/lib/prisma";
 // first. Drives the "Continue reading" row. Returns an empty list while
 // the reader phase isn't shipped or no progress has been recorded.
 export async function GET() {
+  // Any progress row counts as "in progress" — percent stays 0 until
+  // epub.js generates the locations table, but the book still belongs
+  // here once the user has opened it once.
   const rows = await prisma.progress.findMany({
-    where: { percent: { gt: 0 } },
+    where: { anchor: { not: null } },
     orderBy: { updatedAt: "desc" },
     take: 12,
     include: { book: { include: { authors: true } } },
