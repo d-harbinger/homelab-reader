@@ -44,6 +44,11 @@ export default function Home() {
     fetcher,
     { refreshInterval: 10000 },
   );
+  const { data: recentResp } = useSWR<{ books: BookCardData[] }>(
+    "/api/books/recent",
+    fetcher,
+    { refreshInterval: 10000 },
+  );
   const { data: tagsResp } = useSWR<{ sections: TagSection[] }>(
     "/api/tags/sections",
     fetcher,
@@ -57,7 +62,13 @@ export default function Home() {
 
   const books = booksResp?.books ?? [];
   const continueReading = continueResp?.books ?? [];
+  const recentlyAdded = recentResp?.books ?? [];
   const tagSections = tagsResp?.sections ?? [];
+
+  // Don't echo Recently Added if the library is small enough that it'd
+  // duplicate the entire Library grid below — keeps tiny libraries from
+  // looking padded.
+  const showRecent = recentlyAdded.length >= 4 && books.length > recentlyAdded.length;
 
   return (
     <main className="mx-auto max-w-7xl px-6 py-10 space-y-12">
@@ -74,11 +85,15 @@ export default function Home() {
         hideWhenEmpty
       />
 
+      {showRecent && (
+        <Section title="Recently added" books={recentlyAdded} />
+      )}
+
       {tagSections.map((s) => (
         <Section key={s.tag} title={s.tag} books={s.books} />
       ))}
 
-      <Section title="Library" books={books} />
+      <Section title="Library" books={books} layout="grid" />
 
       {books.length === 0 && (
         <p className="text-sm text-zinc-600">

@@ -1,37 +1,65 @@
 import { BookCard, type BookCardData } from "./BookCard";
 
+type Layout = "row" | "grid";
+
+interface Props {
+  title: string;
+  books: BookCardData[];
+  hideWhenEmpty?: boolean;
+  layout?: Layout;
+}
+
+// Sections render as horizontal-scrolling rows by default — closer to the
+// Jellyfin/Netflix shelf vibe and stays tidy when a tag/section has a
+// long tail. The catch-all Library section uses layout="grid" so the
+// whole library is visible without horizontal scroll gymnastics.
 export function Section({
   title,
   books,
   hideWhenEmpty,
-}: {
-  title: string;
-  books: BookCardData[];
-  hideWhenEmpty?: boolean;
-}) {
+  layout = "row",
+}: Props) {
   if (hideWhenEmpty && books.length === 0) return null;
 
   return (
     <section className="space-y-4">
-      <div className="flex items-baseline gap-3">
+      <div className="flex items-baseline gap-3 px-1">
         <h2 className="text-lg font-medium tracking-tight text-zinc-100">
           {title}
         </h2>
         {books.length > 0 && (
           <span className="text-xs text-zinc-600">
             {books.length}
-            {books.length === 1 ? " book" : " books"}
           </span>
         )}
       </div>
-      {books.length > 0 ? (
+
+      {books.length === 0 ? (
+        <p className="px-1 text-sm text-zinc-600">No books yet.</p>
+      ) : layout === "grid" ? (
         <div className="grid grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
           {books.map((b) => (
             <BookCard key={b.id} book={b} />
           ))}
         </div>
       ) : (
-        <p className="text-sm text-zinc-600">No books yet.</p>
+        <div
+          // Horizontal scroller with snap. Hide scrollbar but allow native
+          // touch / wheel scrolling. Negative margin + padding lets cards
+          // bleed to the screen edges without clipping the hover lift.
+          className="-mx-6 overflow-x-auto px-6 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        >
+          <div className="flex snap-x snap-mandatory gap-4">
+            {books.map((b) => (
+              <div
+                key={b.id}
+                className="w-[clamp(140px,18vw,200px)] flex-none snap-start"
+              >
+                <BookCard book={b} />
+              </div>
+            ))}
+          </div>
+        </div>
       )}
     </section>
   );
