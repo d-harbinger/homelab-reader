@@ -2,6 +2,20 @@
 
 Guidance for Claude Code working in this repository.
 
+## Read before you edit (HARD RULE)
+
+Before making any edit aimed at a visual, layout, or behavioral bug: open
+and read the relevant file(s) first, and state in the reply what the code
+actually does and which line causes the symptom. Never edit based on a
+guess, a hunch about a library's behavior, or a glance at a screenshot.
+When a screenshot is provided, examine it closely and, if unsure which
+element or region is wrong, ask precisely rather than assert. No
+speculative `sed`/edits. Why: guessing wastes the maintainer's time, breaks
+trust, and the cause is almost always obvious within seconds of reading the
+code. The app shell layout (`src/app/layout.tsx`, `globals.css`) and the
+in-reader epub.js layout (`EpubReader.tsx` theme/flow) are separate systems —
+read the one that owns the symptom.
+
 ## What this is
 
 **homelab-reader** — self-hosted book server for technical libraries.
