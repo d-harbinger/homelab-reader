@@ -1,13 +1,14 @@
 "use client";
 
 import useSWR from "swr";
+import Link from "next/link";
 import { LibraryHeader } from "@/components/LibraryHeader";
 import { Section } from "@/components/Section";
 import type { BookCardData } from "@/components/BookCard";
 
 interface ScanStatus {
   running: boolean;
-  watchedPath: string | null;
+  watchedPaths: string[];
   lastError: string | null;
   lastFullScanAt: string | null;
   bookCount: number;
@@ -73,7 +74,7 @@ export default function Home() {
   return (
     <main className="mx-auto max-w-7xl px-6 py-10 space-y-12">
       <LibraryHeader
-        watchedPath={status?.watchedPath ?? null}
+        watchedPaths={status?.watchedPaths ?? []}
         bookCount={status?.bookCount ?? 0}
         lastError={status?.lastError ?? null}
         onRescan={manualScan}
@@ -97,11 +98,20 @@ export default function Home() {
 
       {books.length === 0 && (
         <p className="text-sm text-zinc-600">
-          Drop EPUBs or PDFs into{" "}
-          <code className="text-zinc-400">
-            {status?.watchedPath ?? "BOOKS_PATH"}
-          </code>{" "}
-          and they&apos;ll appear here.
+          {(status?.watchedPaths?.length ?? 0) === 0 ? (
+            <>
+              No library folders yet. An admin can add one in{" "}
+              <Link
+                href="/settings/libraries"
+                className="text-amber-400/90 underline-offset-2 hover:underline"
+              >
+                Settings → Libraries
+              </Link>
+              .
+            </>
+          ) : (
+            "No books found yet — drop EPUBs or PDFs into a library folder and they'll appear here."
+          )}
         </p>
       )}
     </main>

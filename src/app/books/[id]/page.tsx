@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { prisma } from "@/lib/prisma";
+import { BookAnnotations } from "@/components/BookAnnotations";
 
 function formatBytes(n: number | null | undefined): string | null {
   if (!n) return null;
@@ -133,6 +134,8 @@ export default async function BookDetail({
           )}
         </div>
       </div>
+
+      <BookAnnotations bookId={book.id} />
     </main>
   );
 }

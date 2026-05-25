@@ -1,6 +1,7 @@
 import chokidar, { type FSWatcher } from "chokidar";
 import fs from "node:fs/promises";
 import { isBookFile, removeFileFromLibrary, scanFile } from "./index";
+import { enabledLocationPaths } from "./locations";
 
 // State lives on globalThis so it survives Next's instrumentation-vs-
 // request-handler module split (the same gotcha that forces the Prisma
@@ -9,7 +10,7 @@ import { isBookFile, removeFileFromLibrary, scanFile } from "./index";
 // one instrumentation.ts started.
 interface WatcherState {
   watcher: FSWatcher | null;
-  watchedPath: string | null;
+  watchedPaths: string[];
   lastBootError: Error | null;
   lastFullScanAt: Date | null;
 }
@@ -22,7 +23,7 @@ function state(): WatcherState {
   if (!globalForWatcher.__homelabReaderWatcher) {
     globalForWatcher.__homelabReaderWatcher = {
       watcher: null,
-      watchedPath: null,
+      watchedPaths: [],
       lastBootError: null,
       lastFullScanAt: null,
     };
@@ -32,7 +33,7 @@ function state(): WatcherState {
 
 interface WatcherStatus {
   running: boolean;
-  watchedPath: string | null;
+  watchedPaths: string[];
   lastError: string | null;
   lastFullScanAt: Date | null;
 }
@@ -41,37 +42,62 @@ export function watcherStatus(): WatcherStatus {
   const s = state();
   return {
     running: s.watcher !== null,
-    watchedPath: s.watchedPath,
+    watchedPaths: s.watchedPaths,
     lastError: s.lastBootError?.message ?? null,
     lastFullScanAt: s.lastFullScanAt,
   };
 }
 
-export async function startWatcher(booksPath: string): Promise<void> {
+// Keep only paths that currently exist as directories, so one missing folder
+// (unmounted volume, deleted source) doesn't stop the watcher for the rest.
+async function existingDirs(paths: string[]): Promise<{
+  ok: string[];
+  missing: string[];
+}> {
+  const ok: string[] = [];
+  const missing: string[] = [];
+  for (const p of paths) {
+    try {
+      const stat = await fs.stat(p);
+      if (stat.isDirectory()) ok.push(p);
+      else missing.push(p);
+    } catch {
+      missing.push(p);
+    }
+  }
+  return { ok, missing };
+}
+
+// Start watching every enabled library folder. Reads the folder set from the
+// database (ScanLocation rows). Safe to call when none are configured yet.
+export async function startWatcher(): Promise<void> {
   const s = state();
   if (s.watcher) return;
 
-  // Don't blow up the server if BOOKS_PATH points at nothing yet (fresh
-  // install, dogfood volume not mounted, etc). Log and exit; the manual
-  // /api/scan POST can be retried once the path exists.
-  try {
-    const stat = await fs.stat(booksPath);
-    if (!stat.isDirectory()) {
-      s.lastBootError = new Error(`BOOKS_PATH ${booksPath} is not a directory`);
-      console.warn(`[scanner] ${s.lastBootError.message}`);
-      return;
-    }
-  } catch {
-    s.lastBootError = new Error(`BOOKS_PATH ${booksPath} does not exist`);
-    console.warn(`[scanner] ${s.lastBootError.message}`);
+  const configured = await enabledLocationPaths();
+  if (configured.length === 0) {
+    s.watchedPaths = [];
+    s.lastBootError = null;
+    console.log("[scanner] no libraries configured yet");
     return;
   }
 
-  console.log(`[scanner] watching ${booksPath}`);
-  s.lastBootError = null;
-  s.watchedPath = booksPath;
+  const { ok, missing } = await existingDirs(configured);
+  s.lastBootError =
+    missing.length > 0
+      ? new Error(`Some library folders are unavailable: ${missing.join(", ")}`)
+      : null;
+  if (missing.length > 0) console.warn(`[scanner] ${s.lastBootError?.message}`);
 
-  const w = chokidar.watch(booksPath, {
+  if (ok.length === 0) {
+    s.watchedPaths = [];
+    return;
+  }
+
+  console.log(`[scanner] watching ${ok.length} folder(s): ${ok.join(", ")}`);
+  s.watchedPaths = ok;
+
+  const w = chokidar.watch(ok, {
     persistent: true,
     ignoreInitial: false,
     // Wait until writes settle — important for large EPUB/PDF copies that
@@ -115,17 +141,17 @@ export async function startWatcher(booksPath: string): Promise<void> {
     try {
       const { prisma } = await import("@/lib/prisma");
       const rows = await prisma.book.findMany({ select: { id: true, filePath: true } });
-      const missing: string[] = [];
+      const missingBooks: string[] = [];
       for (const r of rows) {
         try {
           await fs.access(r.filePath);
         } catch {
-          missing.push(r.id);
+          missingBooks.push(r.id);
         }
       }
-      if (missing.length > 0) {
-        await prisma.book.deleteMany({ where: { id: { in: missing } } });
-        console.log(`[scanner] reconciled — removed ${missing.length} missing book(s)`);
+      if (missingBooks.length > 0) {
+        await prisma.book.deleteMany({ where: { id: { in: missingBooks } } });
+        console.log(`[scanner] reconciled — removed ${missingBooks.length} missing book(s)`);
       }
     } catch (err) {
       console.error("[scanner] reconcile failed", err);
@@ -146,7 +172,14 @@ export async function stopWatcher(): Promise<void> {
   if (!s.watcher) return;
   await s.watcher.close();
   s.watcher = null;
-  s.watchedPath = null;
+  s.watchedPaths = [];
+}
+
+// Apply a change to the configured library set (add / remove / enable-toggle):
+// tear the watcher down and bring it back up against the new folder list.
+export async function restartWatcher(): Promise<void> {
+  await stopWatcher();
+  await startWatcher();
 }
 
 export function markFullScan() {

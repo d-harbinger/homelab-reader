@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { getDefaultUserId } from "@/lib/default-user";
+import { getCurrentUserId } from "@/lib/current-user";
 import { EpubReader } from "@/components/EpubReader";
 import { PdfReaderLazy } from "@/components/PdfReaderLazy";
 
@@ -22,7 +22,7 @@ export default async function ReadPage({
   const book = await prisma.book.findUnique({ where: { id } });
   if (!book) notFound();
 
-  const userId = await getDefaultUserId();
+  const userId = await getCurrentUserId();
   const progress = await prisma.progress.findUnique({
     where: { bookId_userId: { bookId: book.id, userId } },
   });
