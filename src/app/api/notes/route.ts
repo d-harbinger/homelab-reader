@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getDefaultUserId } from "@/lib/default-user";
+import { getCurrentUserId } from "@/lib/current-user";
 
 interface NotePayload {
   bookId?: string;
@@ -30,7 +30,7 @@ export async function POST(req: Request) {
   const book = await prisma.book.findUnique({ where: { id: bookId } });
   if (!book) return NextResponse.json({ error: "unknown book" }, { status: 404 });
 
-  const userId = await getDefaultUserId();
+  const userId = await getCurrentUserId();
   const row = await prisma.note.create({
     data: {
       bookId,
@@ -59,7 +59,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "missing bookId" }, { status: 400 });
   }
 
-  const userId = await getDefaultUserId();
+  const userId = await getCurrentUserId();
   const rows = await prisma.note.findMany({
     where: { bookId, userId },
     orderBy: { createdAt: "asc" },

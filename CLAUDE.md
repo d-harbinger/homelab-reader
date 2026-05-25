@@ -18,7 +18,7 @@ notes shape, same privacy posture.
 - Next.js 15 + React 19 (App Router, TypeScript)
 - Prisma + SQLite (DB at `/data/homelab-reader.db` in prod, `./data/` in dev)
 - TailwindCSS v4
-- NextAuth v5 (single-user credentials, bcrypt + JWT)
+- NextAuth v5 (multi-user credentials, bcrypt + JWT; first-run admin setup, admin-managed accounts)
 - chokidar — folder watch
 - epub2, pdfjs-dist — server-side metadata + cover
 - epub.js, PDF.js — client-side reader

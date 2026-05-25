@@ -37,6 +37,7 @@ interface ContentsLike {
   document: Document;
   window: Window;
   range(cfi: string): Range;
+  cfiFromRange?(range: Range): string;
 }
 interface RenditionLike {
   display(target?: string | undefined): Promise<unknown>;
@@ -211,15 +212,23 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
         width: "100%",
         height: "100%",
         spread: "auto",
-        flow: mode === "scrolled" ? "scrolled-doc" : "paginated",
+        // Continuous manager needs flow:"scrolled" (it streams sections as you
+        // scroll). Pairing it with "scrolled-doc" — the single-document mode —
+        // renders a section but leaves scrolling dead.
+        flow: mode === "scrolled" ? "scrolled" : "paginated",
         manager: mode === "scrolled" ? "continuous" : "default",
       });
       renditionRef.current = rendition;
 
       rendition.themes.register("homelab-dark", {
+        // Theme the iframe's <html> too, not just <body>. In scroll mode the
+        // iframe runs taller than the text, and a <body>-only background lets
+        // the default-white <html> show through below the last line.
+        html: { background: "#09090b" },
         body: {
           color: "#e4e4e7",
           background: "#09090b",
+          "min-height": "100%",
           "font-family":
             '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, system-ui, sans-serif',
           "line-height": "1.6",
@@ -297,7 +306,6 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
       };
 
       const onSelected = (...args: unknown[]) => {
-        console.log("[epub] rendition 'selected' event", args);
         const cfiRange = args[0] as string;
         const contents = args[1] as ContentsLike | undefined;
         if (!contents || !cfiRange) return;
@@ -305,14 +313,21 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
       };
       rendition.on("selected", onSelected);
 
-      // Belt-and-suspenders: a direct mouseup hook on each Contents
-      // iframe. epubjs's 'selected' event has a 250ms selectionchange
-      // debounce and skips collapsed ranges, but doesn't always fire
-      // for short selections inside paginated mode. This catches those.
-      const onContents = (...args: unknown[]) => {
-        const contents = args[0] as ContentsLike & {
-          cfiFromRange?: (r: Range) => string;
-        };
+      // Belt-and-suspenders: a direct mouseup/touchend hook on each
+      // rendered Contents document. epubjs's 'selected' event runs
+      // through a 250ms selectionchange debounce and skips short or
+      // collapsed ranges in paginated mode, so some selections never
+      // fire it. This catches those by reading the live selection and
+      // computing the CFI itself.
+      //
+      // Each spine section renders into its own iframe document; hook
+      // each exactly once (deduped via the WeakSet) so listeners don't
+      // pile up when a section is revisited or in continuous mode.
+      const hookedDocs = new WeakSet<Document>();
+      const hookSelection = (contents: ContentsLike) => {
+        const doc = contents.document;
+        if (hookedDocs.has(doc)) return;
+        hookedDocs.add(doc);
         const handler = () => {
           const sel = contents.window.getSelection();
           if (!sel || sel.rangeCount === 0) return;
@@ -320,29 +335,21 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
           if (range.collapsed || !sel.toString().trim()) return;
           const cfi = contents.cfiFromRange?.(range);
           if (!cfi) return;
-          console.log("[epub] mouseup selection", { cfi });
           showPopoverFor(cfi, contents);
         };
-        contents.document.addEventListener("mouseup", handler);
-        contents.document.addEventListener("touchend", handler);
+        doc.addEventListener("mouseup", handler);
+        doc.addEventListener("touchend", handler);
       };
-      rendition.on("rendered", (...renderedArgs: unknown[]) => {
-        // The 'rendered' callback signature is (section, view); view has
-        // .contents available. Hook directly.
-        const view = renderedArgs[1] as { contents?: ContentsLike } | undefined;
-        if (view?.contents) onContents(view.contents);
-      });
 
-      // After a paginated re-render (page turn), repaint all known
-      // highlights in the now-visible spine section. epubjs persists
-      // annotations across page turns within the same spine item, but
-      // crossing chapters can lose them.
-      const onRenderedRepaint = () => {
-        for (const h of highlightsRef.current.values()) {
-          repaintHighlight(h);
-        }
+      // On every (re-)render: hook any new section documents for the
+      // selection fallback, and repaint known highlights. epubjs keeps
+      // annotations across page turns within a spine item but can lose
+      // them crossing chapters, so repaint defensively.
+      const onRendered = () => {
+        for (const c of rendition.getContents()) hookSelection(c);
+        for (const h of highlightsRef.current.values()) repaintHighlight(h);
       };
-      rendition.on("rendered", onRenderedRepaint);
+      rendition.on("rendered", onRendered);
 
       const onKey = (e: KeyboardEvent) => {
         if (mode !== "paginated") return;

@@ -3,13 +3,21 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "predev": "prisma generate && prisma migrate deploy && node scripts/copy-pdfjs-worker.mjs",
+    "setup": "node scripts/setup.mjs",
+    "check": "node scripts/preflight.mjs",
+    "predev": "node scripts/preflight.mjs && prisma generate && prisma migrate deploy && node scripts/copy-pdfjs-worker.mjs",
     "dev": "next dev --turbopack",
     "dev:clean": "rm -rf .next && next dev --turbopack",
     "prebuild": "prisma generate && node scripts/copy-pdfjs-worker.mjs",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate deploy",
+    "db:studio": "prisma studio"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "dependencies": {
     "@prisma/client": "^6.19.2",
