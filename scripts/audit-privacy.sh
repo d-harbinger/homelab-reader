@@ -66,12 +66,31 @@ range="${1:-}"
 
 echo "${YELLOW}audit-privacy: scanning ${range:-full history} against ${#ALL_PATTERNS[@]} pattern(s)${RESET}"
 
+# Exclude the scanner sources from the bash-layer scan: their bodies contain
+# the regex pattern *definitions* (e.g. `-----BEGIN ... PRIVATE KEY-----`),
+# which would self-match. The pre-commit hook applies the same exclusion;
+# gitleaks handles it via the `[allowlist]` block in .gitleaks.toml.
+#
+# templates/* paths are the canonical-source layout for the privacy-guard
+# repo itself at <privacy-guard>/. Inert in normal consuming
+# projects (no templates/ dir); prevents self-match in the guard repo.
+EXCLUDE_PATHS=(
+  ':(exclude)scripts/hooks/*'
+  ':(exclude)scripts/audit-privacy.sh'
+  ':(exclude).privacy-patterns.example'
+  ':(exclude).gitleaks.toml'
+  ':(exclude)templates/pre-commit'
+  ':(exclude)templates/audit-privacy.sh'
+  ':(exclude)templates/gitleaks.toml'
+  ':(exclude)templates/privacy-patterns.example'
+)
+
 hits=0
 for pat in "${ALL_PATTERNS[@]}"; do
   if [ -n "$range" ]; then
-    matches="$(git log "$range" -p --pickaxe-regex -S "$pat" --pretty=format:'%n--- commit %h ---' 2>/dev/null | grep -E -- "$pat" || true)"
+    matches="$(git log "$range" -p --pickaxe-regex -S "$pat" --pretty=format:'%n--- commit %h ---' -- "${EXCLUDE_PATHS[@]}" 2>/dev/null | grep -E -- "$pat" || true)"
   else
-    matches="$(git log --all -p --pickaxe-regex -S "$pat" --pretty=format:'%n--- commit %h ---' 2>/dev/null | grep -E -- "$pat" || true)"
+    matches="$(git log --all -p --pickaxe-regex -S "$pat" --pretty=format:'%n--- commit %h ---' -- "${EXCLUDE_PATHS[@]}" 2>/dev/null | grep -E -- "$pat" || true)"
   fi
   if [ -n "$matches" ]; then
     echo ""
@@ -82,11 +101,30 @@ for pat in "${ALL_PATTERNS[@]}"; do
 done
 
 echo ""
+echo "${YELLOW}--- gitleaks detect (full history, default ruleset + .gitleaks.toml allowlist) ---${RESET}"
+if command -v gitleaks >/dev/null 2>&1; then
+  # `gitleaks detect` scans all commits; --no-banner suppresses the ASCII logo;
+  # --redact keeps any matched secret out of stdout/scrollback. Non-zero exit
+  # from gitleaks counts as one additional hit.
+  if gitleaks detect --redact --no-banner --config="$repo_root/.gitleaks.toml"; then
+    echo "${GREEN}gitleaks: clean${RESET}"
+  else
+    echo "${RED}gitleaks: secrets detected (see above).${RESET}"
+    hits=$((hits + 1))
+  fi
+else
+  echo "${RED}gitleaks not installed — full-history secret scan skipped. Install it:${RESET}"
+  echo "  CachyOS / Arch: paru -S gitleaks   (or: sudo pacman -S gitleaks)"
+  echo "  Mint / Debian:  https://github.com/gitleaks/gitleaks/releases (linux_x64.tar.gz)"
+  hits=$((hits + 1))
+fi
+
+echo ""
 if [ "$hits" -eq 0 ]; then
   echo "${GREEN}audit-privacy: clean — no patterns matched in scanned range.${RESET}"
   exit 0
 else
-  echo "${RED}audit-privacy: ${hits} pattern(s) matched. Review above. If real, scrub via:${RESET}"
+  echo "${RED}audit-privacy: ${hits} issue(s) found. Review above. If real, scrub via:${RESET}"
   echo "  pip install --user git-filter-repo"
   echo "  echo 'OFFENDING_STRING==>[redacted]' > /tmp/scrub.txt"
   echo "  ~/.local/bin/git-filter-repo --replace-text /tmp/scrub.txt --replace-message /tmp/scrub.txt --force"
