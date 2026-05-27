@@ -103,10 +103,20 @@ ALL_PATTERNS=("${BUILTIN_PATTERNS[@]}" "${EXTRA_PATTERNS[@]}")
 # Exclude the hook + audit-script themselves: their source contains the
 # regex pattern definitions (e.g. `-----BEGIN ... PRIVATE KEY-----`),
 # which would self-match. Code review is the right safety mechanism for
-# changes to these two files, not the hook itself.
+# changes to these files, not the hook itself.
+#
+# templates/* paths are the canonical-source layout used by the
+# privacy-guard repo at <privacy-guard>/. In any normal
+# consuming project there is no templates/ directory, so these are
+# inert; in the guard repo itself they prevent self-match on the same
+# pattern definitions that live there.
 staged_added="$(git diff --cached --unified=0 -- \
     ':(exclude)scripts/hooks/*' \
     ':(exclude)scripts/audit-privacy.sh' \
+    ':(exclude)templates/pre-commit' \
+    ':(exclude)templates/audit-privacy.sh' \
+    ':(exclude)templates/gitleaks.toml' \
+    ':(exclude)templates/privacy-patterns.example' \
   | grep -E '^\+[^+]' || true)"
 
 if [ -z "$staged_added" ]; then
@@ -129,6 +139,44 @@ if [ -n "$violations" ]; then
   printf '%s\n' "${YELLOW}If a match is a false positive, you can bypass once with:${RESET}"
   printf '%s\n' "  git commit --no-verify"
   printf '%s\n' "${YELLOW}If a match is real, edit the staged file to remove the identifier, then re-stage and re-commit.${RESET}"
+  exit 1
+fi
+
+# ----------------------------------------------------------------------------
+# Layer 2: gitleaks. The bash patterns above cover workspace-specific things
+# gitleaks doesn't know about (device serials, /home/<user>/ paths, RFC1918
+# IPs). gitleaks adds ~150 cloud-provider patterns + entropy detection on top.
+#
+# Required, not optional. Per the workspace policy, we want the broader net.
+# If gitleaks is missing, fail clearly rather than silently letting commits
+# through with weaker coverage.
+# ----------------------------------------------------------------------------
+if ! command -v gitleaks >/dev/null 2>&1; then
+  printf '%s\n' "${RED}--- pre-commit privacy guard: gitleaks not installed ---${RESET}"
+  printf '%s\n' "${YELLOW}gitleaks is required by this repo's privacy guard. Install it once:${RESET}"
+  printf '%s\n' ""
+  printf '%s\n' "  CachyOS / Arch (recommended):  paru -S gitleaks"
+  printf '%s\n' "                                 sudo pacman -S gitleaks  # if you don't use paru"
+  printf '%s\n' "  Mint / Debian / Ubuntu:        download the latest gitleaks_*_linux_x64.tar.gz from"
+  printf '%s\n' "                                 https://github.com/gitleaks/gitleaks/releases and"
+  printf '%s\n' "                                 install the 'gitleaks' binary on PATH."
+  printf '%s\n' "  go-installed:                  go install github.com/gitleaks/gitleaks/v8@latest"
+  printf '%s\n' ""
+  printf '%s\n' "${YELLOW}Bypass once for an unrelated emergency:${RESET}  git commit --no-verify"
+  exit 1
+fi
+
+# `protect --staged` scans the staged index, not the working tree. --redact
+# replaces the secret value in the report with [REDACTED] so the secret itself
+# is never written to terminal scrollback. --no-banner suppresses the ASCII
+# logo on every run.
+if ! gitleaks protect --staged --redact --no-banner --config="$repo_root/.gitleaks.toml" 2>&1; then
+  printf '%s\n' ""
+  printf '%s\n' "${RED}--- pre-commit privacy guard: gitleaks found one or more secrets ---${RESET}"
+  printf '%s\n' "${YELLOW}If a match is a real secret:${RESET}  remove it from the staged file, re-stage, re-commit."
+  printf '%s\n' "${YELLOW}If a match is a false positive:${RESET} add it to the [allowlist] in .gitleaks.toml"
+  printf '%s\n' "${YELLOW}                                ${RESET}(see comments in that file for the regex/path format)."
+  printf '%s\n' "${YELLOW}Bypass once for an unrelated emergency:${RESET}  git commit --no-verify"
   exit 1
 fi
 
