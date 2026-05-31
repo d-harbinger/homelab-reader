@@ -11,3 +11,32 @@ export const prisma =
   });
 
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
+
+// Apply SQLite connection PRAGMAs once at server boot.
+//
+// WAL (write-ahead logging) lets readers and a single writer proceed
+// concurrently instead of taking a whole-database lock — the standard fix for
+// "database is locked" under a reader + background-scanner-writer workload.
+// busy_timeout makes a contending statement wait (here 5s) for a held write
+// lock to clear rather than failing immediately with SQLITE_BUSY.
+//
+// Each PRAGMA is wrapped independently: a non-SQLite datasource, a read-only
+// mount, or any PRAGMA failure logs a warning and is skipped rather than
+// crashing boot. WAL is durable in the database file, so re-applying it on
+// every boot is cheap and idempotent.
+export async function applySqlitePragmas(): Promise<void> {
+  const pragmas = [
+    "PRAGMA journal_mode=WAL",
+    "PRAGMA busy_timeout=5000",
+  ];
+  for (const pragma of pragmas) {
+    try {
+      await prisma.$executeRawUnsafe(pragma);
+    } catch (err) {
+      console.warn(
+        `[prisma] skipped "${pragma}":`,
+        (err as Error).message,
+      );
+    }
+  }
+}
