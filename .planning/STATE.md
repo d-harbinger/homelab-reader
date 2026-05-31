@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 01-01-PLAN.md (authz code-change half); 01-02 (test harness) pending.
-last_updated: "2026-05-31T02:57:57Z"
-last_activity: 2026-05-31 -- Plan 01-01 executed (authz hardening source edits)
+stopped_at: Completed 01-02-PLAN.md (Vitest harness + auth-gate + isolation tests); Phase 01 plans done, host-run green pending.
+last_updated: "2026-05-31T03:10:00Z"
+last_activity: 2026-05-31 -- Plan 01-02 executed (Vitest test harness authored; host-run pending)
 progress:
   total_phases: 3
   completed_phases: 0
   total_plans: 2
-  completed_plans: 1
-  percent: 17
+  completed_plans: 2
+  percent: 33
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-31)
 ## Current Position
 
 Phase: 01 (authorization-hardening-test-harness) — EXECUTING
-Plan: 2 of 2
-Status: Plan 01-01 complete; Plan 01-02 (Vitest harness) next
-Last activity: 2026-05-31 -- Plan 01-01 executed (authz hardening source edits)
+Plan: 2 of 2 (both plans authored)
+Status: Plan 01-01 + 01-02 complete in source; Phase 01 awaits the host-run green gate (npm install -D, npm test, tsc, lint) before /gsd:verify-work
+Last activity: 2026-05-31 -- Plan 01-02 executed (Vitest test harness authored; host-run pending)
 
-Progress: [██░░░░░░░░] 17%
+Progress: [███░░░░░░░] 33%
 
 ## Performance Metrics
 
@@ -70,7 +70,12 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-- Plan 01-01 behavioral claims (403/401 codes, cross-user exclusion) are source-verified only; HOST must confirm `npx tsc --noEmit`, `npm run lint`, and the Plan 01-02 Vitest suite green before the phase gate.
+- **HOST-RUN GREEN GATE (blocks Phase 01 verify):** the entire Vitest suite is authored-but-unrun (host/VM split — `npm install`, `npm test`, `prisma migrate`, `tsc` cannot execute in-agent). On the host, in repo root, run in order:
+  1. `npm install -D vitest@^4 vite-tsconfig-paths@^6` (writes the lockfile; `npx vitest --version` should report 4.x).
+  2. `npm test` — expect both `tests/authz-gates.test.ts` and `tests/isolation.test.ts` green (TEST-01).
+  3. Confirm the isolation suite touches ONLY the temp DB, never `./data/homelab-reader.db` (Pitfall 1 / T-01-08). If it hits the real DB, switch the isolation seam from `vi.mock(@/lib/prisma)` (strategy b) to the strategy-(a) setupFiles-env path documented in `tests/setup.ts`, and re-run.
+  4. `npx tsc --noEmit` and `npm run lint` clean across Plans 01-01 and 01-02 (this also confirms the Plan 01-01 `authError` import rewiring typechecks).
+- No test was executed in-agent and none is claimed to have passed; behavioral 401/403/404 + cross-user-exclusion claims for both plans become verified only after the host run above.
 
 ### Blockers/Concerns
 
@@ -95,5 +100,5 @@ Items acknowledged and carried forward (v2 / out of scope this milestone):
 ## Session Continuity
 
 Last session: 2026-05-31
-Stopped at: Completed 01-01-PLAN.md (authz code-change half); 01-02 (test harness) pending.
-Resume file: .planning/phases/01-authorization-hardening-test-harness/01-02-PLAN.md
+Stopped at: Completed 01-02-PLAN.md (Vitest harness + auth-gate + isolation tests authored). Phase 01 plans done in source; host-run green gate pending before /gsd:verify-work.
+Resume file: .planning/phases/01-authorization-hardening-test-harness/01-02-SUMMARY.md

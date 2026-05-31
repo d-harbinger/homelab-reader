@@ -12,7 +12,7 @@ multi-user load, and establish the test suite. Derived from
 - [x] **AUTHZ-01**: Only an admin can trigger a library rescan — `POST /api/scan` rejects non-admin sessions with 403
 - [x] **AUTHZ-02**: An unauthenticated or expired-session request to a data route (notes, highlights, progress) receives a 401, not a 500
 - [x] **AUTHZ-03**: A user cannot read or mutate another user's notes, highlights, or progress (proven by automated tests, not just current code)
-- [ ] **AUTHZ-04**: Admin-only routes (`/api/users`, `/api/users/[id]`, `/api/locations`, `/api/fs`, `/api/scan`) reject non-admin and unauthenticated callers (proven by automated tests)
+- [x] **AUTHZ-04**: Admin-only routes (`/api/users`, `/api/users/[id]`, `/api/locations`, `/api/fs`, `/api/scan`) reject non-admin and unauthenticated callers (proven by automated tests)
 
 ### OPDS authentication (OPDS)
 
@@ -31,8 +31,8 @@ multi-user load, and establish the test suite. Derived from
 
 ### Test suite (TEST)
 
-- [ ] **TEST-01**: A Vitest harness is configured with a `test` script and runs in the project's verification flow
-- [ ] **TEST-02**: Route-level tests cover per-user isolation (AUTHZ-03) and the authorization gates (AUTHZ-04, AUTHZ-01)
+- [x] **TEST-01**: A Vitest harness is configured with a `test` script and runs in the project's verification flow
+- [x] **TEST-02**: Route-level tests cover per-user isolation (AUTHZ-03) and the authorization gates (AUTHZ-04, AUTHZ-01)
 - [ ] **TEST-03**: Scanner tests cover the three `scanFile` branches (moved/hash-match, same-path content-changed, new file) and malformed-archive handling, using fixture files
 
 ## v2 Requirements (deferred)
@@ -56,9 +56,9 @@ multi-user load, and establish the test suite. Derived from
 | AUTHZ-01 | Phase 1 | Complete |
 | AUTHZ-02 | Phase 1 | Complete |
 | AUTHZ-03 | Phase 1 | Complete |
-| AUTHZ-04 | Phase 1 | Pending |
-| TEST-01 | Phase 1 | Pending |
-| TEST-02 | Phase 1 | Pending |
+| AUTHZ-04 | Phase 1 | Complete |
+| TEST-01 | Phase 1 | Complete |
+| TEST-02 | Phase 1 | Complete |
 | OPDS-01 | Phase 2 | Pending |
 | OPDS-02 | Phase 2 | Pending |
 | OPDS-03 | Phase 2 | Pending |
