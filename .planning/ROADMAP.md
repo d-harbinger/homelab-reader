@@ -71,12 +71,12 @@ Plans:
   4. PDF import reads each file once for both metadata and cover, with no second open of the same path.
   5. A malformed EPUB/PDF that fails extraction surfaces a visible "failed to import" signal in the UI instead of being silently dropped.
   6. Scanner tests cover the three `scanFile` branches (moved/hash-match, same-path content-changed, new file) and malformed-archive handling, using fixture files, and pass under `npm test`.
-**Plans**: TBD
+**Plans**: 2 plans
 **UI hint**: yes
 
 Plans:
-- [ ] 03-01: TBD
-- [ ] 03-02: TBD
+- [ ] 03-01-PLAN.md — Backend robustness: SQLite WAL/busy_timeout/connection_limit (ROBUST-01), in-house concurrency limiter for the watcher (ROBUST-02), read-each-PDF-once (ROBUST-04), FailedImport model + hand-written migration + scanner record/clear (ROBUST-05 recording) (Wave 1, autonomous)
+- [ ] 03-02-PLAN.md — Streaming file download with Range (ROBUST-03), session-gated /api/scan/failures + dismissible banner (ROBUST-05 surface), scanner branch tests + fixtures (TEST-03) (Wave 2, depends on 03-01, autonomous)
 
 ## Progress
 
@@ -87,4 +87,4 @@ Phases execute in numeric order: 1 → 2 → 3. Phase 3 is functionally independ
 |-------|----------------|--------|-----------|
 | 1. Authorization Hardening + Test Harness | 2/2 | Complete   | 2026-05-31 |
 | 2. OPDS Per-User Authentication | 2/2 | Complete   | 2026-05-31 |
-| 3. Resource Safety & Robustness | 0/TBD | Not started | - |
+| 3. Resource Safety & Robustness | 0/2 | Not started | - |
