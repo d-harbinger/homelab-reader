@@ -1,9 +1,5 @@
 import { NextResponse } from "next/server";
-import {
-  ForbiddenError,
-  requireAdmin,
-  UnauthenticatedError,
-} from "@/lib/current-user";
+import { authError, requireAdmin } from "@/lib/current-user";
 import {
   addScanLocation,
   listScanLocations,
@@ -11,16 +7,6 @@ import {
 } from "@/lib/scanner/locations";
 import { walkAndScan } from "@/lib/scanner";
 import { restartWatcher } from "@/lib/scanner/watcher";
-
-export function authError(e: unknown): NextResponse {
-  if (e instanceof UnauthenticatedError) {
-    return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
-  }
-  if (e instanceof ForbiddenError) {
-    return NextResponse.json({ error: "forbidden" }, { status: 403 });
-  }
-  throw e;
-}
 
 // GET /api/locations — list configured library folders (admin only).
 export async function GET() {
