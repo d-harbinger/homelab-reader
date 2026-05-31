@@ -11,6 +11,11 @@ import {
 
 // First-run only: create the admin account. Once any user exists, setup is
 // closed and visitors are sent to the login form.
+//
+// Reads live DB state (userCount), so it must render per-request — statically
+// prerendering at `next build` fails because no database exists at build time.
+export const dynamic = "force-dynamic";
+
 export default async function SetupPage({
   searchParams,
 }: {

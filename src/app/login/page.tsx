@@ -9,6 +9,12 @@ import {
   AuthError,
 } from "@/components/AuthShell";
 
+// Reads live DB state (userCount → redirect to /setup when there are no
+// accounts), so it must render per-request. Without this, `next build` tries to
+// statically prerender the page and fails — there is no database at build time
+// (it is created at runtime by the entrypoint's `prisma migrate deploy`).
+export const dynamic = "force-dynamic";
+
 export default async function LoginPage({
   searchParams,
 }: {
