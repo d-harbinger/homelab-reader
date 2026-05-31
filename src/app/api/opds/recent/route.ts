@@ -5,9 +5,15 @@ import {
   OPDS_ACQ,
   type OpdsBookEntry,
 } from "@/lib/opds";
+import { authenticateOpds, opdsChallenge } from "@/lib/opds-auth";
 
 // GET /api/opds/recent — last 50 books added, newest first.
-export async function GET() {
+//
+// In-route auth (see /api/opds): no valid per-user token -> 401 challenge.
+export async function GET(req: Request) {
+  const user = await authenticateOpds(req);
+  if (!user) return opdsChallenge();
+
   const books = await prisma.book.findMany({
     include: { authors: true },
     orderBy: { addedAt: "desc" },
