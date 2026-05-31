@@ -22,7 +22,7 @@ robustness (largely independent work).
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Authorization Hardening + Test Harness** - Close the live authz gaps (admin gate, 401-not-500, per-user isolation) and stand up Vitest so the fixes ship with regression tests (completed 2026-05-31)
-- [ ] **Phase 2: OPDS Per-User Authentication** - Enforce the documented Basic/Bearer token auth on the OPDS routes and attribute progress to the authenticated OPDS user
+- [x] **Phase 2: OPDS Per-User Authentication** - Enforce the documented Basic/Bearer token auth on the OPDS routes and attribute progress to the authenticated OPDS user (completed 2026-05-31)
 - [ ] **Phase 3: Resource Safety & Robustness** - Tune SQLite, bound the scanner, stream downloads, single-read PDFs, and surface import failures — with scanner tests
 
 ## Phase Details
@@ -58,7 +58,7 @@ Plans:
 
 Plans:
 - [x] 02-01-PLAN.md — Token model + migration, in-route OPDS auth guard (Basic/Bearer), guarded routes + OPDS-context progress attribution, auth tests
-- [ ] 02-02-PLAN.md — Token-management REST (mint/list/revoke) + settings page + manager UI + per-user isolation tests
+- [x] 02-02-PLAN.md — Token-management REST (mint/list/revoke) + settings page + manager UI + per-user isolation tests
 
 ### Phase 3: Resource Safety & Robustness
 **Goal**: The container holds up under concurrent readers plus the background scanner without DB-lock errors, memory spikes, or silently-dropped books — and the scanner's reconcile branches are covered by tests.
@@ -86,5 +86,5 @@ Phases execute in numeric order: 1 → 2 → 3. Phase 3 is functionally independ
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Authorization Hardening + Test Harness | 2/2 | Complete   | 2026-05-31 |
-| 2. OPDS Per-User Authentication | 1/2 | In Progress|  |
+| 2. OPDS Per-User Authentication | 2/2 | Complete   | 2026-05-31 |
 | 3. Resource Safety & Robustness | 0/TBD | Not started | - |
