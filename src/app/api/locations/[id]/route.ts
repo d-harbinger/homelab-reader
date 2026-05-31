@@ -1,11 +1,10 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/current-user";
+import { authError, requireAdmin } from "@/lib/current-user";
 import {
   removeScanLocation,
   setScanLocationEnabled,
 } from "@/lib/scanner/locations";
 import { restartWatcher } from "@/lib/scanner/watcher";
-import { authError } from "../route";
 
 // PATCH /api/locations/[id] — enable/disable a library. Body: { enabled }
 export async function PATCH(
