@@ -6,7 +6,13 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY prisma ./prisma/
 ENV DATABASE_URL="file:/app/data/homelab-reader.db"
-RUN npm ci --fetch-retries=5 --fetch-retry-maxtimeout=180000
+# `npm install`, not `npm ci`: the test toolchain (vitest 4) pulls WASM fallback
+# bindings (@rolldown/binding-wasm32-wasi, @unrs/resolver-binding-wasm32-wasi)
+# whose @emnapi/* optional deps a glibc `npm install` records as references but
+# does not resolve into the lockfile (npm cross-platform optional-deps gap,
+# npm/cli#4828). `npm ci` rejects that as out-of-sync on Alpine/musl; `npm install`
+# respects existing lockfile pins and backfills only the missing optionals.
+RUN npm install --no-audit --no-fund --fetch-retries=5 --fetch-retry-maxtimeout=180000
 RUN npx prisma generate
 
 # ── Build ─────────────────────────────────────────────────────
