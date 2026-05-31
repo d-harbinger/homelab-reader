@@ -49,8 +49,7 @@ export function FailedImportsBanner() {
               : `${failures.length} books couldn't be imported`}
           </p>
           <p className="text-xs text-zinc-500">
-            These files are in a watched folder but their contents couldn't be
-            read. Re-export or replace them and they'll import automatically.
+            {"These files are in a watched folder but their contents couldn't be read. Re-export or replace them and they'll import automatically."}
           </p>
           <ul className="space-y-1 pt-0.5">
             {failures.map((f) => (
