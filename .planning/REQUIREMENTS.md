@@ -16,10 +16,10 @@ multi-user load, and establish the test suite. Derived from
 
 ### OPDS authentication (OPDS)
 
-- [ ] **OPDS-01**: OPDS endpoints (`/api/opds`, `/api/opds/all`, `/api/opds/recent`) require valid per-user credentials via HTTP Basic or Bearer, per `docs/OPDS-AUTH-CONTRACT.md`
-- [ ] **OPDS-02**: An unauthenticated OPDS request receives a 401 with a `WWW-Authenticate` challenge; valid credentials return the feed
-- [ ] **OPDS-03**: Reading progress reported through the OPDS-authenticated path is attributed to that user's account
-- [ ] **OPDS-04**: The OPDS auth scheme interoperates with android-reader as specified in the cross-repo contract (verified against the contract doc)
+- [x] **OPDS-01**: OPDS endpoints (`/api/opds`, `/api/opds/all`, `/api/opds/recent`) require valid per-user credentials via HTTP Basic or Bearer, per `docs/OPDS-AUTH-CONTRACT.md`
+- [x] **OPDS-02**: An unauthenticated OPDS request receives a 401 with a `WWW-Authenticate` challenge; valid credentials return the feed
+- [x] **OPDS-03**: Reading progress reported through the OPDS-authenticated path is attributed to that user's account
+- [x] **OPDS-04**: The OPDS auth scheme interoperates with android-reader as specified in the cross-repo contract (verified against the contract doc)
 
 ### Resource safety & robustness (ROBUST)
 
@@ -59,10 +59,10 @@ multi-user load, and establish the test suite. Derived from
 | AUTHZ-04 | Phase 1 | Complete |
 | TEST-01 | Phase 1 | Complete |
 | TEST-02 | Phase 1 | Complete |
-| OPDS-01 | Phase 2 | Pending |
-| OPDS-02 | Phase 2 | Pending |
-| OPDS-03 | Phase 2 | Pending |
-| OPDS-04 | Phase 2 | Pending |
+| OPDS-01 | Phase 2 | Complete |
+| OPDS-02 | Phase 2 | Complete |
+| OPDS-03 | Phase 2 | Complete |
+| OPDS-04 | Phase 2 | Complete |
 | ROBUST-01 | Phase 3 | Pending |
 | ROBUST-02 | Phase 3 | Pending |
 | ROBUST-03 | Phase 3 | Pending |

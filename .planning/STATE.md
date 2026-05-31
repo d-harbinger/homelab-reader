@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 01-02-PLAN.md (Vitest harness + auth-gate + isolation tests); Phase 01 plans done, host-run green pending.
-last_updated: "2026-05-31T03:10:00Z"
-last_activity: 2026-05-31 -- Plan 01-02 executed (Vitest test harness authored; host-run pending)
+stopped_at: Completed 02-01-PLAN.md (OPDS token model + in-route Basic/Bearer guard on all 3 OPDS routes + OPDS-context progress + auth tests). Source-asserted; host-run gates (prisma migrate dev, tsc, test, build) pending.
+last_updated: "2026-05-31T03:26:00Z"
+last_activity: 2026-05-31 -- Plan 02-01 executed (OPDS per-user auth server core authored; host migrate+test pending)
 progress:
   total_phases: 3
   completed_phases: 0
-  total_plans: 2
-  completed_plans: 2
-  percent: 33
+  total_plans: 3
+  completed_plans: 3
+  percent: 50
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-31)
 
 **Core value:** Point the server at a folder of books and every device — PCs in the browser, phones via android-reader/OPDS — reads the same library, with each person's notes, highlights, and progress kept private to them.
-**Current focus:** Phase 01 — authorization-hardening-test-harness
+**Current focus:** Phase 02 — opds-per-user-authentication
 
 ## Current Position
 
-Phase: 01 (authorization-hardening-test-harness) — EXECUTING
-Plan: 2 of 2 (both plans authored)
-Status: Plan 01-01 + 01-02 complete in source; Phase 01 awaits the host-run green gate (npm install -D, npm test, tsc, lint) before /gsd:verify-work
-Last activity: 2026-05-31 -- Plan 01-02 executed (Vitest test harness authored; host-run pending)
+Phase: 02 (opds-per-user-authentication) — EXECUTING
+Plan: 02-01 of 2 (server core authored; token-management UI plan still to come)
+Status: Plan 02-01 complete in source (OpdsToken model + authenticateOpds guard + 3 guarded routes + /api/opds/progress + auth tests). Awaits the host-run gate (prisma migrate dev --name opds_tokens, then tsc/test/build) before /gsd:verify-work. Phase 01 host-run green gate still pending too.
+Last activity: 2026-05-31 -- Plan 02-01 executed (OPDS per-user auth server core authored; host migrate+test pending)
 
-Progress: [███░░░░░░░] 33%
+Progress: [█████░░░░░] 50%
 
 ## Performance Metrics
 
@@ -67,8 +67,19 @@ Recent decisions affecting current work:
 - authError(e) promoted to a single home in src/lib/current-user.ts (adds a next/server import to that lib file) — per-route try/catch, no withAuth HOC.
 - GET /api/scan status left open to any authenticated caller; only POST is admin-gated.
 - progress/recent user-scope fix folded into Plan 01-01 (Research Pitfall 4 resolved: fix here, not deferred).
+- OPDS tokens hashed with SHA-256 (high-entropy opaque secret -> fast crypto hash correct, not bcrypt); looked up by tokenHash, timingSafeEqual confirm; no plaintext column.
+- authenticateOpds returns the full User row; routes use user.id for progress attribution.
+- OPDS-context progress gets its own route (/api/opds/progress, token-authed); the web /api/progress stays on the cookie session, untouched.
 
 ### Pending Todos
+
+- **HOST-RUN GATE — Plan 02-01 (blocks Phase 02 verify):** the OPDS auth code is authored-but-unrun and references `prisma.opdsToken`, whose TS types exist only after the host generates the client. On the host, in repo root, run in order:
+  1. `npx prisma migrate dev --name opds_tokens` — generates + applies the migration AND regenerates the Prisma client. Commit the generated `prisma/migrations/<ts>_opds_tokens/` together with the schema (schema already committed at `899a6a0`; add the migration in a follow-up commit on the host).
+  2. `npx tsc --noEmit` — first run where `prisma.opdsToken` types exist; expect clean.
+  3. `npm test` — expect `tests/opds-auth.test.ts` green (guard + route + attribution). (Also still pending from Phase 1: `npm install -D vitest@^4 vite-tsconfig-paths@^6` if not yet run.)
+  4. `npm run build` — expect clean.
+  5. Smoke: `curl -i http://localhost:3000/api/opds` -> 401 + `WWW-Authenticate`; `-u <user>:<token>` -> 200 + feed.
+  - No host command above was run in-agent; none is claimed to pass. Agent-side acceptance = source assertions only.
 
 - **HOST-RUN GREEN GATE (blocks Phase 01 verify):** the entire Vitest suite is authored-but-unrun (host/VM split — `npm install`, `npm test`, `prisma migrate`, `tsc` cannot execute in-agent). On the host, in repo root, run in order:
   1. `npm install -D vitest@^4 vite-tsconfig-paths@^6` (writes the lockfile; `npx vitest --version` should report 4.x).
@@ -100,5 +111,5 @@ Items acknowledged and carried forward (v2 / out of scope this milestone):
 ## Session Continuity
 
 Last session: 2026-05-31
-Stopped at: Completed 01-02-PLAN.md (Vitest harness + auth-gate + isolation tests authored). Phase 01 plans done in source; host-run green gate pending before /gsd:verify-work.
-Resume file: .planning/phases/01-authorization-hardening-test-harness/01-02-SUMMARY.md
+Stopped at: Completed 02-01-PLAN.md (OPDS per-user auth server core: OpdsToken model + authenticateOpds guard + 3 guarded routes + /api/opds/progress + auth tests). Source-asserted; host-run gate (prisma migrate dev --name opds_tokens, then tsc/test/build) pending.
+Resume file: .planning/phases/02-opds-per-user-authentication/02-01-SUMMARY.md
