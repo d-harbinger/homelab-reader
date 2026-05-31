@@ -80,7 +80,19 @@ function parseRange(
 }
 
 // Adapt a Node Readable into a web ReadableStream for the Response body.
-function toWebStream(stream: Readable): ReadableStream<Uint8Array> {
+//
+// WR-02 (resource safety): wire the request's AbortSignal so a client
+// disconnect destroys the file handle promptly rather than relying solely on
+// the web stream's cancel path. An 'error' listener keeps a read failure from
+// surfacing as an unhandled 'error' event before toWeb propagates it.
+function toWebStream(
+  stream: Readable,
+  signal: AbortSignal,
+): ReadableStream<Uint8Array> {
+  const abort = () => stream.destroy();
+  if (signal.aborted) abort();
+  else signal.addEventListener("abort", abort, { once: true });
+  stream.on("error", () => stream.destroy());
   return Readable.toWeb(stream) as unknown as ReadableStream<Uint8Array>;
 }
 
@@ -146,7 +158,7 @@ export async function GET(
     const { start, end } = range;
     const length = end - start + 1;
     const stream = createReadStream(filePath, { start, end });
-    return new NextResponse(toWebStream(stream), {
+    return new NextResponse(toWebStream(stream, req.signal), {
       status: 206,
       headers: {
         ...baseHeaders,
@@ -158,7 +170,7 @@ export async function GET(
 
   // No / unparseable / multi-range header → full file streamed (200).
   const stream = createReadStream(filePath);
-  return new NextResponse(toWebStream(stream), {
+  return new NextResponse(toWebStream(stream, req.signal), {
     status: 200,
     headers: {
       ...baseHeaders,
