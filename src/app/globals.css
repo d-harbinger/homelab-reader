@@ -1,5 +1,12 @@
 @import "tailwindcss";
 
+/* Explicit content sources. Tailwind v4 auto-detects these, but naming them
+   steadies Turbopack's dev file-watcher (it can otherwise miss class changes
+   in .tsx files and serve a stale/empty CSS chunk). Paths are relative to this
+   file (src/app/). */
+@source "./**/*.{ts,tsx}";
+@source "../components/**/*.{ts,tsx}";
+
 :root {
   --font-body:
     -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
