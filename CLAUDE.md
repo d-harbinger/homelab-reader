@@ -49,7 +49,9 @@ Same shape as `chimera/`. When in doubt, reference how chimera does it.
 
 ## Docker
 
-- `docker compose up -d --build` brings up on port 3333
+- `docker compose up -d --build` brings up on host port 3334 by default
+  (override with `HOMELAB_PORT` in `.env`; container listens on 3000 internally).
+  Default moved off 3333 to avoid colliding with the sibling chimera service.
 - Volumes: `/books` (the user's library, read-only mount) and `/data` (DB + cover cache)
 - Entrypoint runs `prisma migrate deploy` and fails loudly if migrations don't apply
 

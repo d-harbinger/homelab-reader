@@ -23,7 +23,7 @@
 #   docker compose up -d --build
 #
 #   # 4. Open the app
-#   #    http://<homelab-ip-or-hostname>:3333
+#   #    http://<homelab-ip-or-hostname>:3334
 #   #    First scan can take a minute per ~100 books (cover rendering).
 #
 # ── Day-to-day operations ─────────────────────────────────────
@@ -51,9 +51,10 @@
 #
 # ── Network binding ───────────────────────────────────────────
 #
-#   Defaults to 0.0.0.0:3333 — LAN-accessible. If you want
-#   localhost-only on the host (e.g. behind a reverse proxy),
-#   change the `ports:` line below to "127.0.0.1:3333:3000".
+#   Defaults to 0.0.0.0:3334 — LAN-accessible. Override the host port and
+#   interface via .env: HOMELAB_PORT (default 3334) and HOMELAB_HOST_BIND
+#   (default 0.0.0.0). For localhost-only (e.g. behind a reverse proxy), set
+#   HOMELAB_HOST_BIND=127.0.0.1. The container always listens on 3000 inside.
 #
 # ── Where your data lives ─────────────────────────────────────
 #
@@ -78,7 +79,10 @@ services:
     container_name: homelab-reader
     init: true
     ports:
-      - "0.0.0.0:3333:3000"
+      # Host bind + port are overridable via .env (the container always listens
+      # on 3000 internally). Default host port is 3334 to avoid colliding with
+      # the sibling chimera service, which uses 3333.
+      - "${HOMELAB_HOST_BIND:-0.0.0.0}:${HOMELAB_PORT:-3334}:3000"
     volumes:
       # The SQLite DB + covers + auth-secret. Persistent named volume.
       - homelab-reader-data:/app/data
