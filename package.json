@@ -31,6 +31,7 @@
     "lucide-react": "^1.14.0",
     "next": "^15.5.18",
     "next-auth": "^5.0.0-beta.30",
+    "@napi-rs/canvas": "^0.1.100",
     "pdf-to-img": "^6.1.0",
     "pdfjs-dist": "^5.6.205",
     "react": "19.1.0",
