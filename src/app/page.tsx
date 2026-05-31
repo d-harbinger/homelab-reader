@@ -3,6 +3,7 @@
 import useSWR from "swr";
 import Link from "next/link";
 import { LibraryHeader } from "@/components/LibraryHeader";
+import { FailedImportsBanner } from "@/components/FailedImportsBanner";
 import { Section } from "@/components/Section";
 import type { BookCardData } from "@/components/BookCard";
 
@@ -79,6 +80,8 @@ export default function Home() {
         lastError={status?.lastError ?? null}
         onRescan={manualScan}
       />
+
+      <FailedImportsBanner />
 
       <Section
         title="Continue reading"
