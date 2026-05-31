@@ -21,7 +21,7 @@ robustness (largely independent work).
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Authorization Hardening + Test Harness** - Close the live authz gaps (admin gate, 401-not-500, per-user isolation) and stand up Vitest so the fixes ship with regression tests
+- [x] **Phase 1: Authorization Hardening + Test Harness** - Close the live authz gaps (admin gate, 401-not-500, per-user isolation) and stand up Vitest so the fixes ship with regression tests (completed 2026-05-31)
 - [ ] **Phase 2: OPDS Per-User Authentication** - Enforce the documented Basic/Bearer token auth on the OPDS routes and attribute progress to the authenticated OPDS user
 - [ ] **Phase 3: Resource Safety & Robustness** - Tune SQLite, bound the scanner, stream downloads, single-read PDFs, and surface import failures — with scanner tests
 
@@ -41,7 +41,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 Plans:
 - [x] 01-01-PLAN.md — Authorization fixes: promote authError, admin-gate POST /api/scan, 401-not-500 on data routes, user-scope progress/recent (Wave 1, autonomous)
-- [ ] 01-02-PLAN.md — Vitest harness + auth-gate tests + ephemeral-SQLite isolation tests (Wave 2, depends on 01-01, has checkpoints)
+- [x] 01-02-PLAN.md — Vitest harness + auth-gate tests + ephemeral-SQLite isolation tests (Wave 2, depends on 01-01, has checkpoints)
 
 ### Phase 2: OPDS Per-User Authentication
 **Goal**: OPDS clients (android-reader and standard readers) authenticate per user against the documented contract, and progress reported over OPDS is attributed to the right account.
@@ -85,6 +85,6 @@ Phases execute in numeric order: 1 → 2 → 3. Phase 3 is functionally independ
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Authorization Hardening + Test Harness | 1/2 | In Progress|  |
+| 1. Authorization Hardening + Test Harness | 2/2 | Complete   | 2026-05-31 |
 | 2. OPDS Per-User Authentication | 0/TBD | Not started | - |
 | 3. Resource Safety & Robustness | 0/TBD | Not started | - |
