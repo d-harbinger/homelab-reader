@@ -34,9 +34,12 @@ export const authConfig = {
       const loggedIn = !!auth?.user;
       const { pathname } = nextUrl;
 
-      // OPDS is the bridge to mobile clients, which authenticate with
-      // HTTP Basic — not the browser session cookie. Leave it out of the
-      // cookie gate; its own auth lands with the OPDS phase.
+      // OPDS is the bridge to mobile clients, which authenticate with a
+      // per-user HTTP Basic/Bearer token — not the browser session cookie.
+      // It stays out of the cookie gate; auth is enforced in-route by
+      // authenticateOpds (src/lib/opds-auth.ts), which 401s any request
+      // without a valid token. Every OPDS route, current and future, must
+      // call that guard.
       if (pathname.startsWith("/api/opds")) return true;
 
       // First-run setup and the login form are reachable while signed out.
