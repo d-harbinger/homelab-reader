@@ -23,11 +23,11 @@ multi-user load, and establish the test suite. Derived from
 
 ### Resource safety & robustness (ROBUST)
 
-- [ ] **ROBUST-01**: SQLite runs in WAL mode with a busy_timeout and a single writer connection, so concurrent reader saves and the background scanner do not surface `SQLITE_BUSY` / "database is locked"
-- [ ] **ROBUST-02**: A cold-start scan of a large library processes files through a concurrency-limited queue rather than firing every file event at once
+- [x] **ROBUST-01**: SQLite runs in WAL mode with a busy_timeout and a single writer connection, so concurrent reader saves and the background scanner do not surface `SQLITE_BUSY` / "database is locked"
+- [x] **ROBUST-02**: A cold-start scan of a large library processes files through a concurrency-limited queue rather than firing every file event at once
 - [ ] **ROBUST-03**: Downloading a book streams the file with HTTP Range support instead of buffering the whole file in memory
-- [ ] **ROBUST-04**: PDF import reads each file once for both metadata and cover (no second open of the same path)
-- [ ] **ROBUST-05**: A malformed EPUB/PDF that fails extraction surfaces a visible "failed to import" signal in the UI instead of being silently dropped
+- [x] **ROBUST-04**: PDF import reads each file once for both metadata and cover (no second open of the same path)
+- [ ] **ROBUST-05**: A malformed EPUB/PDF that fails extraction surfaces a visible "failed to import" signal in the UI instead of being silently dropped (recording side done in 03-01; UI surfacing in 03-02)
 
 ### Test suite (TEST)
 
@@ -63,11 +63,11 @@ multi-user load, and establish the test suite. Derived from
 | OPDS-02 | Phase 2 | Complete |
 | OPDS-03 | Phase 2 | Complete |
 | OPDS-04 | Phase 2 | Complete |
-| ROBUST-01 | Phase 3 | Pending |
-| ROBUST-02 | Phase 3 | Pending |
+| ROBUST-01 | Phase 3 | Complete |
+| ROBUST-02 | Phase 3 | Complete |
 | ROBUST-03 | Phase 3 | Pending |
-| ROBUST-04 | Phase 3 | Pending |
-| ROBUST-05 | Phase 3 | Pending |
+| ROBUST-04 | Phase 3 | Complete |
+| ROBUST-05 | Phase 3 | Partial (recording done; UI in 03-02) |
 | TEST-03 | Phase 3 | Pending |
 
 **Coverage: 16/16 v1 requirements mapped to exactly one phase. No orphans, no duplicates.**

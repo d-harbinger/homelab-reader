@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 02-02-PLAN.md (OPDS token management REST mint/list/revoke + per-user /settings/tokens page + TokenManager copy-once UI + nav link + isolation tests). Source-asserted; host-run gates (prisma migrate dev, tsc, test, build) pending.
-last_updated: "2026-05-30T20:33:00Z"
-last_activity: 2026-05-30 -- Plan 02-02 executed (OPDS token management REST + copy-once UI authored; host migrate+test pending)
+stopped_at: "Completed 03-01-PLAN.md (SQLite WAL/busy_timeout at boot + connection_limit doc, in-house createLimiter cap-4 wrapping the watcher dispatch, PDF read-once, FailedImport model + hand-written migration + record/clear helpers wired at the watcher boundary). Source-asserted; host-run gates (prisma generate + migrate deploy, tsc, test, build, no-SQLITE_BUSY behavioral) pending."
+last_updated: "2026-05-31T03:56:00Z"
+last_activity: 2026-05-31
 progress:
   total_phases: 3
-  completed_phases: 0
-  total_plans: 3
-  completed_plans: 3
-  percent: 50
+  completed_phases: 2
+  total_plans: 6
+  completed_plans: 5
+  percent: 67
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-31)
 
 **Core value:** Point the server at a folder of books and every device — PCs in the browser, phones via android-reader/OPDS — reads the same library, with each person's notes, highlights, and progress kept private to them.
-**Current focus:** Phase 02 — opds-per-user-authentication
+**Current focus:** Phase 03 — resource-safety-robustness
 
 ## Current Position
 
-Phase: 02 (opds-per-user-authentication) — EXECUTING
-Plan: 02-02 of 2 (token-management REST + copy-once UI authored; both phase-02 plans now authored)
-Status: Plan 02-02 complete in source (mint/list/revoke REST + /settings/tokens per-user page + TokenManager copy-once UI + LibraryHeader nav link + tests/opds-tokens.test.ts isolation suite). Awaits the same host-run gate as 02-01 (prisma migrate dev --name opds_tokens, then tsc/test/build) before /gsd:verify-work — the token test shares the opds_tokens migration. Phase 01 host-run green gate still pending too.
-Last activity: 2026-05-30 -- Plan 02-02 executed (OPDS token management REST + copy-once UI authored; host migrate+test pending)
+Phase: 03 (resource-safety-robustness) — EXECUTING
+Plan: 03-01 of 2 (SQLite tuning + concurrency limiter + PDF read-once + FailedImport recording side authored)
+Status: Plan 03-01 complete in source. WAL+busy_timeout wired into instrumentation before the watcher; createLimiter(4) wraps the per-event scanFile/remove dispatch; pdf.ts reads once (metadata view + separate cover Buffer); FailedImport model + hand-written 20260601000000_failed_imports migration committed with the schema; record/clear wired at the watcher catch boundaries. Awaits host-run gate (prisma generate + migrate deploy for the new FailedImport types/table, then tsc/test/build, plus the behavioral no-SQLITE_BUSY / FailedImport-creates-then-clears check). Plan 03-02 (failed-import API/UI surface + scanner branch tests TEST-03) is next.
+Last activity: 2026-05-31
 
-Progress: [█████░░░░░] 50%
+Progress: [████████░░] 83%
 
 ## Performance Metrics
 
@@ -52,6 +52,7 @@ Progress: [█████░░░░░] 50%
 - Trend: —
 
 *Updated after each plan completion*
+| Phase 03 P01 | 2 min | 2 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -72,8 +73,20 @@ Recent decisions affecting current work:
 - OPDS-context progress gets its own route (/api/opds/progress, token-authed); the web /api/progress stays on the cookie session, untouched.
 - OPDS token mint reuses the 02-01 shape: randomBytes(32).toString("base64url") minted, sha256 hex stored; plaintext returned ONCE by POST, never by GET (explicit Prisma select excludes tokenHash), revoke uses notes/[id]-style ownership 404.
 - /settings/tokens is per-user (NOT admin-gated); its nav link sits outside the LibraryHeader isAdmin block so every signed-in user can reach it.
+- Concurrency cap = 4 around the per-event watcher dispatch (bounds the cold-start fan-out; hash-first idempotency keeps steady-state cheap). In-house createLimiter promise semaphore, NOT p-limit (no new dependency).
+- applySqlitePragmas() applies WAL + busy_timeout=5000 each wrapped (a PRAGMA failure warns, never crashes boot); called from instrumentation register() BEFORE seed/startWatcher. connection_limit=1 lives on DATABASE_URL (.env.example + docs/DEPLOYMENT.md, placeholder paths only), not in code.
+- PDF read-once: pdf.ts reads the file once; pdfjs metadata gets the Uint8Array view, renderFirstPageCover takes a SEPARATE Buffer.from copy (pdfjs neuters its copy). pdf-to-img accepts a Buffer directly; cover-render failure stays non-fatal.
+- FailedImport.error truncated to 500 chars (T-03-04 info-disclosure mitigation; full path stays server-side, basename-only surfacing deferred to Plan 03-02). Hand-written 20260601000000_failed_imports migration (no host migrate dev), committed with the schema. record on extract throw, clear on successful scan + on unlink.
 
 ### Pending Todos
+
+- **HOST-RUN GATE — Plan 03-01 (blocks Phase 03 verify):** the FailedImport recording side references `prisma.failedImport`, whose TS types and table exist only after the host generates the client + applies the hand-written migration. On the host, in repo root, run in order:
+  1. `npx prisma generate` then `npx prisma migrate deploy` — applies `prisma/migrations/20260601000000_failed_imports/` and regenerates the client so `prisma.failedImport` exists. (No `migrate dev` needed; the migration is hand-written.)
+  2. `npx tsc --noEmit` — first run where `prisma.failedImport` types exist; expect clean.
+  3. `npm test` — expect green (scanner branch + FailedImport tests land in Plan 03-02/TEST-03).
+  4. `npm run build` — expect clean.
+  5. Behavioral: under concurrent reader saves + an active scan, no `SQLITE_BUSY` / "database is locked"; a large cold-start import does not spike RSS unbounded; dropping a deliberately-corrupt EPUB creates a `FailedImport` row (not a silent drop); replacing it with a valid file clears the row.
+  - No host command above was run in-agent; none is claimed to pass. Agent-side acceptance = source assertions only.
 
 - **HOST-RUN GATE — Plan 02-02 (blocks Phase 02 verify; shares the 02-01 migration):** the token-management REST + copy-once UI are authored-but-unrun and reference `prisma.opdsToken`. `tests/opds-tokens.test.ts` applies the committed migrations (incl. `opds_tokens`) to a temp DB, so it depends on the 02-01 `prisma migrate dev --name opds_tokens` having run. On the host, in repo root:
   1. `npx prisma migrate dev --name opds_tokens` (if not already run from 02-01) — generates/applies the migration + regenerates the client.
@@ -120,6 +133,6 @@ Items acknowledged and carried forward (v2 / out of scope this milestone):
 
 ## Session Continuity
 
-Last session: 2026-05-30
-Stopped at: Completed 02-02-PLAN.md (OPDS token management: mint/list/revoke REST + per-user /settings/tokens page + TokenManager copy-once UI + LibraryHeader nav link + tests/opds-tokens.test.ts isolation suite). Source-asserted; host-run gate (prisma migrate dev --name opds_tokens, then tsc/test/build) pending and shared with 02-01.
-Resume file: .planning/phases/02-opds-per-user-authentication/02-02-SUMMARY.md
+Last session: 2026-05-31
+Stopped at: Completed 03-01-PLAN.md (SQLite WAL/busy_timeout at boot + connection_limit doc, in-house createLimiter cap-4 wrapping the watcher dispatch, PDF read-once, FailedImport model + hand-written 20260601000000_failed_imports migration + record/clear helpers wired at the watcher boundary). Source-asserted; host-run gate (prisma generate + migrate deploy, tsc, test, build, no-SQLITE_BUSY behavioral) pending. Plan 03-02 (failed-import API/UI + scanner branch tests TEST-03) next.
+Resume file: .planning/phases/03-resource-safety-robustness/03-01-SUMMARY.md
