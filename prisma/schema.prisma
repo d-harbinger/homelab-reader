@@ -15,6 +15,12 @@
 //   real so a future "share with household" doesn't require migration.
 // - ScanLocation lets the user point at multiple folders later
 //   (e.g. /books + /reference) without code changes.
+// - OpdsToken is a per-user API credential for OPDS clients (android-reader
+//   and standard readers), which authenticate with HTTP Basic/Bearer rather
+//   than the web cookie session. The plaintext token is NEVER persisted:
+//   we store only its SHA-256 hex (`tokenHash`) and look the row up by that,
+//   per docs/OPDS-AUTH-CONTRACT.md. The token is shown to the user exactly
+//   once at mint time. No plaintext token column exists by design.
 
 generator client {
   provider = "prisma-client-js"
@@ -37,6 +43,24 @@ model User {
   progress     Progress[]
   notes        Note[]
   highlights   Highlight[]
+  opdsTokens   OpdsToken[]
+}
+
+// Per-user OPDS API token ("app password"). Hashed at rest: `tokenHash` is the
+// SHA-256 hex of the opaque base64url token; the plaintext is never stored and
+// never logged (docs/OPDS-AUTH-CONTRACT.md). Look up by `tokenHash`, then a
+// constant-time compare confirms the row before it is trusted.
+model OpdsToken {
+  id         String   @id @default(cuid())
+  userId     String
+  tokenHash  String   @unique
+  label      String
+  createdAt  DateTime @default(now())
+  lastUsedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model Book {
