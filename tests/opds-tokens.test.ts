@@ -30,7 +30,14 @@ import { createHash } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
 
 // --- hoisted: build the temp DB url + client before any module import -------
-const h = vi.hoisted(() => {
+// vi.hoisted runs ABOVE the top-level imports, so it imports what it needs
+// internally (resolution happens at call time) rather than using the
+// not-yet-initialized top-level bindings.
+const h = await vi.hoisted(async () => {
+  const { mkdtempSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const path = (await import("node:path")).default;
+  const { PrismaClient } = await import("@prisma/client");
   const dir = mkdtempSync(path.join(tmpdir(), "hlr-tok-"));
   const dbFile = path.join(dir, "test.db");
   const url = `file:${dbFile}`;

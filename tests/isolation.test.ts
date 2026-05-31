@@ -27,7 +27,15 @@ import path from "node:path";
 import { PrismaClient } from "@prisma/client";
 
 // --- hoisted: build the temp DB url + client before any module import -------
-const h = vi.hoisted(() => {
+// vi.hoisted runs ABOVE the top-level imports, so it cannot use the bindings
+// imported at the top of this file (they're not initialized yet). Import what
+// the block needs from inside the async factory, where resolution happens at
+// call time.
+const h = await vi.hoisted(async () => {
+  const { mkdtempSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const path = (await import("node:path")).default;
+  const { PrismaClient } = await import("@prisma/client");
   const dir = mkdtempSync(path.join(tmpdir(), "hlr-iso-"));
   const dbFile = path.join(dir, "test.db");
   const url = `file:${dbFile}`;
