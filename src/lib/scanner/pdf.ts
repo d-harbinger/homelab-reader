@@ -22,8 +22,13 @@ export async function extractPdf(filePath: string): Promise<PdfExtraction> {
   // runtimes that haven't gotten newer Web APIs.
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
 
+  // Read the file ONCE; both the metadata parser and the cover renderer work
+  // off these bytes instead of each re-opening the path (ROBUST-04 — avoids a
+  // second whole-file read + the RSS spike of holding two copies serially).
   const buffer = await fs.readFile(filePath);
-  // Copy into a fresh Uint8Array — pdfjs takes ownership.
+  // pdfjs takes ownership of (and may neuter) the buffer it receives, so give
+  // it a fresh Uint8Array view here and hand the cover renderer a SEPARATE
+  // copy below — sharing one view would corrupt whichever runs second.
   const data = new Uint8Array(buffer);
 
   const loadingTask = pdfjs.getDocument({
@@ -58,7 +63,9 @@ export async function extractPdf(filePath: string): Promise<PdfExtraction> {
       ? parsePdfDate(dateStr) ?? parseXmpDate(dateStr)
       : undefined;
 
-    const cover = await renderFirstPageCover(filePath);
+    // Hand the cover renderer its own copy of the bytes (Buffer.from copies),
+    // since pdfjs above may have neutered `data`/`buffer`.
+    const cover = await renderFirstPageCover(Buffer.from(buffer));
 
     return {
       title,
@@ -114,15 +121,17 @@ function parseXmpDate(s: string): Date | undefined {
 
 // Render page 1 to a PNG buffer via pdf-to-img — purpose-built lib that
 // handles the pdfjs + canvas + font-loading wiring internally, which
-// fights you in Node otherwise. Returns undefined on any failure so the
-// scanner falls back to the format placeholder.
+// fights you in Node otherwise. Takes the already-read bytes (pdf-to-img
+// accepts a Buffer/Uint8Array directly, confirmed via its types) so the file
+// is never re-opened. Returns undefined on any failure so the scanner falls
+// back to the format placeholder.
 async function renderFirstPageCover(
-  filePath: string,
+  bytes: Buffer | Uint8Array,
 ): Promise<{ buffer: Buffer; ext: string } | undefined> {
   try {
     const { pdf } = await import("pdf-to-img");
     // scale 1 ≈ 72dpi; bump to 2 for sharper grid thumbnails.
-    const document = await pdf(filePath, { scale: 2 });
+    const document = await pdf(bytes, { scale: 2 });
     const buffer = await document.getPage(1);
     return { buffer, ext: "png" };
   } catch (err) {
