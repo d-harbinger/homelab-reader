@@ -18,6 +18,11 @@ export interface PdfExtraction {
 // covers can be added in a later phase; until then, the UI falls back to a
 // placeholder for the PDF format badge.
 export async function extractPdf(filePath: string): Promise<PdfExtraction> {
+  // pdfjs-dist v5 references DOM globals (DOMMatrix/ImageData/Path2D) that Node
+  // does not provide — even the legacy build throws "DOMMatrix is not defined"
+  // without them. Register them once from @napi-rs/canvas (a dependency, also
+  // used for cover rendering) before pdfjs loads.
+  await ensurePdfGlobals();
   // pdfjs-dist v5 ships ESM; the legacy build is more forgiving on Node
   // runtimes that haven't gotten newer Web APIs.
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
@@ -79,6 +84,19 @@ export async function extractPdf(filePath: string): Promise<PdfExtraction> {
   } finally {
     await doc.destroy();
   }
+}
+
+// pdfjs-dist v5 needs DOM globals Node lacks. Register them once from
+// @napi-rs/canvas before any getDocument call. Idempotent.
+let pdfGlobalsReady = false;
+async function ensurePdfGlobals(): Promise<void> {
+  if (pdfGlobalsReady) return;
+  const canvas = await import("@napi-rs/canvas");
+  const g = globalThis as unknown as Record<string, unknown>;
+  g.DOMMatrix ??= canvas.DOMMatrix;
+  g.ImageData ??= canvas.ImageData;
+  g.Path2D ??= canvas.Path2D;
+  pdfGlobalsReady = true;
 }
 
 function splitAuthors(raw: string | undefined): string[] {
