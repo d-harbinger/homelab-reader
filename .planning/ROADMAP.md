@@ -40,7 +40,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 2 plans
 
 Plans:
-- [ ] 01-01-PLAN.md — Authorization fixes: promote authError, admin-gate POST /api/scan, 401-not-500 on data routes, user-scope progress/recent (Wave 1, autonomous)
+- [x] 01-01-PLAN.md — Authorization fixes: promote authError, admin-gate POST /api/scan, 401-not-500 on data routes, user-scope progress/recent (Wave 1, autonomous)
 - [ ] 01-02-PLAN.md — Vitest harness + auth-gate tests + ephemeral-SQLite isolation tests (Wave 2, depends on 01-01, has checkpoints)
 
 ### Phase 2: OPDS Per-User Authentication
@@ -85,6 +85,6 @@ Phases execute in numeric order: 1 → 2 → 3. Phase 3 is functionally independ
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Authorization Hardening + Test Harness | 0/2 | Not started | - |
+| 1. Authorization Hardening + Test Harness | 1/2 | In Progress|  |
 | 2. OPDS Per-User Authentication | 0/TBD | Not started | - |
 | 3. Resource Safety & Robustness | 0/TBD | Not started | - |
