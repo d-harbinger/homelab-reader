@@ -9,8 +9,13 @@ export async function register() {
 
   const { startWatcher } = await import("./lib/scanner/watcher");
   const { seedFromBooksPath } = await import("./lib/scanner/locations");
+  const { applySqlitePragmas } = await import("./lib/prisma");
 
   try {
+    // Tune SQLite (WAL + busy_timeout) BEFORE the watcher starts writing, so
+    // the very first cold-start scan already runs against a database that
+    // tolerates a concurrent reader without "database is locked" errors.
+    await applySqlitePragmas();
     // First run with no libraries configured: adopt BOOKS_PATH if it's set.
     await seedFromBooksPath();
     // Watch every enabled library folder (read from the database).

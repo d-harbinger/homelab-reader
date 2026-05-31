@@ -2,6 +2,14 @@ import chokidar, { type FSWatcher } from "chokidar";
 import fs from "node:fs/promises";
 import { isBookFile, removeFileFromLibrary, scanFile } from "./index";
 import { enabledLocationPaths } from "./locations";
+import { createLimiter } from "@/lib/concurrency";
+
+// Cap how many file events are processed concurrently. A cold-start scan of a
+// large library fires one chokidar "add" per file; without a cap each would
+// pull a full EPUB/PDF into memory at once. Cap 4 keeps the burst bounded
+// while still overlapping I/O-bound extracts. State is module-level (shared
+// across all handlers) so the cap is global, not per-handler.
+const limiter = createLimiter(4);
 
 // State lives on globalThis so it survives Next's instrumentation-vs-
 // request-handler module split (the same gotcha that forces the Prisma
@@ -110,7 +118,7 @@ export async function startWatcher(): Promise<void> {
   w.on("add", async (filePath: string) => {
     if (!isBookFile(filePath)) return;
     try {
-      await scanFile(filePath);
+      await limiter.run(() => scanFile(filePath));
     } catch (err) {
       console.error(`[scanner] add failed: ${filePath}`, err);
     }
@@ -119,7 +127,7 @@ export async function startWatcher(): Promise<void> {
   w.on("change", async (filePath: string) => {
     if (!isBookFile(filePath)) return;
     try {
-      await scanFile(filePath);
+      await limiter.run(() => scanFile(filePath));
     } catch (err) {
       console.error(`[scanner] change failed: ${filePath}`, err);
     }
@@ -128,7 +136,7 @@ export async function startWatcher(): Promise<void> {
   w.on("unlink", async (filePath: string) => {
     if (!isBookFile(filePath)) return;
     try {
-      await removeFileFromLibrary(filePath);
+      await limiter.run(() => removeFileFromLibrary(filePath));
     } catch (err) {
       console.error(`[scanner] unlink failed: ${filePath}`, err);
     }
