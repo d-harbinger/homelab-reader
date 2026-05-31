@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUserId } from "@/lib/current-user";
+import { authError, getCurrentUserId } from "@/lib/current-user";
 
 interface HighlightPayload {
   bookId?: string;
@@ -34,7 +34,12 @@ export async function POST(req: Request) {
   if (!book) return NextResponse.json({ error: "unknown book" }, { status: 404 });
 
   const safeColor = color && VALID_COLORS.has(color) ? color : "yellow";
-  const userId = await getCurrentUserId();
+  let userId: string;
+  try {
+    userId = await getCurrentUserId();
+  } catch (e) {
+    return authError(e);
+  }
 
   const row = await prisma.highlight.create({
     data: {
@@ -63,7 +68,12 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "missing bookId" }, { status: 400 });
   }
 
-  const userId = await getCurrentUserId();
+  let userId: string;
+  try {
+    userId = await getCurrentUserId();
+  } catch (e) {
+    return authError(e);
+  }
   const rows = await prisma.highlight.findMany({
     where: { bookId, userId },
     orderBy: { createdAt: "asc" },

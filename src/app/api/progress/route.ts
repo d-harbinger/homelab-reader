@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUserId } from "@/lib/current-user";
+import { authError, getCurrentUserId } from "@/lib/current-user";
 
 interface ProgressPayload {
   bookId?: string;
@@ -28,7 +28,12 @@ export async function POST(req: Request) {
   const book = await prisma.book.findUnique({ where: { id: bookId } });
   if (!book) return NextResponse.json({ error: "unknown book" }, { status: 404 });
 
-  const userId = await getCurrentUserId();
+  let userId: string;
+  try {
+    userId = await getCurrentUserId();
+  } catch (e) {
+    return authError(e);
+  }
   const anchorJson = JSON.stringify(anchor);
   const clampedPercent =
     typeof percent === "number" && isFinite(percent)
@@ -64,7 +69,12 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "missing bookId" }, { status: 400 });
   }
 
-  const userId = await getCurrentUserId();
+  let userId: string;
+  try {
+    userId = await getCurrentUserId();
+  } catch (e) {
+    return authError(e);
+  }
   const row = await prisma.progress.findUnique({
     where: { bookId_userId: { bookId, userId } },
   });
