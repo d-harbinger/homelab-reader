@@ -53,12 +53,12 @@ Plans:
   3. A user can mint, label, list, and revoke API tokens in the web UI; the plaintext token is shown only once and is stored hashed at rest.
   4. Reading progress reported through the OPDS-authenticated path is attributed to that token owner's account, not anonymously or to another user.
   5. The implemented scheme matches `docs/OPDS-AUTH-CONTRACT.md` (Basic + Bearer accepted, opaque ≥32-byte token, hashed at rest, never logged) so android-reader interoperates.
-**Plans**: TBD
+**Plans**: 2 plans
 **UI hint**: yes
 
 Plans:
-- [ ] 02-01: TBD
-- [ ] 02-02: TBD
+- [ ] 02-01-PLAN.md — Token model + migration, in-route OPDS auth guard (Basic/Bearer), guarded routes + OPDS-context progress attribution, auth tests
+- [ ] 02-02-PLAN.md — Token-management REST (mint/list/revoke) + settings page + manager UI + per-user isolation tests
 
 ### Phase 3: Resource Safety & Robustness
 **Goal**: The container holds up under concurrent readers plus the background scanner without DB-lock errors, memory spikes, or silently-dropped books — and the scanner's reconcile branches are covered by tests.
