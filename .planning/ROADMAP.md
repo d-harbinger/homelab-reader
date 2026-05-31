@@ -57,7 +57,7 @@ Plans:
 **UI hint**: yes
 
 Plans:
-- [ ] 02-01-PLAN.md — Token model + migration, in-route OPDS auth guard (Basic/Bearer), guarded routes + OPDS-context progress attribution, auth tests
+- [x] 02-01-PLAN.md — Token model + migration, in-route OPDS auth guard (Basic/Bearer), guarded routes + OPDS-context progress attribution, auth tests
 - [ ] 02-02-PLAN.md — Token-management REST (mint/list/revoke) + settings page + manager UI + per-user isolation tests
 
 ### Phase 3: Resource Safety & Robustness
@@ -86,5 +86,5 @@ Phases execute in numeric order: 1 → 2 → 3. Phase 3 is functionally independ
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Authorization Hardening + Test Harness | 2/2 | Complete   | 2026-05-31 |
-| 2. OPDS Per-User Authentication | 0/TBD | Not started | - |
+| 2. OPDS Per-User Authentication | 1/2 | In Progress|  |
 | 3. Resource Safety & Robustness | 0/TBD | Not started | - |
