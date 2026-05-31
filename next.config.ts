@@ -38,8 +38,13 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   output: "standalone",
   // pdfjs-dist + yauzl are server-side only; let Next leave them as
-  // native node_modules instead of bundling.
-  serverExternalPackages: ["pdfjs-dist", "yauzl", "pdf-to-img"],
+  // native node_modules instead of bundling. @napi-rs/canvas ships a native
+  // .node addon (used by pdf.ts for the pdfjs DOMMatrix/ImageData/Path2D
+  // polyfill and cover rendering); without externalizing it webpack tries to
+  // parse the binary and fails the build ("Module parse failed" /
+  // next-error-browser-binary-loader). pdf-to-img wraps canvas too and is
+  // already here for the same reason.
+  serverExternalPackages: ["pdfjs-dist", "yauzl", "pdf-to-img", "@napi-rs/canvas"],
   webpack: (config, { nextRuntime, webpack }) => {
     // instrumentation.ts boots the Node-only folder scanner (chokidar + yauzl +
     // pdfjs + our hash/locations helpers). Next also compiles instrumentation for
