@@ -40,31 +40,49 @@ const nextConfig: NextConfig = {
   // pdfjs-dist + yauzl are server-side only; let Next leave them as
   // native node_modules instead of bundling.
   serverExternalPackages: ["pdfjs-dist", "yauzl", "pdf-to-img"],
-  webpack: (config, { nextRuntime }) => {
+  webpack: (config, { nextRuntime, webpack }) => {
     // instrumentation.ts boots the Node-only folder scanner (chokidar + yauzl +
-    // pdfjs). Next also compiles instrumentation for the Edge runtime, where the
-    // scanner never runs — it is gated behind NEXT_RUNTIME === "nodejs" — but its
-    // third-party deps' bare require("fs")/require("stream")/require("zlib") still
-    // fail the build (serverExternalPackages does not cover the Edge compilation).
-    // In non-Node bundles, resolve those built-ins to empty modules. Crypto and
-    // network built-ins are left intact so Edge middleware/auth is unaffected.
-    // Webpack-only; Turbopack dev ignores this config and does not hit the issue.
+    // pdfjs + our hash/locations helpers). Next also compiles instrumentation for
+    // the Edge runtime, where the scanner never runs — it is gated behind
+    // NEXT_RUNTIME === "nodejs" — yet webpack still tries to bundle the chain and
+    // chokes on its Node core imports (both bare `require("fs")` AND the
+    // `node:`-prefixed `import "node:crypto"`, which is an UnhandledSchemeError).
+    // serverExternalPackages does not cover the instrumentation/Edge compilation
+    // (next.js#58003). For non-Node bundles only: strip the `node:` scheme so
+    // those specifiers resolve as bare built-ins, then stub the built-ins to
+    // empty modules. The Node server build is untouched (real built-ins there).
+    // next-auth on Edge uses Web Crypto globals, not the `crypto` module, so
+    // stubbing it here does not affect middleware/auth. Webpack-only; Turbopack
+    // dev ignores this and does not hit the issue.
     if (nextRuntime !== "nodejs") {
+      config.plugins.push(
+        new webpack.NormalModuleReplacementPlugin(/^node:/, (resource) => {
+          resource.request = resource.request.replace(/^node:/, "");
+        }),
+      );
       config.resolve.fallback = {
         ...config.resolve.fallback,
         fs: false,
         "fs/promises": false,
         stream: false,
+        "stream/promises": false,
         zlib: false,
         path: false,
         os: false,
         util: false,
         events: false,
+        crypto: false,
+        module: false,
         child_process: false,
+        net: false,
+        tls: false,
+        dns: false,
         constants: false,
         assert: false,
         string_decoder: false,
         tty: false,
+        perf_hooks: false,
+        worker_threads: false,
       };
     }
     return config;
