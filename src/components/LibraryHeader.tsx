@@ -4,7 +4,7 @@ import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import useSWR from "swr";
-import { BookOpen, FolderTree, LogOut, Search, Users } from "lucide-react";
+import { BookOpen, FolderTree, KeyRound, LogOut, Search, Users } from "lucide-react";
 import { doSignOut } from "@/app/actions";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
@@ -106,6 +106,14 @@ export function LibraryHeader({
             </Link>
           </>
         )}
+        <Link
+          href="/settings/tokens"
+          aria-label="OPDS tokens"
+          title="OPDS tokens"
+          className="rounded-md p-1.5 text-zinc-500 transition-colors hover:bg-zinc-900 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60"
+        >
+          <KeyRound size={15} />
+        </Link>
         <form action={doSignOut}>
           <button
             type="submit"
