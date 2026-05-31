@@ -83,3 +83,6 @@ next-env.d.ts
 /public/pdf.worker.min.mjs
 
 # Prisma — generated client lives in node_modules; nothing to ignore.
+
+# Inter-agent coordination mailbox (local only, never committed)
+.agent-comms/
