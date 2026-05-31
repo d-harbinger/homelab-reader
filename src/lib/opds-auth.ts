@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { prisma } from "@/lib/prisma";
-import type { User } from "@prisma/client";
+
+// The identity an OPDS request resolves to. Deliberately narrow — the guard
+// never hands `passwordHash` (or any other User column) to feed handlers.
+export type OpdsUser = { id: string; username: string; role: string };
 
 // OPDS authentication guard.
 //
@@ -61,7 +64,7 @@ function extractToken(req: Request): string | null {
 //
 // On success it fires a fire-and-forget lastUsedAt bump that the caller MUST
 // NOT await — the feed should not wait on a bookkeeping write.
-export async function authenticateOpds(req: Request): Promise<User | null> {
+export async function authenticateOpds(req: Request): Promise<OpdsUser | null> {
   const token = extractToken(req);
   if (!token) return null;
 
@@ -71,7 +74,11 @@ export async function authenticateOpds(req: Request): Promise<User | null> {
 
   const row = await prisma.opdsToken.findUnique({
     where: { tokenHash },
-    include: { user: true },
+    select: {
+      id: true,
+      tokenHash: true,
+      user: { select: { id: true, username: true, role: true } },
+    },
   });
   if (!row) return null;
 
