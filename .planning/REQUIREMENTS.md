@@ -51,6 +51,23 @@ multi-user load, and establish the test suite. Derived from
 
 ## Traceability
 
-<!-- Filled by the roadmapper: REQ-ID → Phase mapping -->
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| AUTHZ-01 | Phase 1 | Pending |
+| AUTHZ-02 | Phase 1 | Pending |
+| AUTHZ-03 | Phase 1 | Pending |
+| AUTHZ-04 | Phase 1 | Pending |
+| TEST-01 | Phase 1 | Pending |
+| TEST-02 | Phase 1 | Pending |
+| OPDS-01 | Phase 2 | Pending |
+| OPDS-02 | Phase 2 | Pending |
+| OPDS-03 | Phase 2 | Pending |
+| OPDS-04 | Phase 2 | Pending |
+| ROBUST-01 | Phase 3 | Pending |
+| ROBUST-02 | Phase 3 | Pending |
+| ROBUST-03 | Phase 3 | Pending |
+| ROBUST-04 | Phase 3 | Pending |
+| ROBUST-05 | Phase 3 | Pending |
+| TEST-03 | Phase 3 | Pending |
 
-(pending roadmap)
+**Coverage: 16/16 v1 requirements mapped to exactly one phase. No orphans, no duplicates.**
