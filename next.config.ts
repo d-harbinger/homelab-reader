@@ -40,6 +40,35 @@ const nextConfig: NextConfig = {
   // pdfjs-dist + yauzl are server-side only; let Next leave them as
   // native node_modules instead of bundling.
   serverExternalPackages: ["pdfjs-dist", "yauzl", "pdf-to-img"],
+  webpack: (config, { nextRuntime }) => {
+    // instrumentation.ts boots the Node-only folder scanner (chokidar + yauzl +
+    // pdfjs). Next also compiles instrumentation for the Edge runtime, where the
+    // scanner never runs — it is gated behind NEXT_RUNTIME === "nodejs" — but its
+    // third-party deps' bare require("fs")/require("stream")/require("zlib") still
+    // fail the build (serverExternalPackages does not cover the Edge compilation).
+    // In non-Node bundles, resolve those built-ins to empty modules. Crypto and
+    // network built-ins are left intact so Edge middleware/auth is unaffected.
+    // Webpack-only; Turbopack dev ignores this config and does not hit the issue.
+    if (nextRuntime !== "nodejs") {
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+        "fs/promises": false,
+        stream: false,
+        zlib: false,
+        path: false,
+        os: false,
+        util: false,
+        events: false,
+        child_process: false,
+        constants: false,
+        assert: false,
+        string_decoder: false,
+        tty: false,
+      };
+    }
+    return config;
+  },
   async headers() {
     return [{ source: "/(.*)", headers: securityHeaders }];
   },
