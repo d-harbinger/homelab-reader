@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireAdmin } from "@/lib/current-user";
+import { authError, requireAdmin } from "@/lib/current-user";
 import { deleteUser, setPassword, UserInputError } from "@/lib/users";
-import { authError } from "../route";
 
 // PATCH /api/users/[id] — reset password and/or change role (admin only).
 // Body: { password?: string, role?: "admin" | "reader" }

@@ -1,11 +1,7 @@
 import { NextResponse } from "next/server";
 import fs from "node:fs/promises";
 import path from "node:path";
-import {
-  ForbiddenError,
-  requireAdmin,
-  UnauthenticatedError,
-} from "@/lib/current-user";
+import { authError, requireAdmin } from "@/lib/current-user";
 
 // GET /api/fs?path=/some/dir — list the subfolders of a directory so an admin
 // can browse the server's filesystem and pick a library folder. Admin-only.
@@ -17,13 +13,7 @@ export async function GET(req: Request) {
   try {
     await requireAdmin();
   } catch (e) {
-    if (e instanceof UnauthenticatedError) {
-      return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
-    }
-    if (e instanceof ForbiddenError) {
-      return NextResponse.json({ error: "forbidden" }, { status: 403 });
-    }
-    throw e;
+    return authError(e);
   }
 
   const url = new URL(req.url);

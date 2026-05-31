@@ -1,3 +1,4 @@
+import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 
 export interface CurrentUser {
@@ -45,4 +46,17 @@ export async function requireAdmin(): Promise<CurrentUser> {
   if (!user) throw new UnauthenticatedError();
   if (user.role !== "admin") throw new ForbiddenError();
   return user;
+}
+
+// Map the typed auth errors to their HTTP responses: Unauthenticated → 401,
+// Forbidden → 403, anything else re-thrown for the framework to handle. Routes
+// call this from the catch around requireAdmin()/getCurrentUserId().
+export function authError(e: unknown): NextResponse {
+  if (e instanceof UnauthenticatedError) {
+    return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
+  }
+  if (e instanceof ForbiddenError) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
+  throw e;
 }

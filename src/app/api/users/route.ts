@@ -1,9 +1,5 @@
 import { NextResponse } from "next/server";
-import {
-  ForbiddenError,
-  requireAdmin,
-  UnauthenticatedError,
-} from "@/lib/current-user";
+import { authError, requireAdmin } from "@/lib/current-user";
 import { createUser, listUsers, UserInputError, type Role } from "@/lib/users";
 
 // GET /api/users — list accounts (admin only).
@@ -46,14 +42,4 @@ export async function POST(req: Request) {
     }
     throw e;
   }
-}
-
-export function authError(e: unknown): NextResponse {
-  if (e instanceof UnauthenticatedError) {
-    return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
-  }
-  if (e instanceof ForbiddenError) {
-    return NextResponse.json({ error: "forbidden" }, { status: 403 });
-  }
-  throw e;
 }
