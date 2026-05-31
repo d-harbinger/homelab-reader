@@ -167,3 +167,17 @@ model ScanLocation {
   lastScan  DateTime?
   createdAt DateTime @default(now())
 }
+
+// A book file the scanner saw but could not extract (corrupt archive, missing
+// OPF, unreadable PDF). Recorded so a malformed book is a visible signal in
+// the UI instead of silently vanishing. Unique by filePath: the watcher
+// upserts on each failed (re)scan and deletes the row once the path imports
+// successfully or is removed. The stored `error` is truncated; full paths stay
+// server-side (the UI surfaces basename + reason only — Plan 02).
+model FailedImport {
+  id        String   @id @default(cuid())
+  filePath  String   @unique
+  format    String   // "epub" | "pdf"
+  error     String
+  createdAt DateTime @default(now())
+}

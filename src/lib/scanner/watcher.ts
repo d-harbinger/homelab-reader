@@ -1,8 +1,23 @@
 import chokidar, { type FSWatcher } from "chokidar";
 import fs from "node:fs/promises";
-import { isBookFile, removeFileFromLibrary, scanFile } from "./index";
+import path from "node:path";
+import {
+  type BookFormat,
+  isBookFile,
+  removeFileFromLibrary,
+  scanFile,
+} from "./index";
 import { enabledLocationPaths } from "./locations";
 import { createLimiter } from "@/lib/concurrency";
+import { clearFailedImport, recordFailedImport } from "./failed-imports";
+
+// Derive the book format from the file extension at the watcher boundary
+// (epub/pdf) for the FailedImport record — there's no Book row to read it from
+// when extraction has just failed. isBookFile already gated the handler, so the
+// extension is one of the two.
+function formatFromExtension(filePath: string): BookFormat {
+  return path.extname(filePath).toLowerCase() === ".pdf" ? "pdf" : "epub";
+}
 
 // Cap how many file events are processed concurrently. A cold-start scan of a
 // large library fires one chokidar "add" per file; without a cap each would
@@ -119,8 +134,17 @@ export async function startWatcher(): Promise<void> {
     if (!isBookFile(filePath)) return;
     try {
       await limiter.run(() => scanFile(filePath));
+      // Succeeded — drop any prior failure record for this path so a fixed
+      // book stops being reported.
+      await clearFailedImport(filePath);
     } catch (err) {
       console.error(`[scanner] add failed: ${filePath}`, err);
+      // Extraction threw — record a visible FailedImport instead of letting
+      // the book silently vanish.
+      await recordFailedImport(filePath, formatFromExtension(filePath), err).catch(
+        (recErr) =>
+          console.error(`[scanner] recordFailedImport failed: ${filePath}`, recErr),
+      );
     }
   });
 
@@ -128,8 +152,13 @@ export async function startWatcher(): Promise<void> {
     if (!isBookFile(filePath)) return;
     try {
       await limiter.run(() => scanFile(filePath));
+      await clearFailedImport(filePath);
     } catch (err) {
       console.error(`[scanner] change failed: ${filePath}`, err);
+      await recordFailedImport(filePath, formatFromExtension(filePath), err).catch(
+        (recErr) =>
+          console.error(`[scanner] recordFailedImport failed: ${filePath}`, recErr),
+      );
     }
   });
 
@@ -137,6 +166,8 @@ export async function startWatcher(): Promise<void> {
     if (!isBookFile(filePath)) return;
     try {
       await limiter.run(() => removeFileFromLibrary(filePath));
+      // The file is gone — any failure record for it is stale.
+      await clearFailedImport(filePath);
     } catch (err) {
       console.error(`[scanner] unlink failed: ${filePath}`, err);
     }
