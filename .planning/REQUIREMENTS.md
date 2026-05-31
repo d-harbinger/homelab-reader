@@ -9,9 +9,9 @@ multi-user load, and establish the test suite. Derived from
 
 ### Authorization (AUTHZ)
 
-- [ ] **AUTHZ-01**: Only an admin can trigger a library rescan — `POST /api/scan` rejects non-admin sessions with 403
-- [ ] **AUTHZ-02**: An unauthenticated or expired-session request to a data route (notes, highlights, progress) receives a 401, not a 500
-- [ ] **AUTHZ-03**: A user cannot read or mutate another user's notes, highlights, or progress (proven by automated tests, not just current code)
+- [x] **AUTHZ-01**: Only an admin can trigger a library rescan — `POST /api/scan` rejects non-admin sessions with 403
+- [x] **AUTHZ-02**: An unauthenticated or expired-session request to a data route (notes, highlights, progress) receives a 401, not a 500
+- [x] **AUTHZ-03**: A user cannot read or mutate another user's notes, highlights, or progress (proven by automated tests, not just current code)
 - [ ] **AUTHZ-04**: Admin-only routes (`/api/users`, `/api/users/[id]`, `/api/locations`, `/api/fs`, `/api/scan`) reject non-admin and unauthenticated callers (proven by automated tests)
 
 ### OPDS authentication (OPDS)
@@ -53,9 +53,9 @@ multi-user load, and establish the test suite. Derived from
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AUTHZ-01 | Phase 1 | Pending |
-| AUTHZ-02 | Phase 1 | Pending |
-| AUTHZ-03 | Phase 1 | Pending |
+| AUTHZ-01 | Phase 1 | Complete |
+| AUTHZ-02 | Phase 1 | Complete |
+| AUTHZ-03 | Phase 1 | Complete |
 | AUTHZ-04 | Phase 1 | Pending |
 | TEST-01 | Phase 1 | Pending |
 | TEST-02 | Phase 1 | Pending |
