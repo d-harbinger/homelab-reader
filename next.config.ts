@@ -85,12 +85,28 @@ const nextConfig: NextConfig = {
         net: false,
         tls: false,
         dns: false,
+        // @napi-rs/canvas's load-image path requires http/https/url for remote
+        // image loading; the scanner never loads remote images (and never runs
+        // off the Node runtime anyway), so stub them for the non-Node compile.
+        http: false,
+        https: false,
+        url: false,
         constants: false,
         assert: false,
         string_decoder: false,
         tty: false,
         perf_hooks: false,
         worker_threads: false,
+      };
+      // @napi-rs/canvas resolves to a prebuilt native `.node` binary
+      // (skia.*.node) that the browser binary loader rejects. serverExternalPackages
+      // only externalizes it for the Node server build, not this non-Node compile,
+      // where the scanner chain still gets walked. Alias the package to an empty
+      // module here; pdf.ts only `await import()`s it under the Node runtime, so the
+      // stub is never invoked off-Node.
+      config.resolve.alias = {
+        ...config.resolve.alias,
+        "@napi-rs/canvas": false,
       };
     }
     return config;
