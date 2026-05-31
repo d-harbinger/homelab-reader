@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUserId } from "@/lib/current-user";
+import { authError, getCurrentUserId } from "@/lib/current-user";
 
 const VALID_COLORS = new Set(["yellow", "green", "blue", "pink"]);
 
@@ -18,7 +18,12 @@ export async function PATCH(
     return NextResponse.json({ error: "invalid json" }, { status: 400 });
   }
 
-  const userId = await getCurrentUserId();
+  let userId: string;
+  try {
+    userId = await getCurrentUserId();
+  } catch (e) {
+    return authError(e);
+  }
   const existing = await prisma.highlight.findUnique({ where: { id } });
   if (!existing || existing.userId !== userId) {
     return new NextResponse(null, { status: 404 });
@@ -40,7 +45,12 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const userId = await getCurrentUserId();
+  let userId: string;
+  try {
+    userId = await getCurrentUserId();
+  } catch (e) {
+    return authError(e);
+  }
   const existing = await prisma.highlight.findUnique({ where: { id } });
   if (!existing || existing.userId !== userId) {
     return new NextResponse(null, { status: 404 });
