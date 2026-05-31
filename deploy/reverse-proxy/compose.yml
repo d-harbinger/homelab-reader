@@ -1,0 +1,40 @@
+# Standalone Caddy reverse proxy — runs on its own, fronts the app services that
+# join the shared `homelab-proxy` network. STARTING POINT; see README.md.
+#
+# This is intentionally separate from the app compose files so it can front
+# multiple projects (reader, chimera, …) without any one of them owning it.
+
+name: homelab-proxy
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: homelab-proxy
+    restart: unless-stopped
+    ports:
+      # The proxy owns 80/443 on the host; the app services stop publishing
+      # their own host ports once they route through here.
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data # certs + CA — persist so they survive restarts
+      - caddy-config:/config
+    networks:
+      - homelab-proxy
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE # bind 80/443 without running as root
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  caddy-data:
+  caddy-config:
+
+networks:
+  # Shared, created once outside this file (see README): docker network create homelab-proxy
+  homelab-proxy:
+    name: homelab-proxy
+    external: true

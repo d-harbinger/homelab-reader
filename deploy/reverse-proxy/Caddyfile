@@ -1,0 +1,27 @@
+# Caddy reverse proxy for a homelab — STARTING POINT, not wired into the live
+# stack. Fronts homelab-reader (and, when ready, the sibling chimera service) by
+# hostname so individual host ports stop mattering. Adopt by following README.md.
+#
+# Each app joins a shared external Docker network (default: homelab-proxy) and
+# Caddy reaches it by container/service name on its INTERNAL port (3000 for a
+# Next.js app) — the published host port (3334) is no longer needed once traffic
+# comes through the proxy.
+
+{
+	# LAN HTTPS with Caddy's built-in CA (certs are self-signed — trust the root
+	# once per client, or accept the browser warning). For a real public domain,
+	# delete this block and Caddy will use Let's Encrypt automatically.
+	local_certs
+}
+
+# Reader. Point a DNS record (or /etc/hosts on each client) at the proxy host:
+#   reader.home.lan  ->  <homelab-ip>
+reader.home.lan {
+	reverse_proxy homelab-reader:3000
+}
+
+# Sibling dashboard — uncomment once chimera joins the homelab-proxy network.
+# Adjust the internal port if chimera does not listen on 3000.
+# chimera.home.lan {
+# 	reverse_proxy chimera:3000
+# }
