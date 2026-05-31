@@ -162,3 +162,140 @@ describe("opdsChallenge — 401 + WWW-Authenticate (OPDS-02)", () => {
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// Route-level enforcement: every OPDS GET 401s without a valid token and
+// returns the feed with one (OPDS-01/02). Handlers are imported dynamically so
+// the hoisted vi.mock("@/lib/prisma") is already in place.
+// ---------------------------------------------------------------------------
+const OPDS_ROUTES = [
+  { name: "/api/opds", mod: "@/app/api/opds/route", url: "http://t/api/opds" },
+  { name: "/api/opds/all", mod: "@/app/api/opds/all/route", url: "http://t/api/opds/all" },
+  {
+    name: "/api/opds/recent",
+    mod: "@/app/api/opds/recent/route",
+    url: "http://t/api/opds/recent",
+  },
+] as const;
+
+describe("OPDS routes — unauthenticated -> 401 + challenge (OPDS-02)", () => {
+  for (const route of OPDS_ROUTES) {
+    it(`${route.name} with no Authorization -> 401 + WWW-Authenticate`, async () => {
+      const { GET } = (await import(route.mod)) as {
+        GET: (req: Request) => Promise<Response>;
+      };
+      const res = await GET(new Request(route.url));
+      expect(res.status).toBe(401);
+      expect(res.headers.get("www-authenticate")).toBe(
+        'Basic realm="homelab-reader OPDS"',
+      );
+    });
+
+    it(`${route.name} with a wrong token -> 401, not the feed`, async () => {
+      const { GET } = (await import(route.mod)) as {
+        GET: (req: Request) => Promise<Response>;
+      };
+      const res = await GET(
+        new Request(route.url, {
+          headers: { Authorization: bearer("totally-wrong") },
+        }),
+      );
+      expect(res.status).toBe(401);
+    });
+  }
+});
+
+describe("OPDS routes — valid token -> 200 + feed (OPDS-01)", () => {
+  it("/api/opds with valid Basic -> 200 + OPDS feed root", async () => {
+    const { GET } = (await import("@/app/api/opds/route")) as {
+      GET: (req: Request) => Promise<Response>;
+    };
+    const res = await GET(
+      new Request("http://t/api/opds", {
+        headers: { Authorization: basic("alice", TOKEN_A) },
+      }),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.text();
+    expect(body).toContain("<feed");
+  });
+
+  it("/api/opds with valid Bearer -> 200", async () => {
+    const { GET } = (await import("@/app/api/opds/route")) as {
+      GET: (req: Request) => Promise<Response>;
+    };
+    const res = await GET(
+      new Request("http://t/api/opds", {
+        headers: { Authorization: bearer(TOKEN_A) },
+      }),
+    );
+    expect(res.status).toBe(200);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Progress attribution: a POST over the OPDS path lands on the TOKEN OWNER's
+// Progress row, never anonymously and never another user (OPDS-03, T-02-04).
+// ---------------------------------------------------------------------------
+describe("OPDS progress write attributed to the token owner (OPDS-03)", () => {
+  it("POST /api/opds/progress with Alice's token writes Alice's row", async () => {
+    const { POST } = (await import("@/app/api/opds/progress/route")) as {
+      POST: (req: Request) => Promise<Response>;
+    };
+    const res = await POST(
+      new Request("http://t/api/opds/progress", {
+        method: "POST",
+        headers: {
+          Authorization: basic("alice", TOKEN_A),
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          bookId: seed.bookId,
+          anchor: { type: "epub-cfi", cfi: "/6/4" },
+          percent: 1.5, // out of range on purpose -> must clamp to 1
+        }),
+      }),
+    );
+    expect(res.status).toBe(200);
+
+    const row = await h.prisma.progress.findUnique({
+      where: { bookId_userId: { bookId: seed.bookId, userId: seed.userA } },
+    });
+    expect(row).not.toBeNull();
+    expect(row?.userId).toBe(seed.userA);
+    expect(row?.percent).toBe(1); // clamped 0..1
+
+    // And NOT attributed to Bob.
+    const bobRow = await h.prisma.progress.findUnique({
+      where: { bookId_userId: { bookId: seed.bookId, userId: seed.userB } },
+    });
+    expect(bobRow).toBeNull();
+  });
+
+  it("POST /api/opds/progress with no token -> 401, no row written", async () => {
+    const { POST } = (await import("@/app/api/opds/progress/route")) as {
+      POST: (req: Request) => Promise<Response>;
+    };
+    // Use a fresh book so we can assert nothing was written for it.
+    const book = await h.prisma.book.create({
+      data: { filePath: "/seed/unauth.epub", format: "epub", title: "Unauth" },
+    });
+    const res = await POST(
+      new Request("http://t/api/opds/progress", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          bookId: book.id,
+          anchor: { type: "epub-cfi", cfi: "/6/2" },
+          percent: 0.3,
+        }),
+      }),
+    );
+    expect(res.status).toBe(401);
+    expect(res.headers.get("www-authenticate")).toBe(
+      'Basic realm="homelab-reader OPDS"',
+    );
+    const count = await h.prisma.progress.count({ where: { bookId: book.id } });
+    expect(count).toBe(0);
+  });
+});
