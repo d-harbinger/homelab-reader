@@ -56,9 +56,12 @@ const nextConfig: NextConfig = {
     // dev ignores this and does not hit the issue.
     if (nextRuntime !== "nodejs") {
       config.plugins.push(
-        new webpack.NormalModuleReplacementPlugin(/^node:/, (resource) => {
-          resource.request = resource.request.replace(/^node:/, "");
-        }),
+        new webpack.NormalModuleReplacementPlugin(
+          /^node:/,
+          (resource: { request: string }) => {
+            resource.request = resource.request.replace(/^node:/, "");
+          },
+        ),
       );
       config.resolve.fallback = {
         ...config.resolve.fallback,
