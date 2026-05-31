@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 02-01-PLAN.md (OPDS token model + in-route Basic/Bearer guard on all 3 OPDS routes + OPDS-context progress + auth tests). Source-asserted; host-run gates (prisma migrate dev, tsc, test, build) pending.
-last_updated: "2026-05-31T03:26:00Z"
-last_activity: 2026-05-31 -- Plan 02-01 executed (OPDS per-user auth server core authored; host migrate+test pending)
+stopped_at: Completed 02-02-PLAN.md (OPDS token management REST mint/list/revoke + per-user /settings/tokens page + TokenManager copy-once UI + nav link + isolation tests). Source-asserted; host-run gates (prisma migrate dev, tsc, test, build) pending.
+last_updated: "2026-05-30T20:33:00Z"
+last_activity: 2026-05-30 -- Plan 02-02 executed (OPDS token management REST + copy-once UI authored; host migrate+test pending)
 progress:
   total_phases: 3
   completed_phases: 0
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-05-31)
 ## Current Position
 
 Phase: 02 (opds-per-user-authentication) — EXECUTING
-Plan: 02-01 of 2 (server core authored; token-management UI plan still to come)
-Status: Plan 02-01 complete in source (OpdsToken model + authenticateOpds guard + 3 guarded routes + /api/opds/progress + auth tests). Awaits the host-run gate (prisma migrate dev --name opds_tokens, then tsc/test/build) before /gsd:verify-work. Phase 01 host-run green gate still pending too.
-Last activity: 2026-05-31 -- Plan 02-01 executed (OPDS per-user auth server core authored; host migrate+test pending)
+Plan: 02-02 of 2 (token-management REST + copy-once UI authored; both phase-02 plans now authored)
+Status: Plan 02-02 complete in source (mint/list/revoke REST + /settings/tokens per-user page + TokenManager copy-once UI + LibraryHeader nav link + tests/opds-tokens.test.ts isolation suite). Awaits the same host-run gate as 02-01 (prisma migrate dev --name opds_tokens, then tsc/test/build) before /gsd:verify-work — the token test shares the opds_tokens migration. Phase 01 host-run green gate still pending too.
+Last activity: 2026-05-30 -- Plan 02-02 executed (OPDS token management REST + copy-once UI authored; host migrate+test pending)
 
 Progress: [█████░░░░░] 50%
 
@@ -70,8 +70,18 @@ Recent decisions affecting current work:
 - OPDS tokens hashed with SHA-256 (high-entropy opaque secret -> fast crypto hash correct, not bcrypt); looked up by tokenHash, timingSafeEqual confirm; no plaintext column.
 - authenticateOpds returns the full User row; routes use user.id for progress attribution.
 - OPDS-context progress gets its own route (/api/opds/progress, token-authed); the web /api/progress stays on the cookie session, untouched.
+- OPDS token mint reuses the 02-01 shape: randomBytes(32).toString("base64url") minted, sha256 hex stored; plaintext returned ONCE by POST, never by GET (explicit Prisma select excludes tokenHash), revoke uses notes/[id]-style ownership 404.
+- /settings/tokens is per-user (NOT admin-gated); its nav link sits outside the LibraryHeader isAdmin block so every signed-in user can reach it.
 
 ### Pending Todos
+
+- **HOST-RUN GATE — Plan 02-02 (blocks Phase 02 verify; shares the 02-01 migration):** the token-management REST + copy-once UI are authored-but-unrun and reference `prisma.opdsToken`. `tests/opds-tokens.test.ts` applies the committed migrations (incl. `opds_tokens`) to a temp DB, so it depends on the 02-01 `prisma migrate dev --name opds_tokens` having run. On the host, in repo root:
+  1. `npx prisma migrate dev --name opds_tokens` (if not already run from 02-01) — generates/applies the migration + regenerates the client.
+  2. `npx tsc --noEmit` — expect clean.
+  3. `npm test -- opds-tokens` — expect green: mint-once + hash stored, list omits token/hash, cross-user revoke 404 + row survives, signed-out 401s.
+  4. `npm run build` — expect clean.
+  5. Smoke: sign in as a non-admin, open `/settings/tokens`, mint a labelled token, see it once with copy + "won't see again" warning, see it in the list (no raw token), revoke it; confirm the nav link shows for non-admins.
+  - No host command above was run in-agent; none is claimed to pass. Agent-side acceptance = source assertions only.
 
 - **HOST-RUN GATE — Plan 02-01 (blocks Phase 02 verify):** the OPDS auth code is authored-but-unrun and references `prisma.opdsToken`, whose TS types exist only after the host generates the client. On the host, in repo root, run in order:
   1. `npx prisma migrate dev --name opds_tokens` — generates + applies the migration AND regenerates the Prisma client. Commit the generated `prisma/migrations/<ts>_opds_tokens/` together with the schema (schema already committed at `899a6a0`; add the migration in a follow-up commit on the host).
@@ -110,6 +120,6 @@ Items acknowledged and carried forward (v2 / out of scope this milestone):
 
 ## Session Continuity
 
-Last session: 2026-05-31
-Stopped at: Completed 02-01-PLAN.md (OPDS per-user auth server core: OpdsToken model + authenticateOpds guard + 3 guarded routes + /api/opds/progress + auth tests). Source-asserted; host-run gate (prisma migrate dev --name opds_tokens, then tsc/test/build) pending.
-Resume file: .planning/phases/02-opds-per-user-authentication/02-01-SUMMARY.md
+Last session: 2026-05-30
+Stopped at: Completed 02-02-PLAN.md (OPDS token management: mint/list/revoke REST + per-user /settings/tokens page + TokenManager copy-once UI + LibraryHeader nav link + tests/opds-tokens.test.ts isolation suite). Source-asserted; host-run gate (prisma migrate dev --name opds_tokens, then tsc/test/build) pending and shared with 02-01.
+Resume file: .planning/phases/02-opds-per-user-authentication/02-02-SUMMARY.md
