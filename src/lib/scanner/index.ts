@@ -47,19 +47,18 @@ export async function scanFile(filePath: string): Promise<void> {
 
   const hash = await fileHash(filePath);
 
-  const byHash = await prisma.book.findFirst({ where: { fileHash: hash } });
-  if (byHash) {
-    if (byHash.filePath !== filePath) {
-      await prisma.book.update({
-        where: { id: byHash.id },
-        data: { filePath, scannedAt: new Date() },
-      });
-    }
-    return;
-  }
-
+  // Resolve by PATH first. This ordering is load-bearing: the only filePath-
+  // mutating write below is the move-repoint, and checking the path first
+  // guarantees it can never target a path another row already owns (such a path
+  // resolves here instead). The old code matched by hash first and always
+  // repointed, which crashed when two identical files coexisted — the update
+  // tried to claim an occupied filePath ("Unique constraint failed on filePath").
   const byPath = await prisma.book.findUnique({ where: { filePath } });
   if (byPath) {
+    if (byPath.fileHash === hash) {
+      // Known file, unchanged since last scan.
+      return;
+    }
     // Content changed in place. Re-extract; keep the Book.id (and
     // notes/highlights/progress linked to it).
     const extracted = await extractFor(format, filePath);
@@ -90,6 +89,21 @@ export async function scanFile(filePath: string): Promise<void> {
         data: { coverPath: coverFile },
       });
     }
+    return;
+  }
+
+  // No row at this path, but a book with identical content may exist — the file
+  // was renamed/moved. Repoint that row so notes/highlights/progress follow the
+  // file (preserving them across a rename, as before). This is now crash-safe:
+  // we only get here when `filePath` is unoccupied (byPath was null above), so
+  // the update can never collide with another row's unique filePath. Two
+  // duplicate files therefore converge on one row instead of crashing.
+  const byHash = await prisma.book.findFirst({ where: { fileHash: hash } });
+  if (byHash) {
+    await prisma.book.update({
+      where: { id: byHash.id },
+      data: { filePath, scannedAt: new Date() },
+    });
     return;
   }
 
