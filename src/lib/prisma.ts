@@ -24,6 +24,12 @@ if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
 // mount, or any PRAGMA failure logs a warning and is skipped rather than
 // crashing boot. WAL is durable in the database file, so re-applying it on
 // every boot is cheap and idempotent.
+//
+// Use $queryRawUnsafe, NOT $executeRawUnsafe: `PRAGMA journal_mode=WAL` RETURNS a
+// row (the resulting mode), and $executeRawUnsafe rejects any result-returning
+// statement ("Execute returned results, which is not allowed in SQLite") — which
+// silently no-op'd WAL on every boot. $queryRawUnsafe accepts both row-returning
+// and silent PRAGMAs.
 export async function applySqlitePragmas(): Promise<void> {
   const pragmas = [
     "PRAGMA journal_mode=WAL",
@@ -31,7 +37,7 @@ export async function applySqlitePragmas(): Promise<void> {
   ];
   for (const pragma of pragmas) {
     try {
-      await prisma.$executeRawUnsafe(pragma);
+      await prisma.$queryRawUnsafe(pragma);
     } catch (err) {
       console.warn(
         `[prisma] skipped "${pragma}":`,
