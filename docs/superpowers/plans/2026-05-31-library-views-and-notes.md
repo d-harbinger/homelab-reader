@@ -26,6 +26,28 @@ All on `main`, unit-tested, no DB/network:
 
 ---
 
+## Automation guardrails (READ FIRST for unattended / per-slice runs)
+
+Execute ONE slice (= one Task) per run, gated on its own verification, then stop.
+This codebase has a hard split: logic + API routes + builds verify IN this
+environment; anything visual (browser) or container-runtime only the human can
+confirm. Do NOT batch slices and "verify visually at the end" — the runtime layer
+is exactly where bugs hide and the one this environment can't see.
+
+- ✅ **Auto-completable** (gate = tests + tsc + build all green, then commit):
+  - **Phase 0 · Task 0** (Dependabot patches)
+  - **Phase 1 · Task 1** (`/api/library/folders` route — has its own Vitest test)
+- 🛑 **STOP for a human — do NOT auto-run unattended:**
+  - **Phase 1 · Task 2** (UI — needs a browser to verify; no in-env gate)
+  - **Phase 2** (needs `prisma migrate dev` + the collections-cardinality decision)
+  - **Phase 3** (blocked on the notes-export-target decision)
+- 🚫 **Never** guess a value for a "Decisions to bring" item, and never run
+  `prisma migrate dev` unattended. If a slice needs either, stop and leave a note.
+
+A clean unattended run = vulns patched + the folder API landed/tested, nothing else.
+
+---
+
 ## Phase 0: Security triage (do first)
 
 ### Task 0: Resolve Dependabot alerts
