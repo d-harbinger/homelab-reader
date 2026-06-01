@@ -4,6 +4,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { prisma } from "@/lib/prisma";
+import { authenticateReaderRequest } from "@/lib/reader-auth";
+import { opdsChallenge } from "@/lib/opds-auth";
 
 const MIME: Record<string, string> = {
   epub: "application/epub+zip",
@@ -111,6 +113,12 @@ export async function GET(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  // Dual-auth: this route is exempt from the cookie-only middleware gate
+  // (src/auth.config.ts) so it self-guards — a valid browser cookie session OR
+  // a valid OPDS token. Authenticate BEFORE the DB lookup so an unauthenticated
+  // caller cannot probe which book ids exist via the 404/200 distinction.
+  if (!(await authenticateReaderRequest(req))) return opdsChallenge();
+
   const { id } = await params;
   const book = await prisma.book.findUnique({ where: { id } });
   if (!book) return new NextResponse(null, { status: 404 });
