@@ -1,0 +1,84 @@
+// Derive a browsable folder/shelf tree from books' on-disk paths.
+//
+// The library's baseline structure IS the directory layout the user already
+// maintains (python/, ai/, …). Rather than invent a taxonomy, mirror it: group
+// each book by the folder it lives in, relative to the scan root it falls under.
+// Pure and deterministic — no DB, no fs — so the API layer can build it from a
+// `book.findMany({ select: { filePath: true } })` and a list of ScanLocation paths.
+
+export interface FolderNode {
+  /** Folder name (last path segment). "" for the virtual root. */
+  name: string;
+  /** Path relative to the scan root, e.g. "python/web". "" for the root. */
+  path: string;
+  /** Books sitting directly in this folder. */
+  bookCount: number;
+  /** Books in this folder and everything below it. */
+  totalCount: number;
+  children: FolderNode[];
+}
+
+function newNode(name: string, path: string): FolderNode {
+  return { name, path, bookCount: 0, totalCount: 0, children: [] };
+}
+
+// Directory segments of `filePath` relative to the longest matching root, with
+// the filename dropped. null if the file isn't under any root.
+function dirSegmentsUnderRoot(
+  filePath: string,
+  roots: string[],
+): string[] | null {
+  const normalized = roots
+    .map((r) => r.replace(/\/+$/, ""))
+    .sort((a, b) => b.length - a.length); // longest (most specific) first
+
+  for (const root of normalized) {
+    const prefix = `${root}/`;
+    if (filePath.startsWith(prefix)) {
+      const segs = filePath.slice(prefix.length).split("/");
+      segs.pop(); // drop the filename
+      return segs;
+    }
+  }
+  return null;
+}
+
+export function buildFolderTree(
+  books: { filePath: string }[],
+  roots: string[],
+): FolderNode {
+  const root = newNode("", "");
+
+  for (const book of books) {
+    root.totalCount++;
+
+    const segs = dirSegmentsUnderRoot(book.filePath, roots);
+    if (!segs || segs.length === 0) {
+      // Directly under a scan root (or unrooted) — counts at the top level.
+      root.bookCount++;
+      continue;
+    }
+
+    let node = root;
+    let rel = "";
+    for (const seg of segs) {
+      rel = rel ? `${rel}/${seg}` : seg;
+      let child = node.children.find((c) => c.name === seg);
+      if (!child) {
+        child = newNode(seg, rel);
+        node.children.push(child);
+      }
+      child.totalCount++;
+      node = child;
+    }
+    node.bookCount++;
+  }
+
+  const sortRecursive = (n: FolderNode) => {
+    n.children.sort((a, b) => a.name.localeCompare(b.name));
+    n.children.forEach(sortRecursive);
+  };
+  sortRecursive(root);
+
+  return root;
+}
