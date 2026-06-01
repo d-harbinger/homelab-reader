@@ -45,6 +45,24 @@ const nextConfig: NextConfig = {
   // next-error-browser-binary-loader). pdf-to-img wraps canvas too and is
   // already here for the same reason.
   serverExternalPackages: ["pdfjs-dist", "yauzl", "pdf-to-img", "@napi-rs/canvas"],
+  // Standalone dep-tracing (@vercel/nft) copies pdfjs's main entry (pdf.mjs) but
+  // NOT its worker: pdfjs loads pdf.worker.mjs through a runtime-resolved
+  // "fake worker" path that static tracing can't follow. Without the worker in
+  // the standalone output, getDocument() throws at runtime in the container
+  // ("Setting up fake worker failed: Cannot find module ...pdf.worker.mjs"), so
+  // every PDF fails to import while EPUBs (no worker) import fine. Force the
+  // worker into the traced output. pdf-to-img (cover rendering) additionally
+  // does require.resolve("pdfjs-dist/package.json") to locate the package, which
+  // tracing also drops — without it covers fail (non-fatal: that path is
+  // try/caught and degrades to the format placeholder, but include it so covers
+  // render). Verified by reproducing both failures under Alpine musl against the
+  // trimmed standalone tree, then confirming the fix.
+  outputFileTracingIncludes: {
+    "/**/*": [
+      "./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
+      "./node_modules/pdfjs-dist/package.json",
+    ],
+  },
   webpack: (config, { nextRuntime, webpack }) => {
     // instrumentation.ts boots the Node-only folder scanner (chokidar + yauzl +
     // pdfjs + our hash/locations helpers). Next also compiles instrumentation for
