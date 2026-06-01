@@ -24,6 +24,12 @@ interface Props {
 
 const ZOOM_STEPS = [60, 75, 90, 100, 110, 125, 150, 175, 200, 250];
 
+// Scroll mode renders a WINDOW of pages on each side of the current page and
+// leaves the rest as height-estimated spacers. Rendering every page at once
+// mounts one full PDF.js canvas + text layer PER PAGE simultaneously, which
+// pegs CPU/memory and freezes the browser (and the host) on long PDFs.
+const SCROLL_WINDOW = 3;
+
 function stepZoom(current: number, delta: number): number {
   const idx = ZOOM_STEPS.indexOf(current);
   const target = Math.max(0, Math.min(ZOOM_STEPS.length - 1, idx + delta));
@@ -157,6 +163,10 @@ export function PdfReader({
   // baseRenderWidth = fit-to-width, then user zoom factor applied.
   const baseRenderWidth = Math.min(Math.max(width - 80, 320), 1100);
   const renderWidth = (baseRenderWidth * zoom) / 100;
+  // Spacer height for off-window pages (~US-Letter aspect). Rough is fine: the
+  // current page and its neighbors always render real, so any layout shift
+  // happens off-screen at the window edges.
+  const estPageHeight = Math.round(renderWidth * 1.3);
   const progressPct = numPages > 0 ? (page / numPages) * 100 : 0;
 
   return (
@@ -213,8 +223,13 @@ export function PdfReader({
             <div className="flex flex-col items-center gap-4 py-6">
               {width > 0 &&
                 numPages > 0 &&
-                Array.from({ length: numPages }, (_, i) => i + 1).map(
-                  (p) => (
+                Array.from({ length: numPages }, (_, i) => i + 1).map((p) => {
+                  // Only mount the real <Page> for pages within the window of
+                  // the current page; everything else is a sized spacer. The
+                  // wrapper (ref + data-page) always renders so scroll length
+                  // and the IntersectionObserver page-tracking stay intact.
+                  const active = Math.abs(p - page) <= SCROLL_WINDOW;
+                  return (
                     <div
                       key={p}
                       data-page={p}
@@ -222,17 +237,26 @@ export function PdfReader({
                         if (el) pageRefs.current.set(p, el);
                         else pageRefs.current.delete(p);
                       }}
-                      className="shadow-2xl shadow-black/60"
+                      className={active ? "shadow-2xl shadow-black/60" : ""}
                     >
-                      <Page
-                        pageNumber={p}
-                        width={renderWidth}
-                        renderAnnotationLayer={false}
-                        renderTextLayer
-                      />
+                      {active ? (
+                        <Page
+                          pageNumber={p}
+                          width={renderWidth}
+                          renderAnnotationLayer={false}
+                          renderTextLayer
+                        />
+                      ) : (
+                        <div
+                          style={{ width: renderWidth, height: estPageHeight }}
+                          className="flex items-center justify-center bg-zinc-900/40 text-xs text-zinc-700"
+                        >
+                          {p}
+                        </div>
+                      )}
                     </div>
-                  ),
-                )}
+                  );
+                })}
             </div>
           )}
         </Document>
