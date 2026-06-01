@@ -160,6 +160,29 @@ describe("scanFile reconcile branches (TEST-03)", () => {
     expect(books[0].title).toBe("Valid Fixture One");
     expect(books[0].format).toBe("epub");
   });
+
+  it("Branch A (dup) — duplicate content never collides on filePath (regression)", async () => {
+    // Two identical files coexisting (a duplicate book dropped into the library
+    // twice). The old hash-FIRST reconcile repointed a hash-matched row onto a
+    // path another row already owned → "Unique constraint failed on `filePath`",
+    // surfaced to the user as a bogus "couldn't be read" failed import.
+    const a = stage(VALID_EPUB, "dup-a.epub");
+    await scanFile(a);
+    const first = await h.prisma.book.findFirstOrThrow();
+
+    // Seed the exact pre-crash DB state: a second row with the SAME content hash
+    // at a different, still-present path (how concurrent scans of duplicates can
+    // leave things). Re-scanning a real file must reconcile without throwing —
+    // the path-first reconcile guarantees the repoint never targets an owned path.
+    const b = stage(VALID_EPUB, "dup-b.epub");
+    await h.prisma.book.create({
+      data: { filePath: b, fileHash: first.fileHash, format: "epub", title: "Dup" },
+    });
+
+    await expect(scanFile(b)).resolves.toBeUndefined();
+    await expect(scanFile(a)).resolves.toBeUndefined();
+    expect((await h.prisma.book.findMany()).length).toBeGreaterThanOrEqual(1);
+  });
 });
 
 describe("malformed archive → FailedImport, not a silent drop (TEST-03 / ROBUST-05)", () => {
