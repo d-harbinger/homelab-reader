@@ -64,10 +64,16 @@ interface RenditionLike {
   };
   getContents(): ContentsLike[];
 }
+interface SpineItemLike {
+  href: string;
+  index: number;
+  linear?: string;
+}
 interface BookLike {
   ready: Promise<unknown>;
   destroy(): void;
   renderTo(target: HTMLElement, opts: Record<string, unknown>): RenditionLike;
+  spine: { items: SpineItemLike[] };
   locations: {
     generate(charsPerLocation: number): Promise<unknown>;
     percentageFromCfi(cfi: string): number;
@@ -239,7 +245,24 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
       rendition.themes.select("homelab-dark");
       rendition.themes.fontSize(`${fontPercent}%`);
 
-      await rendition.display(initialCfi ?? undefined);
+      // Where to open. With saved progress, honor the CFI. With NO progress,
+      // skip the cover (the first spine item) and open the first real content
+      // section, so "Read" lands in the book instead of the cover. The cover
+      // stays one page-back away.
+      let target: string | undefined = initialCfi ?? undefined;
+      if (!initialCfi) {
+        try {
+          await book.ready;
+          if (cancelled) return;
+          const items = book.spine?.items ?? [];
+          const firstContent =
+            items.find((it) => it.index > 0 && it.linear !== "no") ?? items[1];
+          if (firstContent?.href) target = firstContent.href;
+        } catch {
+          /* fall back to the default first section (cover) */
+        }
+      }
+      await rendition.display(target);
       if (cancelled) return;
       setReady(true);
 
