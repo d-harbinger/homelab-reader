@@ -45,6 +45,8 @@ import {
   POST as locationsPost,
 } from "@/app/api/locations/route";
 import { GET as fsGet } from "@/app/api/fs/route";
+import { GET as bookFileGet } from "@/app/api/books/[id]/file/route";
+import { GET as coverGet } from "@/app/api/covers/[id]/route";
 
 // Reset to signed-out before each test so a leaked session can't mask a gate.
 beforeEach(() => {
@@ -127,4 +129,39 @@ describe("Admin routes reject non-admin + unauthenticated (AUTHZ-04)", () => {
       await expect403(await call());
     });
   }
+});
+
+// ---------------------------------------------------------------------------
+// AUTHZ — book-file and cover routes are exempt from the cookie-only
+// middleware gate (src/auth.config.ts) so they must self-guard in-route via
+// authenticateReaderRequest. A signed-out request carrying no OPDS token must
+// be rejected with the OPDS 401 challenge (NOT served, and NOT the JSON
+// {error} shape — these routes answer with WWW-Authenticate so OPDS clients
+// prompt). The no-token reject short-circuits before any Prisma call, so this
+// stays DB-free like the rest of this suite. (Token/cookie accept-paths are
+// proven against a real DB in tests/reader-auth.test.ts.)
+// ---------------------------------------------------------------------------
+async function expectChallenge401(res: Response) {
+  expect(res.status).toBe(401);
+  expect(res.headers.get("WWW-Authenticate")).toBeTruthy();
+}
+
+describe("Binary-content routes self-guard (AUTHZ — dual-auth)", () => {
+  it("GET /api/books/[id]/file -> 401 challenge when signed out, no token", async () => {
+    signOut();
+    const res = await bookFileGet(
+      new Request("http://test/api/books/any-id/file"),
+      idCtx(),
+    );
+    await expectChallenge401(res);
+  });
+
+  it("GET /api/covers/[id] -> 401 challenge when signed out, no token", async () => {
+    signOut();
+    const res = await coverGet(
+      new Request("http://test/api/covers/any-id"),
+      idCtx(),
+    );
+    await expectChallenge401(res);
+  });
 });

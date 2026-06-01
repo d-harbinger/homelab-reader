@@ -42,6 +42,18 @@ export const authConfig = {
       // call that guard.
       if (pathname.startsWith("/api/opds")) return true;
 
+      // The OPDS acquisition feed links book bytes at /api/books/[id]/file and
+      // covers at /api/covers/[id], so both are fetched by OPDS clients (token,
+      // no cookie) as well as the browser reader. Like /api/opds they leave the
+      // cookie gate and authenticate in-route via authenticateReaderRequest
+      // (cookie OR token) — so a token-only client is not bounced to /login,
+      // and because the routes self-guard the exemption never leaves them open.
+      // The /file match is narrow on purpose: the rest of /api/books (listing,
+      // metadata, facets) stays cookie-gated.
+      if (pathname.startsWith("/api/covers/")) return true;
+      if (pathname.startsWith("/api/books/") && pathname.endsWith("/file"))
+        return true;
+
       // First-run setup and the login form are reachable while signed out.
       // /setup closes itself once an admin exists (enforced in the page);
       // /login bounces an already-signed-in user back to the library.

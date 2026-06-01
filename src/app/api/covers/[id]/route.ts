@@ -3,6 +3,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { prisma } from "@/lib/prisma";
 import { resolveCoverPath } from "@/lib/scanner/covers";
+import { authenticateReaderRequest } from "@/lib/reader-auth";
+import { opdsChallenge } from "@/lib/opds-auth";
 
 const MIME: Record<string, string> = {
   jpg: "image/jpeg",
@@ -13,9 +15,14 @@ const MIME: Record<string, string> = {
 };
 
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  // Dual-auth: middleware-exempt (src/auth.config.ts), so self-guard with a
+  // cookie session OR an OPDS token — covers are linked from the OPDS feed and
+  // fetched by both the browser and mobile clients. Gate before the DB lookup.
+  if (!(await authenticateReaderRequest(req))) return opdsChallenge();
+
   const { id } = await params;
   const book = await prisma.book.findUnique({ where: { id } });
   if (!book?.coverPath) {

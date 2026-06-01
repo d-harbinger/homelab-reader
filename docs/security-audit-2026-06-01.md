@@ -85,7 +85,14 @@ Baseline verification at audit time: `npx tsc --noEmit` clean;
 
 - **Location:** `src/app/api/books/[id]/file/route.ts` (whole file);
   `src/auth.config.ts:43`; `src/lib/opds.ts:113-115`.
-- **Status:** flagged (in-progress feature work; do not edit this pass).
+- **Status:** **FIXED 2026-06-01.** The recommended dual-auth was implemented (see
+  "Resolution" below). The book-file and cover routes now authenticate in-route
+  via `authenticateReaderRequest` (`src/lib/reader-auth.ts`) — a valid cookie
+  session **or** a valid OPDS token — and the same change exempts only
+  `/api/books/[id]/file` and `/api/covers/[id]` from the cookie gate, so the
+  routes are never briefly open. Verified: tsc clean, lint clean, 87/87 vitest
+  (incl. new `tests/reader-auth.test.ts` + 2 route gates in
+  `tests/authz-gates.test.ts`), production build green.
 - **What it is.** The OPDS acquisition feed advertises each book's download link
   as `/api/books/[id]/file` (`src/lib/opds.ts:113-115`), and the client handoff
   doc explicitly directs android-reader to download book bytes from
@@ -119,7 +126,8 @@ Baseline verification at audit time: `npx tsc --noEmit` clean;
 
 - **Location:** `src/app/api/covers/[id]/route.ts` (whole file);
   `src/lib/opds.ts:105-111`.
-- **Status:** flagged.
+- **Status:** **FIXED 2026-06-01** — resolved together with the HIGH finding
+  above (same dual-auth guard + middleware exemption).
 - **What it is.** The OPDS feed links covers at `/api/covers/[id]`
   (`src/lib/opds.ts:105-111`). Like the file route, the cover route has no
   in-route auth and sits behind the cookie-only middleware gate, so an OPDS
@@ -196,12 +204,43 @@ the intended LAN interface only, enforcing the `AUTH_SECRET` presence at boot,
 and HTTPS/reverse-proxy termination given that OPDS tokens travel as HTTP Basic
 credentials. These are deployment concerns, flagged for a human.
 
+## Resolution — dual-auth on binary-content routes (2026-06-01)
+
+The HIGH (book-file auth boundary) and the paired MEDIUM (cover route) were
+fixed in a follow-up change, on explicit maintainer instruction, after the
+read-only pass:
+
+- **New guard `authenticateReaderRequest(req)`** in `src/lib/reader-auth.ts`:
+  resolves a request to a user via **either** a valid NextAuth cookie session
+  (`getCurrentUser()`) **or** a valid per-user OPDS token (`authenticateOpds()`),
+  returning `null` when neither is present. It lives in its own module rather
+  than `opds-auth.ts` so the token module stays free of the `next-auth` import
+  graph (which otherwise breaks `opds-auth.ts`'s edge/test loading).
+- **Both routes self-guard before any DB lookup.**
+  `src/app/api/books/[id]/file/route.ts` and
+  `src/app/api/covers/[id]/route.ts` now call the guard first and answer
+  `opdsChallenge()` (401 + `WWW-Authenticate`) when it returns `null` — so an
+  unauthenticated caller cannot even probe which book ids exist.
+- **Middleware exemption added in the same change** (`src/auth.config.ts`):
+  `/api/covers/` and `/api/books/[id]/file` (narrow `endsWith("/file")` match —
+  the rest of `/api/books` stays cookie-gated) leave the cookie gate so a
+  token-only OPDS client is no longer bounced to `/login`. Because the routes
+  self-guard, the exemption never leaves them open. This closes the "latent
+  authorization gap on the eventual fix" called out in the HIGH finding.
+- **Regression tests:** `tests/reader-auth.test.ts` proves the cookie and token
+  accept-paths (and rejects none/unknown) against a real ephemeral SQLite DB;
+  `tests/authz-gates.test.ts` adds two route-level cases asserting both routes
+  answer a 401 challenge when signed out with no token.
+
+Outstanding from this finding set: the two transitive dependency advisories
+(`@xmldom/xmldom` via `epubjs`; `postcss` via `next`) still require breaking
+upgrades and were not touched.
+
 ## Verification
 
-- `npx tsc --noEmit` — clean.
-- `npx vitest run` — 9 files / 81 tests pass.
-- `npm audit` — 5 advisories (2 high, 3 moderate), all transitive; see findings.
+Read-only pass (initial): `npx tsc --noEmit` clean; `npx vitest run` 9 files /
+81 tests pass; `npm audit` 5 advisories (2 high, 3 moderate), all transitive.
 
-No source files were modified in this pass. Only this audit document is added.
-</content>
-</invoke>
+Dual-auth fix (2026-06-01): `npx tsc --noEmit` clean; `npx next lint` clean;
+`npx vitest run` **10 files / 87 tests pass**; `npm run build` (production,
+webpack) green.
