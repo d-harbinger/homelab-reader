@@ -86,3 +86,9 @@ next-env.d.ts
 
 # Inter-agent coordination mailbox (local only, never committed)
 .agent-comms/
+
+# Overnight autonomous-run scaffolding (graveyard.sh) — local only
+OVERNIGHT_PLAN.md
+NIGHT-LOG.md
+ASSUMPTIONS.md
+graveyard-logs/
