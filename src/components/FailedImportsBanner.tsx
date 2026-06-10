@@ -3,8 +3,7 @@
 import { useState } from "react";
 import useSWR from "swr";
 import { AlertTriangle, X } from "lucide-react";
-
-const fetcher = (url: string) => fetch(url).then((r) => r.json());
+import { fetcher } from "@/lib/fetcher";
 
 interface FailedImport {
   id: string;

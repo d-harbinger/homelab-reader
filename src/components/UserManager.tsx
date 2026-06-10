@@ -3,8 +3,7 @@
 import { useState, type FormEvent } from "react";
 import useSWR from "swr";
 import { KeyRound, Shield, ShieldOff, Trash2, UserPlus } from "lucide-react";
-
-const fetcher = (url: string) => fetch(url).then((r) => r.json());
+import { fetcher } from "@/lib/fetcher";
 
 interface ManagedUser {
   id: string;

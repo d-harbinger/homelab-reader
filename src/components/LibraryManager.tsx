@@ -3,8 +3,7 @@
 import { useState } from "react";
 import useSWR from "swr";
 import { ArrowUp, Folder, FolderPlus, Power, Trash2 } from "lucide-react";
-
-const fetcher = (url: string) => fetch(url).then((r) => r.json());
+import { fetcher } from "@/lib/fetcher";
 
 interface Location {
   id: string;

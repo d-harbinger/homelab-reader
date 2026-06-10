@@ -13,8 +13,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { ArrowLeft, Search, X } from "lucide-react";
 import { BookCard, type BookCardData } from "@/components/BookCard";
-
-const fetcher = (url: string) => fetch(url).then((r) => r.json());
+import { fetcher } from "@/lib/fetcher";
 
 interface Facets {
   tags: { name: string; count: number }[];

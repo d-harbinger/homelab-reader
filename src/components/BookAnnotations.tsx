@@ -5,8 +5,7 @@ import Link from "next/link";
 import useSWR from "swr";
 import { BookOpen, Pencil, Plus, Trash2, X } from "lucide-react";
 import { HIGHLIGHT_COLORS, type HighlightColor } from "@/lib/highlight-colors";
-
-const fetcher = (url: string) => fetch(url).then((r) => r.json());
+import { fetcher } from "@/lib/fetcher";
 
 interface Anchor {
   type: string;
