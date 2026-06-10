@@ -150,7 +150,7 @@ Each finding: **Tell** (what it looks like) · **Why** (why an AI does it) ·
 
 | # | Finding | Action | Status |
 |---|---------|--------|--------|
-| 1 | Unwired feature layer (377 LOC) | Decide: run the planned wiring session, or mark the core dormant in the plan doc | open |
+| 1 | Unwired feature layer (377 LOC) | Decide: run the planned wiring session, or mark the core dormant in the plan doc | **in progress** — owner ruled WIRE IT (2026-06-10). Executed the library-views plan's auto-completable slices: Phase 0 (Dependabot patches via overrides — postcss/xmldom) + Phase 1 Task 1 (`/api/library/folders` route, TDD, session-gated + path-private). Gate green (89 tests/tsc/build). Remaining: Phase 1 Task 2 (folder-browser UI) is browser/host-verify — owner-gated; citation surface + remaining modules still dormant pending later phases |
 | 2 | fetcher ×8 + Tailwind class soup ×7 | Lift `fetcher` to `src/lib/`; extract input/button primitives if growth continues; host-verify visuals | partial — fetcher lifted to `src/lib/fetcher.ts`, 8 sites rewired (tsc/lint/tests/build green); Tailwind class consolidation host-visual-gated, open |
 | 3 | Route boilerplate ×15 | `parseJson` + `withUser`/`withAdmin` helpers in one mechanical pass; fixes auth-before-DB ordering as a side effect | open |
 | 4 | CFI-matching rule ×2 | Shared `notesByHighlight` helper now; `Note.highlightId` migration as its own planned change | open |
