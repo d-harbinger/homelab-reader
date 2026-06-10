@@ -101,6 +101,6 @@ docker compose up -d --build   # host port 3334 (set HOMELAB_PORT to change)
   git config core.hooksPath scripts/hooks
   ```
 - Full-history audit: `bash scripts/audit-privacy.sh` before any public push.
-- See `/mnt/Projects/CLAUDE.md` §Workspace-Wide Privacy Policy for the
+- See `~/Projects/CLAUDE.md` §Workspace-Wide Privacy Policy for the
   full rationale.
 # homelab-reader

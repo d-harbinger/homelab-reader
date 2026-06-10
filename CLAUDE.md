@@ -57,7 +57,7 @@ Same shape as `chimera/`. When in doubt, reference how chimera does it.
 
 ## Privacy
 
-See `/mnt/Projects/CLAUDE.md` §Workspace-Wide Privacy Policy. This repo
+See `~/Projects/CLAUDE.md` §Workspace-Wide Privacy Policy. This repo
 ships the standard four pieces:
 
 1. `scripts/hooks/pre-commit` — staged-diff privacy guard
