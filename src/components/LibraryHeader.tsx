@@ -6,8 +6,7 @@ import { useRouter } from "next/navigation";
 import useSWR from "swr";
 import { BookOpen, FolderTree, KeyRound, LogOut, Search, Users } from "lucide-react";
 import { doSignOut } from "@/app/actions";
-
-const fetcher = (url: string) => fetch(url).then((r) => r.json());
+import { fetcher } from "@/lib/fetcher";
 
 interface HeaderProps {
   watchedPaths: string[];

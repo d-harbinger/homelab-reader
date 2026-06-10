@@ -6,6 +6,7 @@ import { LibraryHeader } from "@/components/LibraryHeader";
 import { FailedImportsBanner } from "@/components/FailedImportsBanner";
 import { Section } from "@/components/Section";
 import type { BookCardData } from "@/components/BookCard";
+import { fetcher } from "@/lib/fetcher";
 
 interface ScanStatus {
   running: boolean;
@@ -29,8 +30,6 @@ interface TagSection {
   tag: string;
   books: BookCardData[];
 }
-
-const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 export default function Home() {
   const { data: status, mutate: refreshStatus } = useSWR<ScanStatus>(
