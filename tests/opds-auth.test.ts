@@ -23,11 +23,8 @@ import {
   vi,
 } from "vitest";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
+import { rmSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { PrismaClient } from "@prisma/client";
 
 // --- hoisted: build the temp DB url + client before any module import -------
 // vi.hoisted runs ABOVE the top-level imports, so it imports what it needs
