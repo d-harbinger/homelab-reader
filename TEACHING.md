@@ -154,7 +154,7 @@ Each finding: **Tell** (what it looks like) · **Why** (why an AI does it) ·
 | 2 | fetcher ×8 + Tailwind class soup ×7 | Lift `fetcher` to `src/lib/`; extract input/button primitives if growth continues; host-verify visuals | open |
 | 3 | Route boilerplate ×15 | `parseJson` + `withUser`/`withAdmin` helpers in one mechanical pass; fixes auth-before-DB ordering as a side effect | open |
 | 4 | CFI-matching rule ×2 | Shared `notesByHighlight` helper now; `Note.highlightId` migration as its own planned change | open |
-| 5 | Test preamble unused imports | Delete 13 import lines; lint goes to zero | open |
+| 5 | Test preamble unused imports | Delete 13 import lines; lint goes to zero | done — lint 0/0, tests 87/87 |
 | 6 | Docs drift (epub2, `src/lib/reader/`, stray heading) | One docs pass, after the owner's in-flight README/CLAUDE.md edits land | open |
 
 No emergency here. #5 is safe any time; #3 then #2 are the highest-leverage mechanical
