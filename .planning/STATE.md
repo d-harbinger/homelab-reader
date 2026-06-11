@@ -4,8 +4,8 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: "Completed 03-02-PLAN.md (streaming book-file download with HTTP Range — 206/200/416 via createReadStream, RFC 7233 suffix-clamp; session-gated GET /api/scan/failures basename-only + dismissible FailedImportsBanner on the library page; tests/scanner.test.ts covering scanFile branches A/B/C + malformed→FailedImport against a real ephemeral SQLite DB, with committed fixtures). Source-asserted; host-run gates (prisma generate, tsc, npm test scanner suite, build, curl Range 206/416/Accept-Ranges, signed-out 401 on failures) pending."
-last_updated: "2026-05-30T21:02:00Z"
-last_activity: 2026-05-30
+last_updated: "2026-06-11T05:48:00Z"
+last_activity: 2026-06-11
 progress:
   total_phases: 3
   completed_phases: 2
@@ -28,9 +28,11 @@ See: .planning/PROJECT.md (updated 2026-05-31)
 Phase: 03 (resource-safety-robustness) — EXECUTING (both plans authored in source)
 Plan: 03-02 of 2 (streaming Range download + failed-import surface + scanner branch tests)
 Status: Plan 03-02 complete in source. file route streams via createReadStream with full HTTP Range semantics (206 + Content-Range/Content-Length, 200 full + Accept-Ranges, 416 only on start>=size/start>end, RFC 7233 suffix-clamp); GET /api/scan/failures is session-gated and returns basename-only (no full path leak); FailedImportsBanner is mounted on the library page below the header; tests/scanner.test.ts drives scanFile against a real ephemeral SQLite DB covering branch A (hash-match moved), B (same-path different valid bytes via valid2.epub), C (new file) + malformed→FailedImport, with small committed fixtures. Awaits host-run gate (prisma generate, tsc, npm test for the scanner suite, build, curl Range 206/416/Accept-Ranges, signed-out 401 on failures). ROBUST-03/ROBUST-05(full)/TEST-03 done in source.
-Last activity: 2026-05-30
 
-Progress: [██████████] 100% (source — host-run verify gates open)
+**Verify update 2026-06-11:** the in-VM gates are now green (VMM/libvirt dev box — builds/tests run in-VM, no longer host-only), re-run on top of Fable's latest (`2a9bf2f` SQL folder-filter fix, atop the `/api/fs` jailing `6309b30`). `prisma generate` (client v6.19.3), `tsc --noEmit`, `npm run lint` (0/0), `npx vitest run` (**18 files / 142 tests passed as of `2a9bf2f`** — covers scanner, opds-auth, opds-tokens, authz-gates, isolation, fs-route jail, folder-filter), and `npm run build` all pass. Remaining gates are live-instance behavioral only: curl Range 206/200/416 + `Accept-Ranges`, and signed-out `401` on `GET /api/scan/failures` + the failed-import banner — to be confirmed during the docker dogfood run.
+Last activity: 2026-06-11
+
+Progress: [██████████] 100% (source + in-VM gates verified 2026-06-11; only live-instance behavioral checks open)
 
 ## Performance Metrics
 
@@ -83,6 +85,8 @@ Recent decisions affecting current work:
 - Scanner branch B test uses a SECOND distinct fixture (valid2.epub) so the in-place overwrite differs in bytes; identical bytes would hit hash-match branch A instead (plan-check W-1). Malformed test asserts extractEpub throws AND replicates the watcher boundary (recordFailedImport) — scanFile itself does not record. EPUB/PDF fixtures minted with a hand-rolled store-only ZIP writer (no archiver dep; yauzl reads store-only).
 
 ### Pending Todos
+
+- **✅ IN-VM GATES CLOSED — 2026-06-11 (supersedes the static/typecheck/test/build steps of every gate below):** run in repo root on the VMM/libvirt dev box (in-VM execution is valid now; the host/VM "can't build here" constraint is stale). Results: `npm run db:generate` → Prisma Client v6.19.3 ✓ · `npx tsc --noEmit` → clean ✓ · `npm run lint` → 0 warnings / 0 errors ✓ · `npx vitest run` → **18 files / 142 tests passed (as of `2a9bf2f`)** ✓ (the full suite — scanner branch A/B/C + malformed, opds-auth, opds-tokens, authz-gates, isolation, fs-route jail, folder-filter — so the `npm test` step of the 01/02-01/02-02/03-01/03-02 gates is satisfied) · `npm run build` → compiled clean, all routes ✓. **Still open across the board:** only the live-instance *behavioral* checks that need a running server — curl Range `206`/`200`/`416` + `Accept-Ranges`, signed-out `401` on `GET /api/scan/failures` + the failed-import banner, OPDS `401`→`200` curl smoke, and the concurrent-save/no-`SQLITE_BUSY` + RSS observations. These are folded into the docker dogfood run (`docker compose up -d --build` on the host, pointed at the real library).
 
 - **HOST-RUN GATE — Plan 03-02 (blocks Phase 03 verify):** the streaming Range route, the failures endpoint + banner, and the scanner suite are authored-but-unrun. `tests/scanner.test.ts` runs `prisma migrate deploy` against a temp DB (applies the committed `20260601000000_failed_imports` migration) and uses `prisma.failedImport`, so it shares the Plan 03-01 generate gate. On the host, in repo root, run in order:
   1. `npx prisma generate` (so `prisma.failedImport` types exist for the route + tests).
@@ -138,7 +142,7 @@ Items acknowledged and carried forward (v2 / out of scope this milestone):
 | Security | Login rate limiting / lockout | Deferred (v2) | Milestone init |
 | Security | Transactional first-admin creation | Deferred (v2) | Milestone init |
 | OPDS | Feed pagination | Deferred (v2) | Milestone init |
-| Security | Confine `/api/fs` browse root to mounted volumes | Deferred (v2) | Milestone init |
+| Security | Confine `/api/fs` browse root to mounted volumes | ✅ Shipped 2026-06-11 (`6309b30` — jailed to configured root + uniform errors + fs-route test suite) | Milestone init |
 | Sync | Per-user data export / backup API | Deferred (v2) | Milestone init |
 | Scope | Per-user library scoping | Out of scope | Milestone init |
 | Refactor | EPUB reader refactor (`EpubReader.tsx`) | Out of scope | Milestone init |
