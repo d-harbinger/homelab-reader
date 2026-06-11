@@ -40,7 +40,9 @@ npm run dev     # http://localhost:3000
 already set. After signing in, an admin adds library folders in-app from
 **Settings → Libraries** by browsing the server's filesystem; `BOOKS_PATH`,
 if set, is adopted as the first library on first run but is otherwise
-optional.
+optional. Filesystem browsing is confined to a single root, `FS_BROWSE_ROOT`
+(default: the container's `/app/books` mount, or the home directory in
+development) — set it to restrict where the picker can reach.
 
 A preflight check runs before the dev server and, if anything required is
 missing, prints exactly what to fix instead of a cryptic stack trace. Run it
