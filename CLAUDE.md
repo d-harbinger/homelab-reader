@@ -34,7 +34,7 @@ notes shape, same privacy posture.
 - TailwindCSS v4
 - NextAuth v5 (multi-user credentials, bcrypt + JWT; first-run admin setup, admin-managed accounts)
 - chokidar — folder watch
-- epub2, pdfjs-dist — server-side metadata + cover
+- In-house EPUB extraction (yauzl + fast-xml-parser), pdfjs-dist — server-side metadata + cover
 - epub.js, PDF.js — client-side reader
 
 Same shape as `chimera/`. When in doubt, reference how chimera does it.
@@ -75,14 +75,17 @@ git config core.hooksPath scripts/hooks
 real names, internal hostnames, or per-clone tokens into any file or
 commit message.** The hook is a safety net, not the primary defense.
 
-## Architecture (target — Phase 0 is just scaffold)
+## Architecture (current)
 
 - `prisma/schema.prisma` — Book, Author, Note, Highlight, Progress, Tag, ScanLocation, User
-- `src/lib/scanner/` — folder watcher + per-format extractors (EPUB via epub2, PDF via pdfjs-dist)
-- `src/lib/reader/` — server-side helpers for the web reader (CFI for EPUB, page+selection for PDF)
+- `src/lib/scanner/` — folder watcher + per-format extractors (in-house EPUB extraction with yauzl + fast-xml-parser, PDF via pdfjs-dist)
 - `src/app/api/opds/` — OPDS 1.2 catalog endpoint, the bridge to android-reader
 - `src/app/api/books/`, `src/app/api/notes/`, etc. — REST around the DB
-- `src/app/(library)/` — library list + book detail + reader UI
+- `GET /api/library/folders` — folder tree of the indexed library (admin-selected roots)
+- `GET /api/books?folder=` — books filtered to a root-relative folder path (and what sits under it)
+- `GET /api/books/[id]/annotations` — a book's highlights and notes as a Markdown export
+- `GET /api/books/[id]/citation` — citation metadata for a book
+- `src/app/books/`, `src/app/search/`, `src/app/settings/`, `src/app/setup/` — library list, search, settings, first-run admin setup, with the reader UI under the book detail page
 
 When adding new file format support: add an extractor in `src/lib/scanner/<format>.ts`
 and register it in the scanner dispatch. Don't fork the scanner.
