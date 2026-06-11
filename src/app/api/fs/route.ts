@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { authError, requireAdmin } from "@/lib/current-user";
+import { withAdmin } from "@/lib/route-helpers";
 
 // GET /api/fs?path=/some/dir — list the subfolders of a directory so an admin
 // can browse the server's filesystem and pick a library folder. Admin-only.
@@ -9,13 +9,7 @@ import { authError, requireAdmin } from "@/lib/current-user";
 // Returns only directories (we're choosing a folder, not a file) plus a count
 // of book files directly inside, as a hint. In a container the visible tree is
 // whatever's mounted, which is the expected constraint.
-export async function GET(req: Request) {
-  try {
-    await requireAdmin();
-  } catch (e) {
-    return authError(e);
-  }
-
+export const GET = withAdmin(async (_admin, req) => {
   const url = new URL(req.url);
   const target = path.resolve(url.searchParams.get("path") || "/");
 
@@ -50,4 +44,4 @@ export async function GET(req: Request) {
     dirs,
     bookCount,
   });
-}
+});

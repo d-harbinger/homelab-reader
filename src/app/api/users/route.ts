@@ -1,38 +1,27 @@
 import { NextResponse } from "next/server";
-import { authError, requireAdmin } from "@/lib/current-user";
+import { parseJson, withAdmin } from "@/lib/route-helpers";
 import { createUser, listUsers, UserInputError, type Role } from "@/lib/users";
 
 // GET /api/users — list accounts (admin only).
-export async function GET() {
-  try {
-    await requireAdmin();
-  } catch (e) {
-    return authError(e);
-  }
+export const GET = withAdmin(async () => {
   return NextResponse.json({ users: await listUsers() });
-}
+});
 
 // POST /api/users — create an account (admin only).
 // Body: { username, password, role?: "admin" | "reader" }
-export async function POST(req: Request) {
-  try {
-    await requireAdmin();
-  } catch (e) {
-    return authError(e);
-  }
+export const POST = withAdmin(async (_admin, req) => {
+  const parsed = await parseJson<{
+    username?: string;
+    password?: string;
+    role?: string;
+  }>(req);
+  if (!parsed.ok) return parsed.res;
 
-  let body: { username?: string; password?: string; role?: string };
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "invalid json" }, { status: 400 });
-  }
-
-  const role: Role = body.role === "admin" ? "admin" : "reader";
+  const role: Role = parsed.body.role === "admin" ? "admin" : "reader";
   try {
     const user = await createUser({
-      username: String(body.username ?? ""),
-      password: String(body.password ?? ""),
+      username: String(parsed.body.username ?? ""),
+      password: String(parsed.body.password ?? ""),
       role,
     });
     return NextResponse.json({ user }, { status: 201 });
@@ -42,4 +31,4 @@ export async function POST(req: Request) {
     }
     throw e;
   }
-}
+});

@@ -1,30 +1,19 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { authError, requireAdmin } from "@/lib/current-user";
+import { parseJson, withAdmin, type IdContext } from "@/lib/route-helpers";
 import { deleteUser, setPassword, UserInputError } from "@/lib/users";
 
 // PATCH /api/users/[id] — reset password and/or change role (admin only).
 // Body: { password?: string, role?: "admin" | "reader" }
-export async function PATCH(
-  req: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
-  try {
-    await requireAdmin();
-  } catch (e) {
-    return authError(e);
-  }
+export const PATCH = withAdmin<IdContext>(async (_admin, req, { params }) => {
   const { id } = await params;
 
   const target = await prisma.user.findUnique({ where: { id } });
   if (!target) return new NextResponse(null, { status: 404 });
 
-  let body: { password?: string; role?: string };
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "invalid json" }, { status: 400 });
-  }
+  const parsed = await parseJson<{ password?: string; role?: string }>(req);
+  if (!parsed.ok) return parsed.res;
+  const body = parsed.body;
 
   // Don't allow removing the last admin's admin role — that would lock
   // user management out entirely.
@@ -61,20 +50,11 @@ export async function PATCH(
       createdAt: updated.createdAt,
     },
   });
-}
+});
 
 // DELETE /api/users/[id] — remove an account (admin only). Guards against
 // self-deletion and removing the last admin.
-export async function DELETE(
-  _req: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
-  let me;
-  try {
-    me = await requireAdmin();
-  } catch (e) {
-    return authError(e);
-  }
+export const DELETE = withAdmin<IdContext>(async (me, _req, { params }) => {
   const { id } = await params;
 
   if (id === me.id) {
@@ -99,4 +79,4 @@ export async function DELETE(
 
   await deleteUser(id);
   return new NextResponse(null, { status: 204 });
-}
+});
