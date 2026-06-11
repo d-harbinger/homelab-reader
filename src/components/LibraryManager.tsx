@@ -141,15 +141,22 @@ function FolderBrowser({
   existing: string[];
   onAdded: () => void;
 }) {
-  const [cwd, setCwd] = useState("/");
+  // Empty cwd means "no path param": the route defaults to the jail root, so
+  // the picker always starts somewhere it's allowed to read. Hardcoding "/"
+  // here lands out-of-jail and dead-ends on the uniform 400.
+  const [cwd, setCwd] = useState("");
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const { data } = useSWR<FsListing>(
-    `/api/fs?path=${encodeURIComponent(cwd)}`,
+  const { data, error: fsError } = useSWR<FsListing>(
+    cwd ? `/api/fs?path=${encodeURIComponent(cwd)}` : "/api/fs",
     fetcher,
     { keepPreviousData: true },
   );
+
+  // A denied read (uniform 400 -> data.error, or a thrown fetch error) leaves
+  // the picker on a path it can't list. Offer a way back to the jail root.
+  const denied = !!data?.error || !!fsError;
 
   const alreadyAdded = data && existing.includes(data.path);
 
@@ -182,7 +189,7 @@ function FolderBrowser({
         </h2>
         <button
           onClick={addCurrent}
-          disabled={adding || !data || !!data.error || !!alreadyAdded}
+          disabled={adding || !data || denied || !!alreadyAdded}
           className="inline-flex items-center gap-1.5 rounded-md bg-amber-500/90 px-3 py-1.5 text-xs font-medium text-zinc-950 transition-colors hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-40"
         >
           <FolderPlus size={14} />
@@ -202,8 +209,18 @@ function FolderBrowser({
 
       {/* Listing */}
       <div className="max-h-72 overflow-y-auto rounded-md border border-zinc-900">
-        {data?.error ? (
-          <p className="px-3 py-3 text-sm text-red-400">{data.error}</p>
+        {denied ? (
+          <div className="space-y-2 px-3 py-3">
+            <p className="text-sm text-red-400">
+              {data?.error ?? "Can't read that directory"}
+            </p>
+            <button
+              onClick={() => setCwd("")}
+              className="inline-flex items-center gap-1.5 rounded-md border border-zinc-800 px-2.5 py-1 text-xs text-zinc-300 transition-colors hover:bg-zinc-900 hover:text-zinc-100"
+            >
+              <ArrowUp size={13} /> Back to start
+            </button>
+          </div>
         ) : (
           <ul className="divide-y divide-zinc-900/70">
             {data?.parent && (
