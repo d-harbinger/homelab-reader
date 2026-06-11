@@ -1,6 +1,11 @@
 # Library wiring, phase 2 — citation + notes-export surfaces, folder browser
 
-**STATUS: PENDING** (valid-as-of 2026-06-10)
+**STATUS: DONE except slice 5 (owner STOP)** (valid-as-of 2026-06-10)
+Slices 1–4 landed on `main`: 1 `1494356`, 2 `12968d4`, 3 `3dceb07`/`56d9fe6`,
+4 `ab51316`/`44e5a43`. Slice 5 is the owner STOP: decisions D1–D4 stay pending,
+and the host-verify checklist is owed — folder rail renders + filters, Cite copies
+the reference + downloads the `.bib`, annotations export downloads with real
+annotations (all on the host dev server).
 **value: H** — executes the 2026-06-10 owner ruling on TEACHING finding #1 ("wire it
 up"): three of the four dormant tested modules (`citation`, `notes/markdown-export`,
 `library/folder-tree`) gain product surface. `metadata/openlibrary` +
