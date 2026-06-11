@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { BookAnnotations } from "@/components/BookAnnotations";
+import { CiteButton } from "@/components/CiteButton";
 
 function formatBytes(n: number | null | undefined): string | null {
   if (!n) return null;
@@ -87,6 +88,13 @@ export default async function BookDetail({
               className="rounded-md border border-zinc-800 px-5 py-2 text-sm text-zinc-300 transition-colors hover:border-zinc-700 hover:text-zinc-100"
             >
               Download
+            </a>
+            <CiteButton bookId={book.id} />
+            <a
+              href={`/api/books/${book.id}/annotations`}
+              className="rounded-md border border-zinc-800 px-5 py-2 text-sm text-zinc-300 transition-colors hover:border-zinc-700 hover:text-zinc-100"
+            >
+              Export annotations
             </a>
           </div>
 
