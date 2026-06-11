@@ -45,12 +45,19 @@ export const GET = withAdmin(async (_admin, req) => {
   // Jail check: target must be the root or sit beneath it. relative() yields a
   // "../" prefix or an absolute path exactly when target escapes the root.
   const rel = path.relative(root, target);
-  if (rel.startsWith("..") || path.isAbsolute(rel)) return denied();
+  if (rel.startsWith("..") || path.isAbsolute(rel)) {
+    // Wire response stays opaque; the real reason goes to server logs so the
+    // operator can tell an out-of-jail request from an unreadable directory.
+    console.warn(`/api/fs denied: out-of-jail target ${target} (root ${root})`);
+    return denied();
+  }
 
   let entries;
   try {
     entries = await fs.readdir(target, { withFileTypes: true });
-  } catch {
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code ?? "unknown";
+    console.warn(`/api/fs denied: readdir ${code} on ${target}`);
     return denied();
   }
 
