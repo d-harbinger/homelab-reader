@@ -2,7 +2,7 @@
 // of books (relative to the scan roots). Pure: no DB, no fs. This is what turns
 // "a huge wall" into the python/ai/... shelves the user already has on disk.
 import { describe, it, expect } from "vitest";
-import { buildFolderTree } from "@/lib/library/folder-tree";
+import { buildFolderTree, relativeFolder } from "@/lib/library/folder-tree";
 
 describe("buildFolderTree", () => {
   it("groups books by their on-disk folder under the scan root", () => {
@@ -48,5 +48,27 @@ describe("buildFolderTree", () => {
     ]);
     // longest root "/books/sub" -> relative "python/a.pdf" -> shelf "python"
     expect(tree.children.map((c) => c.name)).toEqual(["python"]);
+  });
+});
+
+describe("relativeFolder", () => {
+  it("strips the longest matching root and drops the filename", () => {
+    expect(relativeFolder("/books/python/web/b.epub", ["/books"])).toBe(
+      "python/web",
+    );
+  });
+
+  it("returns '' for a file sitting directly under a root", () => {
+    expect(relativeFolder("/books/loose.epub", ["/books"])).toBe("");
+  });
+
+  it("returns null when the file is under no root", () => {
+    expect(relativeFolder("/elsewhere/x.epub", ["/books"])).toBeNull();
+  });
+
+  it("normalizes trailing-slash roots and prefers the longest", () => {
+    expect(
+      relativeFolder("/books/sub/python/a.pdf", ["/books/", "/books/sub"]),
+    ).toBe("python");
   });
 });

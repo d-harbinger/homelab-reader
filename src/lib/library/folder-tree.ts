@@ -43,6 +43,20 @@ function dirSegmentsUnderRoot(
   return null;
 }
 
+// The directory part of `filePath` relative to the longest matching scan root
+// (the filename dropped), as a "/"-joined relative path — e.g.
+// "/books/python/web/b.epub" under root "/books" → "python/web". "" for a file
+// sitting directly under a root; null if the file isn't under any root.
+//
+// Single source of truth for the "strip the root, drop the filename" rule used
+// by the folder tree. Any consumer that needs a book's relative folder should
+// import this rather than copy the logic, so the tree and its consumers can
+// never disagree on what folder a book lives in.
+export function relativeFolder(filePath: string, roots: string[]): string | null {
+  const segs = dirSegmentsUnderRoot(filePath, roots);
+  return segs === null ? null : segs.join("/");
+}
+
 export function buildFolderTree(
   books: { filePath: string }[],
   roots: string[],

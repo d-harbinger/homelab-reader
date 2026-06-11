@@ -129,4 +129,62 @@ describe("GET /api/books?folder=", () => {
     expect(body.books).toHaveLength(2);
     expect(JSON.stringify(body)).not.toContain("/books");
   });
+
+  // REGRESSION (DEFECT: folder filter blind to books beyond the 200-row cap):
+  // the matched book must survive the row cap. Seed one book in the target
+  // folder, then >200 OTHER books with NEWER addedAt timestamps so the target
+  // book sits outside a recent-first 200-row fetch window. The folder filter
+  // must still return it — proving the match happens in SQL, before the cap.
+  it("returns a folder book buried beyond the 200-row recency cap", async () => {
+    await h.prisma.scanLocation.create({ data: { path: "/books" } });
+    const base = new Date("2020-01-01T00:00:00Z").getTime();
+    // The target book is the OLDEST (earliest addedAt) — last in recency order.
+    await h.prisma.book.create({
+      data: {
+        filePath: "/books/python/web/target.epub",
+        format: "epub",
+        title: "TARGET",
+        addedAt: new Date(base),
+      },
+    });
+    // 250 newer books OUTSIDE the folder — they fill (and overflow) the cap.
+    for (let i = 0; i < 250; i++) {
+      await h.prisma.book.create({
+        data: {
+          filePath: `/books/ai/filler-${i}.epub`,
+          format: "epub",
+          title: `FILLER ${i}`,
+          addedAt: new Date(base + (i + 1) * 1000),
+        },
+      });
+    }
+    const res = await GET(req("?folder=python/web"));
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body.books).toHaveLength(1);
+    expect(body.books[0].title).toBe("TARGET");
+    expect(JSON.stringify(body)).not.toContain("/books");
+  });
+
+  // PREFIX EDGE: a startsWith match on the bare folder name would wrongly pull
+  // "python/webinar/" into "?folder=python/web". The trailing-slash prefix
+  // (`<root>/python/web/`) must exclude it.
+  it("does not match a sibling folder sharing a name prefix", async () => {
+    await h.prisma.scanLocation.create({ data: { path: "/books" } });
+    await h.prisma.book.create({
+      data: { filePath: "/books/python/web/in.epub", format: "epub", title: "IN" },
+    });
+    await h.prisma.book.create({
+      data: {
+        filePath: "/books/python/webinar/out.epub",
+        format: "epub",
+        title: "OUT",
+      },
+    });
+    const res = await GET(req("?folder=python/web"));
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body.books).toHaveLength(1);
+    expect(body.books[0].title).toBe("IN");
+  });
 });
