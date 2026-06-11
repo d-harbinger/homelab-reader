@@ -1,10 +1,12 @@
 "use client";
 
+import { useState } from "react";
 import useSWR from "swr";
 import Link from "next/link";
 import { LibraryHeader } from "@/components/LibraryHeader";
 import { FailedImportsBanner } from "@/components/FailedImportsBanner";
 import { Section } from "@/components/Section";
+import { FolderTree } from "@/components/FolderTree";
 import type { BookCardData } from "@/components/BookCard";
 import { fetcher } from "@/lib/fetcher";
 
@@ -32,14 +34,21 @@ interface TagSection {
 }
 
 export default function Home() {
+  // The selected folder rail path ("" = all books / no filter). When set, the
+  // library query carries it through to the server-side folder filter.
+  const [selectedFolder, setSelectedFolder] = useState("");
+
   const { data: status, mutate: refreshStatus } = useSWR<ScanStatus>(
     "/api/scan/status",
     fetcher,
     { refreshInterval: 5000 },
   );
+  const booksKey = selectedFolder
+    ? `/api/books?folder=${encodeURIComponent(selectedFolder)}`
+    : "/api/books";
   const { data: booksResp, mutate: refreshBooks } = useSWR<{
     books: BookCardData[];
-  }>("/api/books", fetcher, { refreshInterval: 5000 });
+  }>(booksKey, fetcher, { refreshInterval: 5000 });
   const { data: continueResp } = useSWR<{ books: ContinueRow[] }>(
     "/api/progress/recent",
     fetcher,
@@ -71,6 +80,12 @@ export default function Home() {
   // looking padded.
   const showRecent = recentlyAdded.length >= 4 && books.length > recentlyAdded.length;
 
+  // The curated shelves (Continue reading, Recently added, tags) describe the
+  // whole library; once a folder is selected they'd be misleading, so the rail
+  // narrows the view to a single filtered Library grid.
+  const folderActive = selectedFolder !== "";
+  const libraryTitle = folderActive ? selectedFolder : "Library";
+
   return (
     <main className="mx-auto max-w-7xl px-6 py-10 space-y-12">
       <LibraryHeader
@@ -82,40 +97,57 @@ export default function Home() {
 
       <FailedImportsBanner />
 
-      <Section
-        title="Continue reading"
-        books={continueReading}
-        hideWhenEmpty
-      />
+      <div className="flex flex-col gap-8 lg:flex-row">
+        <aside className="lg:w-56 lg:flex-none">
+          <FolderTree
+            selected={selectedFolder}
+            onSelect={setSelectedFolder}
+          />
+        </aside>
 
-      {showRecent && (
-        <Section title="Recently added" books={recentlyAdded} />
-      )}
-
-      {tagSections.map((s) => (
-        <Section key={s.tag} title={s.tag} books={s.books} />
-      ))}
-
-      <Section title="Library" books={books} layout="grid" />
-
-      {books.length === 0 && (
-        <p className="text-sm text-zinc-600">
-          {(status?.watchedPaths?.length ?? 0) === 0 ? (
+        <div className="min-w-0 flex-1 space-y-12">
+          {!folderActive && (
             <>
-              No library folders yet. An admin can add one in{" "}
-              <Link
-                href="/settings/libraries"
-                className="text-amber-400/90 underline-offset-2 hover:underline"
-              >
-                Settings → Libraries
-              </Link>
-              .
+              <Section
+                title="Continue reading"
+                books={continueReading}
+                hideWhenEmpty
+              />
+
+              {showRecent && (
+                <Section title="Recently added" books={recentlyAdded} />
+              )}
+
+              {tagSections.map((s) => (
+                <Section key={s.tag} title={s.tag} books={s.books} />
+              ))}
             </>
-          ) : (
-            "No books found yet — drop EPUBs or PDFs into a library folder and they'll appear here."
           )}
-        </p>
-      )}
+
+          <Section title={libraryTitle} books={books} layout="grid" />
+
+          {books.length === 0 && (
+            <p className="text-sm text-zinc-600">
+              {folderActive ? (
+                "No books in this folder."
+              ) : (status?.watchedPaths?.length ?? 0) === 0 ? (
+                <>
+                  No library folders yet. An admin can add one in{" "}
+                  <Link
+                    href="/settings/libraries"
+                    className="text-amber-400/90 underline-offset-2 hover:underline"
+                  >
+                    Settings → Libraries
+                  </Link>
+                  .
+                </>
+              ) : (
+                "No books found yet — drop EPUBs or PDFs into a library folder and they'll appear here."
+              )}
+            </p>
+          )}
+        </div>
+      </div>
     </main>
   );
 }
