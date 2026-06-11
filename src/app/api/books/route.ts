@@ -2,27 +2,6 @@ import { NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
-// Directory part of `filePath` relative to the longest matching scan root
-// (the filename dropped), e.g. "/books/python/web/b.epub" under root "/books"
-// → "python/web". null if the file isn't under any root. This mirrors the
-// longest-root logic in src/lib/library/folder-tree.ts so the folder filter
-// and the folder tree agree on what folder a book lives in.
-function relativeFolder(filePath: string, roots: string[]): string | null {
-  const normalized = roots
-    .map((r) => r.replace(/\/+$/, ""))
-    .sort((a, b) => b.length - a.length); // longest (most specific) first
-
-  for (const root of normalized) {
-    const prefix = `${root}/`;
-    if (filePath.startsWith(prefix)) {
-      const segs = filePath.slice(prefix.length).split("/");
-      segs.pop(); // drop the filename
-      return segs.join("/");
-    }
-  }
-  return null;
-}
-
 // GET /api/books — flat list, newest first by default.
 //
 // Optional query params turn this into the search/browse backend:
@@ -36,10 +15,19 @@ function relativeFolder(filePath: string, roots: string[]): string | null {
 // With no params the response is identical to the original flat list, so
 // the home view keeps working unchanged.
 //
-// The `folder` filter is computed server-side: each book's absolute filePath
-// is stripped of its scan root and compared as a relative path. Absolute paths
-// never enter the response — the comparison happens here, and the response map
-// is unchanged.
+// The `folder` filter is pushed into the SQL `where` as a set of absolute
+// path-prefix matches — one per enabled scan root — so the row cap below
+// applies to the FILTERED result, not to a recent-first window that the match
+// is then applied to in memory. (The old in-memory filter ran after `take: 200`
+// and so was blind to any matching book older than the 200 newest overall:
+// libraries past 200 books lost their oldest folder hits entirely.)
+//
+// Each clause is `filePath startsWith "<root>/<target>/"`. The trailing slash
+// is load-bearing on both ends: a file directly in the folder still matches
+// because its own filename adds the final segment (`<root>/<target>/<file>`),
+// while a sibling folder sharing a name prefix cannot — `python/webinar/...`
+// does not start with `<root>/python/web/`. Absolute paths never enter the
+// response; only the comparison touches them, and the response map is unchanged.
 //
 // Note: SQLite's LIKE (what Prisma `contains` compiles to) is already
 // case-insensitive for ASCII, so we don't pass `mode: "insensitive"` —
@@ -63,9 +51,31 @@ export async function GET(req: Request) {
   if (format === "epub" || format === "pdf") where.format = format;
   if (tag) where.tags = { some: { name: tag } };
 
+  if (folder) {
+    // Match in SQL against each enabled scan root: a book is "in" the folder
+    // when its absolute path begins with "<root>/<target>/". Normalize the
+    // roots (strip trailing slashes) and the target (strip leading/trailing
+    // slashes) so the joined prefix has exactly one slash at each seam.
+    const roots = (
+      await prisma.scanLocation.findMany({
+        where: { enabled: true },
+        select: { path: true },
+      })
+    ).map((l) => l.path.replace(/\/+$/, ""));
+    // No enabled roots → nothing can match. Skip the query entirely.
+    if (roots.length === 0) {
+      return NextResponse.json({ books: [] });
+    }
+    const target = folder.replace(/^\/+|\/+$/g, "");
+    // AND-combine with any existing OR (free-text `q`): wrapping the root
+    // prefixes in their own AND clause keeps the two OR groups independent.
+    where.AND = [
+      { OR: roots.map((r) => ({ filePath: { startsWith: `${r}/${target}/` } })) },
+    ];
+  }
+
   // findMany returns all scalar fields (filePath included) plus the authors
-  // relation. filePath is used only to compute the relative folder below; it
-  // is never copied into the response map.
+  // relation. filePath is never copied into the response map.
   const books = await prisma.book.findMany({
     where,
     orderBy: sort === "title" ? { title: "asc" } : { addedAt: "desc" },
@@ -73,25 +83,8 @@ export async function GET(req: Request) {
     include: { authors: true },
   });
 
-  let filtered = books;
-  if (folder) {
-    const roots = (
-      await prisma.scanLocation.findMany({
-        where: { enabled: true },
-        select: { path: true },
-      })
-    ).map((l) => l.path);
-    const target = folder.replace(/^\/+|\/+$/g, "");
-    filtered = books.filter((b) => {
-      const rel = relativeFolder(b.filePath, roots);
-      if (rel === null) return false;
-      // A book matches when its folder is the target or nested below it.
-      return rel === target || rel.startsWith(`${target}/`);
-    });
-  }
-
   return NextResponse.json({
-    books: filtered.map((b) => ({
+    books: books.map((b) => ({
       id: b.id,
       title: b.title,
       format: b.format,
