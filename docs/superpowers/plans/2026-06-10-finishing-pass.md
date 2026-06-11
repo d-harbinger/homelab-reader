@@ -1,6 +1,10 @@
 # Finishing pass — close every agent-env TEACHING item
 
-**STATUS: PENDING** (valid-as-of 2026-06-10, grave night #2 extension)
+**STATUS: DONE** (valid-as-of 2026-06-10)
+All six slices landed on `main`: A `3dceb07`/merge `56d9fe6`, B `ab51316`/merge
+`44e5a43`, C `30ce5d0`, D `9e64855`, E `82d1fbe`, F (this close-out). Final gates:
+vitest 125/125 (17 files), tsc 0, lint 0/0, build green. Only owner-gated items
+remain (D1–D4, host visuals, TEACHING #2 Tailwind consolidation).
 **value: H** — completes the project's agent-env work in one focused run: the
 "wire it up" ruling's remaining slices plus TEACHING #3/#4/#6. After this pass
 the repo's only open items are owner-gated (D1–D4 decisions, host visuals,

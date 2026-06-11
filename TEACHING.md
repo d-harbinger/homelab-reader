@@ -150,28 +150,88 @@ Each finding: **Tell** (what it looks like) · **Why** (why an AI does it) ·
 
 | # | Finding | Action | Status |
 |---|---------|--------|--------|
-| 1 | Unwired feature layer (377 LOC) | Decide: run the planned wiring session, or mark the core dormant in the plan doc | **in progress** — owner ruled WIRE IT (2026-06-10). Executed the library-views plan's auto-completable slices: Phase 0 (Dependabot patches via overrides — postcss/xmldom) + Phase 1 Task 1 (`/api/library/folders` route, TDD, session-gated + path-private). Gate green (89 tests/tsc/build). Remaining: Phase 1 Task 2 (folder-browser UI) is browser/host-verify — owner-gated; citation surface + remaining modules still dormant pending later phases |
-| 2 | fetcher ×8 + Tailwind class soup ×7 | Lift `fetcher` to `src/lib/`; extract input/button primitives if growth continues; host-verify visuals | partial — fetcher lifted to `src/lib/fetcher.ts`, 8 sites rewired (tsc/lint/tests/build green); Tailwind class consolidation host-visual-gated, open |
-| 3 | Route boilerplate ×15 | `parseJson` + `withUser`/`withAdmin` helpers in one mechanical pass; fixes auth-before-DB ordering as a side effect | open |
-| 4 | CFI-matching rule ×2 | Shared `notesByHighlight` helper now; `Note.highlightId` migration as its own planned change | open |
+| 1 | Unwired feature layer (377 LOC) | Decide: run the planned wiring session, or mark the core dormant in the plan doc | **done — 2026-06-10.** Owner ruled WIRE IT. Three of the four dormant modules now have product surface: `library/folder-tree` (folders route + folder rail + server-side folder filter), `notes/markdown-export` (annotations export route + detail-page Export action), `metadata/citation` (citation route + detail-page Cite action). `metadata/openlibrary` + `filename-signals` stay **deliberately dormant** — they need a schema home for ranked import suggestions, which is owner decision D3; the plan doc carries that marker so a future session does not rebuild them. The shelfware risk is closed for everything buildable without a migration |
+| 2 | fetcher ×8 + Tailwind class soup ×7 | Lift `fetcher` to `src/lib/`; extract input/button primitives if growth continues; host-verify visuals | **partial — 2026-06-10.** Fetcher lifted to `src/lib/fetcher.ts`, 8 sites rewired (tsc/lint/tests/build green); the new folder rail reuses it rather than re-inlining. Tailwind class consolidation stays open — it can subtly alter styling and is host-visual-gated, which this environment cannot run |
+| 3 | Route boilerplate ×15 | `parseJson` + `withUser`/`withAdmin` helpers in one mechanical pass; fixes auth-before-DB ordering as a side effect | **done — 2026-06-10.** `parseJson<T>` in `src/lib/parse-json.ts` and `withUser`/`withAdmin` in `src/lib/route-helpers.ts`, both unit-tested directly, then a single mechanical pass over 19 route handlers (the class had rotted upward from the audit's 15). Route files net **−250 LOC**; auth now resolves before any DB read everywhere, standardizing the auth-before-DB ordering for free. Existing authz-gate + route tests pinned behavior — zero assertion edits |
+| 4 | CFI-matching rule ×2 | Shared `notesByHighlight` helper now; `Note.highlightId` migration as its own planned change | **done — 2026-06-10.** Single guarded matcher in `src/lib/annotations.ts` (`notesByHighlight` + `orphanNotes`), unit-tested, consumed by both `HighlightsPanel` and `BookAnnotations`. `Note.highlightId` stays future schema work per the finding — no migration here |
 | 5 | Test preamble unused imports | Delete 13 import lines; lint goes to zero | done — lint 0/0, tests 87/87 |
-| 6 | Docs drift (epub2, `src/lib/reader/`, stray heading) | One docs pass, after the owner's in-flight README/CLAUDE.md edits land | open |
+| 6 | Docs drift (epub2, `src/lib/reader/`, stray heading) | One docs pass, after the owner's in-flight README/CLAUDE.md edits land | **done — 2026-06-10.** README + CLAUDE.md stack lists now say `yauzl` + `fast-xml-parser` (in-house EPUB extraction) + pdfjs-dist; the `src/lib/reader/` phantom and the scaffold label are gone; the stray trailing heading is dropped; the four new API surfaces are listed. `grep epub2` over both docs → 0 |
 
-No emergency here. #5 is safe any time; #3 then #2 are the highest-leverage mechanical
-passes (both fully covered by the existing gates); #1 is a product decision; #4 long-term
-and #6 are small and should ride along with other work.
+As of 2026-06-10 the only open items are owner-gated: #2's Tailwind consolidation (needs
+a browser to verify), and the decisions D1–D4 from the wiring plan (notes-export target,
+collections cardinality, enrich-on-import schema, server-side folder filter) — plus the
+`Note.highlightId` migration that #4 defers. Everything mechanical and everything buildable
+without a schema migration is done.
+
+---
+
+## What I did — finishing pass (2026-06-10) — and why
+
+This pass closed findings #1, #3, #4, #6 (and the wiring slices #1 was waiting on) in one
+run. The reasoning behind each non-obvious choice, so the *why* survives the result:
+
+**Folder filtering went server-side, not client-side.** The original plan sketch filtered
+the library by folder in the browser, using each book's file path. That assumption was
+stale: `/api/books` deliberately does not put `filePath` in its response — absolute disk
+paths never reach the client, the same privacy posture that makes the folders route strip
+scan-root prefixes before returning anything. So client-side path filtering had no data to
+filter on, and adding the path back to the payload would have leaked exactly what the design
+withholds. Instead `/api/books` gained an optional `folder` query parameter: the route
+resolves each book's root-relative folder server-side and filters there, and only the
+already-public fields go out. The rail re-queries `/api/books?folder=<path>` on select.
+
+**Cite needed a client component; Export did not.** The detail page is a server component.
+Copying citation text to the clipboard requires the browser clipboard API, which only exists
+in client code — so the Cite control is a small client island that fetches the citation
+route and copies (and offers the BibTeX as a `.bib` download). Export annotations is just a
+link to the export route, which streams a Markdown file with an attachment header — no
+clipboard, no client state, so it stayed a plain declarative link. The split is about which
+side of the server/client boundary each action actually needs, not stylistic preference.
+
+**`parseJson` got its own module, separate from the auth wrappers.** Slice C added two
+helpers — body parsing and auth wrapping. They live in separate files
+(`src/lib/parse-json.ts`, `src/lib/route-helpers.ts`) on purpose: the auth wrappers pull in
+the auth stack, and during the migration the body-parsing tests started failing because
+importing the wrappers dragged a transitive `next-auth` mock into suites that only wanted to
+test JSON parsing. Splitting the pure, dependency-free parser into its own module let it be
+unit-tested without any auth mocking, and kept the auth-heavy code out of tests that have no
+business loading it.
+
+**The guarded CFI matcher won over the terse one.** Two surfaces matched a note to a
+highlight by comparing their CFI anchor strings for equality. One surface already guarded
+against an empty/absent anchor (`anchor.cfi && ...`); the other compared raw. The unguarded
+form has a latent bug: when both a note and a highlight have no CFI, `undefined === undefined`
+is true, so a cfi-less note would spuriously pair with a cfi-less highlight. It is
+unobservable today only because the reader flow that produces these anchors is EPUB-only and
+every EPUB anchor carries a CFI — the moment a cfi-less anchor appears, the unguarded surface
+mismatches. The shared helper adopts the guarded form (a falsy CFI never matches, even
+against another falsy CFI) and a unit test pins that branch, so the latent bug cannot return.
+
+**Auth now resolves before any DB read — a strictly tighter ordering.** Several handlers ran
+the book-existence lookup *before* resolving the user, so an unauthenticated request to a
+missing book could get a 404 before the 401. Harmless today (cookie middleware gates these
+routes), but it is the kind of invariant that breaks silently if a route is ever exempted
+the way the file-download route was. The `withUser`/`withAdmin` wrappers resolve auth first
+by construction, so the migration flipped this everywhere for free. Five handlers actually
+changed observable ordering — the notes, highlights, and progress POST routes, plus the two
+new annotations and citation routes, all of which had done a `book.findUnique` ahead of auth.
+The flip is strictly tighter: a caller who is not allowed in now learns nothing about whether
+a resource exists.
 
 ---
 
 ## Verification gate
 
-Gates discovered from `package.json`, all run on 2026-06-10 after a fresh
-`npm install` + `prisma generate` (the committed lockfile installed clean):
+Gates discovered from `package.json`. Re-measured at the close of the finishing pass on
+2026-06-10, after all six slices landed on `main`:
 
-- `npx tsc --noEmit` — **pass** (clean).
-- `npm test` (vitest) — **pass**, 10 files / 87 tests, against real ephemeral SQLite DBs.
-- `npm run lint` — **pass**: 0 errors, 13 warnings (all finding #5).
-- `npm run build` (production webpack build) — **pass**, all routes compiled.
+- `npx tsc --noEmit` — **pass** (0 errors).
+- `npx vitest run` — **pass**, **17 files / 125 tests** (up from 10/87 at audit time: the
+  new route-helper, annotations-helper, export-route, citation-route, and folder-filter
+  suites), all against real ephemeral SQLite DBs.
+- `npm run lint` — **pass**: **0 errors, 0 warnings** (finding #5's 13 warnings are gone).
+- `npm run build` (production webpack build) — **pass**, compiled successfully, all routes
+  emitted.
 
 Not verifiable from this audit environment, and therefore **not claimed**:
 
