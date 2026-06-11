@@ -25,7 +25,7 @@ mobile-client authentication for it is the next milestone.
 - TailwindCSS v4
 - NextAuth v5 (multi-user credentials; first-run admin, admin-managed accounts)
 - chokidar (folder watch)
-- epub2 + pdfjs-dist (server-side metadata + cover extraction)
+- In-house EPUB extraction (yauzl + fast-xml-parser) and pdfjs-dist — server-side metadata + cover
 - epub.js + PDF.js (client-side reader)
 
 ## Dev
@@ -103,4 +103,3 @@ docker compose up -d --build   # host port 3334 (set HOMELAB_PORT to change)
 - Full-history audit: `bash scripts/audit-privacy.sh` before any public push.
 - See `~/Projects/CLAUDE.md` §Workspace-Wide Privacy Policy for the
   full rationale.
-# homelab-reader
