@@ -1,19 +1,15 @@
 ---
 phase: 03-resource-safety-robustness
 verified: 2026-05-31T04:07:20Z
+last_updated: 2026-06-11T06:20:00Z
 status: human_needed
 score: 6/6
 overrides_applied: 0
+in_vm_verified:
+  - "npx prisma generate + npx tsc --noEmit — clean (Prisma Client v6.19.3) [2026-06-11]"
+  - "npm test / npx vitest run — 18 files / 142 tests pass incl. tests/scanner.test.ts, as of 2a9bf2f [2026-06-11]"
+  - "npm run build — clean, all routes compiled [2026-06-11]"
 human_verification:
-  - test: "Run npx prisma generate on the host (so prisma.failedImport TS types are generated), then npx tsc --noEmit"
-    expected: "Zero TypeScript errors; prisma.failedImport resolves cleanly"
-    why_human: "Host/VM split — prisma generate cannot run in-agent; TS types for FailedImport model do not exist until generated"
-  - test: "Run npm test on the host"
-    expected: "tests/scanner.test.ts passes — all 8 cases green: branches A/B/C (×2), malformed→FailedImport, clear-on-success, removeFileFromLibrary"
-    why_human: "Host/VM split — vitest cannot run in-agent"
-  - test: "Run npm run build on the host"
-    expected: "Clean build (no TS or webpack errors)"
-    why_human: "Host/VM split — build cannot run in-agent"
   - test: "curl Range checks against a running instance: curl -r 0-99 -i .../api/books/<id>/file → 206 + Content-Range: bytes 0-99/<size>; curl -r 1000000000- -i ... → 416 + Content-Range: bytes */<size>; curl -i ... (no Range) → 200 + Accept-Ranges: bytes"
     expected: "206 for satisfiable range, 416 for oversized start, 200 full file when no header — consistent with RFC 7233 implementation in route.ts"
     why_human: "Behavioral HTTP check requires a running server on the host side"
@@ -40,9 +36,17 @@ human_verification:
 ## Goal Achievement
 
 All six success criteria are source-verified. The code and committed artifacts are
-correct and complete; no deliverable is missing or stubbed. Status is `human_needed`
-because the host/VM split blocks the behavioral checks that only a running instance
-(and host-side toolchain) can provide.
+correct and complete; no deliverable is missing or stubbed.
+
+**Update 2026-06-11:** the toolchain gates (`prisma generate` + `tsc --noEmit`,
+`npm test`/vitest, `npm run build`) have now been run **in-VM** on the VMM/libvirt
+dev box — all green (18 files / 142 tests, pinned to `2a9bf2f`; see the in-VM
+results in `in_vm_verified`). The old "host/VM split blocks this" premise no longer
+holds for static/build/test, so those three items are closed. Status stays
+`human_needed` only for the four remaining **live-instance behavioral** checks
+(HTTP Range, failed-import banner end-to-end, signed-out 401, concurrency under
+load), which still require a running server and are folded into the docker dogfood
+run. This mirrors the gate record in `.planning/STATE.md` — single source of truth.
 
 ### Observable Truths
 
@@ -150,25 +154,29 @@ No blockers or warnings found. The "placeholder" occurrences are comment text de
 
 ### Human Verification Required
 
-#### 1. Prisma generate + TypeScript typecheck
+Items 1–3 (toolchain) are **✅ RESOLVED in-VM on 2026-06-11** — recorded below for
+the audit trail. Items 4–7 (live-instance behavioral) remain open and are folded
+into the docker dogfood run.
 
-**Test:** On the host, run `npx prisma generate` then `npx tsc --noEmit`
-**Expected:** Zero TypeScript errors. `prisma.failedImport` resolves to the generated TS type from the `FailedImport` model. Any prior "Property 'failedImport' does not exist on type PrismaClient" errors disappear.
-**Why human:** The FailedImport model is in schema.prisma and the migration SQL is committed, but Prisma's generated TypeScript client does not exist until `prisma generate` runs on the host. The type check cannot pass without it.
+#### 1. Prisma generate + TypeScript typecheck — ✅ RESOLVED (in-VM, 2026-06-11)
 
-#### 2. Test suite
+**Test:** `npx prisma generate` then `npx tsc --noEmit`
+**Result:** Prisma Client v6.19.3 generated; `tsc --noEmit` exits clean (0 errors). `prisma.failedImport` resolves. Re-confirmed on top of `2a9bf2f`.
+**Note:** Ran in-VM on the VMM/libvirt box — the earlier "cannot run in-agent" premise is stale.
 
-**Test:** On the host, run `npm test`
-**Expected:** All 8 cases in `tests/scanner.test.ts` pass (branches A/B/C ×2, malformed→FailedImport, clear-on-success, removeFileFromLibrary). The suite calls `prisma migrate deploy` in `beforeAll`, which applies the committed `20260601000000_failed_imports` migration to a temp SQLite file.
-**Why human:** Host/VM split — vitest cannot run in-agent.
+#### 2. Test suite — ✅ RESOLVED (in-VM, 2026-06-11)
 
-#### 3. Build
+**Test:** `npm test` / `npx vitest run`
+**Result:** 18 files / 142 tests pass, including all `tests/scanner.test.ts` cases (branches A/B/C ×2, malformed→FailedImport, clear-on-success, removeFileFromLibrary). `prisma migrate deploy` applied the committed migrations to the temp DB. Count pinned to `2a9bf2f`.
+**Note:** Ran in-VM.
 
-**Test:** On the host, run `npm run build`
-**Expected:** Clean webpack build with no TypeScript or module-resolution errors.
-**Why human:** Host/VM split — build cannot run in-agent.
+#### 3. Build — ✅ RESOLVED (in-VM, 2026-06-11)
 
-#### 4. HTTP Range behavior (curl)
+**Test:** `npm run build`
+**Result:** Clean build — all routes compiled, no TS or webpack errors.
+**Note:** Ran in-VM.
+
+#### 4. HTTP Range behavior (curl) — ⬜ OPEN (needs running instance)
 
 **Test:** Against a running instance, run the following curl commands against a book file endpoint:
 - `curl -I .../api/books/<id>/file` — check for `Accept-Ranges: bytes`
@@ -182,19 +190,19 @@ No blockers or warnings found. The "placeholder" occurrences are comment text de
 - suffix >= size: full file returned (200 or 206 clamped to whole file per RFC 7233 §W-3)
 **Why human:** HTTP behavior requires a running server on the host side.
 
-#### 5. Failed-import banner (end-to-end)
+#### 5. Failed-import banner (end-to-end) — ⬜ OPEN (needs running instance)
 
 **Test:** Drop a corrupt file (e.g. a `.txt` renamed to `.epub`) into a watched library folder. Wait for the scanner to process it (~2s stabilityThreshold). Reload the library page.
 **Expected:** The amber `FailedImportsBanner` appears listing the file's basename (not full path) and an error reason. The file does NOT appear in the library grid. Replacing with a valid EPUB clears the banner on the next poll (within 15s).
 **Why human:** Requires a running instance with an active watcher and a real library folder.
 
-#### 6. Auth gate on /api/scan/failures
+#### 6. Auth gate on /api/scan/failures — ⬜ OPEN (needs running instance)
 
 **Test:** While signed out, send `GET /api/scan/failures`
 **Expected:** `401 Unauthorized` response
 **Why human:** Auth behavior requires a running instance with NextAuth session.
 
-#### 7. Concurrency under load (SQLITE_BUSY check)
+#### 7. Concurrency under load (SQLITE_BUSY check) — ⬜ OPEN (needs running instance)
 
 **Test:** With 5+ concurrent readers saving notes/progress while the scanner is processing a batch of new books, watch server logs for `SQLITE_BUSY` or "database is locked" errors.
 **Expected:** No such errors. WAL mode allows concurrent readers alongside the single writer; `busy_timeout=5000` absorbs brief contention.
@@ -204,9 +212,9 @@ No blockers or warnings found. The "placeholder" occurrences are comment text de
 
 ### Gaps Summary
 
-None. All six success criteria are source-verified. The code is complete and correctly wired. The only outstanding items are behavioral checks that require host-side tooling (`prisma generate`, `tsc`, `npm test`, `npm run build`) and a running instance (Range curl checks, banner end-to-end, auth gate, concurrency load). These are normal host-pending items for a host/VM split environment — not code deficiencies.
+None. All six success criteria are source-verified, and as of 2026-06-11 the toolchain gates (`prisma generate`, `tsc`, `npm test`, `npm run build`) are also verified — run in-VM, all green (18 files / 142 tests at `2a9bf2f`). The only outstanding items are the four live-instance behavioral checks (Range curl checks, banner end-to-end, auth gate, concurrency load) that require a running server; these are folded into the docker dogfood run. No code deficiencies.
 
 ---
 
-_Verified: 2026-05-31T04:07:20Z_
+_Verified: 2026-05-31T04:07:20Z (gsd-verifier, source) · in-VM toolchain gates closed 2026-06-11 (Claude, hand-recorded to match `.planning/STATE.md`)_
 _Verifier: Claude (gsd-verifier)_
