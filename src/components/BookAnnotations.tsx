@@ -6,6 +6,7 @@ import useSWR from "swr";
 import { BookOpen, Pencil, Plus, Trash2, X } from "lucide-react";
 import { HIGHLIGHT_COLORS, type HighlightColor } from "@/lib/highlight-colors";
 import { fetcher } from "@/lib/fetcher";
+import { notesByHighlight, orphanNotes } from "@/lib/annotations";
 
 interface Anchor {
   type: string;
@@ -41,13 +42,11 @@ export function BookAnnotations({ bookId }: { bookId: string }) {
   const highlights = hData?.highlights ?? [];
   const notes = nData?.notes ?? [];
 
-  // A note belongs to a highlight when their CFIs match; everything else
-  // (notably anchor.type === "book") is a freeform book note.
-  const noteForHighlight = (h: StoredHighlight) =>
-    notes.find((n) => n.anchor.cfi && n.anchor.cfi === h.anchor.cfi) ?? null;
-  const freeformNotes = notes.filter(
-    (n) => !highlights.some((h) => h.anchor.cfi && h.anchor.cfi === n.anchor.cfi),
-  );
+  // A note belongs to a highlight when their CFIs match (shared rule in
+  // @/lib/annotations); everything else (notably anchor.type === "book") is a
+  // freeform book note.
+  const notesForHighlight = notesByHighlight(highlights, notes);
+  const freeformNotes = orphanNotes(highlights, notes);
 
   async function addFreeformNote(body: string) {
     await fetch("/api/notes", {
@@ -110,7 +109,7 @@ export function BookAnnotations({ bookId }: { bookId: string }) {
       {highlights.length > 0 && (
         <div className="space-y-3">
           {highlights.map((h) => {
-            const note = noteForHighlight(h);
+            const note = notesForHighlight.get(h.id) ?? null;
             return (
               <div
                 key={h.id}

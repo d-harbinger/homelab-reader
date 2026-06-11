@@ -7,6 +7,7 @@ import {
   HIGHLIGHT_ORDER,
   type HighlightColor,
 } from "@/lib/highlight-colors";
+import { notesByHighlight } from "@/lib/annotations";
 
 export interface PanelHighlight {
   id: string;
@@ -56,6 +57,9 @@ export function HighlightsPanel({
   onNoteDelete,
 }: Props) {
   if (!open) return null;
+  // Shared CFI-matching rule (see @/lib/annotations) — same rule the book-detail
+  // annotations view uses, so the two surfaces can't drift apart.
+  const notesForHighlight = notesByHighlight(highlights, notes);
   return (
     <aside
       className="fixed right-0 top-0 z-40 flex h-full w-full max-w-[380px] flex-col border-l border-zinc-900 bg-zinc-950/95 backdrop-blur"
@@ -87,7 +91,7 @@ export function HighlightsPanel({
           </p>
         )}
         {highlights.map((h) => {
-          const note = notes.find((n) => n.anchor.cfi === h.anchor.cfi);
+          const note = notesForHighlight.get(h.id) ?? null;
           return (
             <HighlightCard
               key={h.id}
