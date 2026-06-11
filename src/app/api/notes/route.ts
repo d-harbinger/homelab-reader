@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { authError, getCurrentUserId } from "@/lib/current-user";
+import { parseJson, withUser } from "@/lib/route-helpers";
 
 interface NotePayload {
   bookId?: string;
@@ -11,15 +11,11 @@ interface NotePayload {
 
 // POST /api/notes — create a note attached to a CFI/page anchor.
 // Body: { bookId, anchor, body, context? }
-export async function POST(req: Request) {
-  let body: NotePayload;
-  try {
-    body = (await req.json()) as NotePayload;
-  } catch {
-    return NextResponse.json({ error: "invalid json" }, { status: 400 });
-  }
+export const POST = withUser(async (user, req) => {
+  const parsed = await parseJson<NotePayload>(req);
+  if (!parsed.ok) return parsed.res;
 
-  const { bookId, anchor, body: text, context } = body;
+  const { bookId, anchor, body: text, context } = parsed.body;
   if (!bookId || !anchor || typeof text !== "string") {
     return NextResponse.json(
       { error: "missing bookId, anchor, or body" },
@@ -30,16 +26,10 @@ export async function POST(req: Request) {
   const book = await prisma.book.findUnique({ where: { id: bookId } });
   if (!book) return NextResponse.json({ error: "unknown book" }, { status: 404 });
 
-  let userId: string;
-  try {
-    userId = await getCurrentUserId();
-  } catch (e) {
-    return authError(e);
-  }
   const row = await prisma.note.create({
     data: {
       bookId,
-      userId,
+      userId: user.id,
       anchor: JSON.stringify(anchor),
       body: text.slice(0, 16000),
       context: context ? context.slice(0, 1000) : null,
@@ -54,24 +44,18 @@ export async function POST(req: Request) {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   });
-}
+});
 
 // GET /api/notes?bookId=... — list notes for a book.
-export async function GET(req: Request) {
+export const GET = withUser(async (user, req) => {
   const url = new URL(req.url);
   const bookId = url.searchParams.get("bookId");
   if (!bookId) {
     return NextResponse.json({ error: "missing bookId" }, { status: 400 });
   }
 
-  let userId: string;
-  try {
-    userId = await getCurrentUserId();
-  } catch (e) {
-    return authError(e);
-  }
   const rows = await prisma.note.findMany({
-    where: { bookId, userId },
+    where: { bookId, userId: user.id },
     orderBy: { createdAt: "asc" },
   });
 
@@ -85,7 +69,7 @@ export async function GET(req: Request) {
       updatedAt: n.updatedAt,
     })),
   });
-}
+});
 
 function safeParse(s: string): unknown {
   try {

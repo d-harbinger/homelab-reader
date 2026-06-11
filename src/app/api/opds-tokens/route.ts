@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createHash, randomBytes } from "node:crypto";
 import { prisma } from "@/lib/prisma";
-import { authError, getCurrentUserId } from "@/lib/current-user";
+import { parseJson, withUser } from "@/lib/route-helpers";
 
 // OPDS token management REST, under the COOKIE session (the web UI). These are
 // the per-user "app passwords" OPDS clients (android-reader and standard
@@ -14,45 +14,27 @@ import { authError, getCurrentUserId } from "@/lib/current-user";
 // selects only non-secret columns so the hash can never leak.
 
 // GET /api/opds-tokens — list the caller's own tokens (no token, no hash).
-export async function GET() {
-  let userId: string;
-  try {
-    userId = await getCurrentUserId();
-  } catch (e) {
-    return authError(e);
-  }
-
+export const GET = withUser(async (user) => {
   // Explicit select: id/label/createdAt/lastUsedAt only. tokenHash is never
   // selected, so it can never reach the client even by accident.
   const tokens = await prisma.opdsToken.findMany({
-    where: { userId },
+    where: { userId: user.id },
     select: { id: true, label: true, createdAt: true, lastUsedAt: true },
     orderBy: { createdAt: "desc" },
   });
 
   return NextResponse.json({ tokens });
-}
+});
 
 // POST /api/opds-tokens — mint a token for the caller.
 // Body: { label }
 // Returns { id, label, createdAt, token } — the plaintext `token` is present
 // ONLY on this response and is the single chance to copy it.
-export async function POST(req: Request) {
-  let userId: string;
-  try {
-    userId = await getCurrentUserId();
-  } catch (e) {
-    return authError(e);
-  }
+export const POST = withUser(async (user, req) => {
+  const parsed = await parseJson<{ label?: string }>(req);
+  if (!parsed.ok) return parsed.res;
 
-  let body: { label?: string };
-  try {
-    body = (await req.json()) as { label?: string };
-  } catch {
-    return NextResponse.json({ error: "invalid json" }, { status: 400 });
-  }
-
-  const label = typeof body.label === "string" ? body.label.trim() : "";
+  const label = typeof parsed.body.label === "string" ? parsed.body.label.trim() : "";
   if (!label) {
     return NextResponse.json({ error: "missing label" }, { status: 400 });
   }
@@ -63,7 +45,7 @@ export async function POST(req: Request) {
   const tokenHash = createHash("sha256").update(token).digest("hex");
 
   const row = await prisma.opdsToken.create({
-    data: { userId, tokenHash, label: label.slice(0, 200) },
+    data: { userId: user.id, tokenHash, label: label.slice(0, 200) },
   });
 
   // The plaintext `token` leaves the server here and nowhere else.
@@ -71,4 +53,4 @@ export async function POST(req: Request) {
     { id: row.id, label: row.label, createdAt: row.createdAt, token },
     { status: 201 },
   );
-}
+});

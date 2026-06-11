@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { authError, requireAdmin } from "@/lib/current-user";
+import { parseJson, withAdmin, type IdContext } from "@/lib/route-helpers";
 import {
   removeScanLocation,
   setScanLocationEnabled,
@@ -7,46 +7,26 @@ import {
 import { restartWatcher } from "@/lib/scanner/watcher";
 
 // PATCH /api/locations/[id] — enable/disable a library. Body: { enabled }
-export async function PATCH(
-  req: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
-  try {
-    await requireAdmin();
-  } catch (e) {
-    return authError(e);
-  }
+export const PATCH = withAdmin<IdContext>(async (_admin, req, { params }) => {
   const { id } = await params;
 
-  let body: { enabled?: boolean };
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "invalid json" }, { status: 400 });
-  }
-  if (typeof body.enabled !== "boolean") {
+  const parsed = await parseJson<{ enabled?: boolean }>(req);
+  if (!parsed.ok) return parsed.res;
+  if (typeof parsed.body.enabled !== "boolean") {
     return NextResponse.json({ error: "missing enabled" }, { status: 400 });
   }
 
-  await setScanLocationEnabled(id, body.enabled);
+  await setScanLocationEnabled(id, parsed.body.enabled);
   await restartWatcher();
   return new NextResponse(null, { status: 204 });
-}
+});
 
 // DELETE /api/locations/[id] — stop watching a folder and drop its books.
-export async function DELETE(
-  _req: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
-  try {
-    await requireAdmin();
-  } catch (e) {
-    return authError(e);
-  }
+export const DELETE = withAdmin<IdContext>(async (_admin, _req, { params }) => {
   const { id } = await params;
 
   const removed = await removeScanLocation(id);
   if (!removed) return new NextResponse(null, { status: 404 });
   await restartWatcher();
   return new NextResponse(null, { status: 204 });
-}
+});

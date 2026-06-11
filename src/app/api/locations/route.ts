@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { authError, requireAdmin } from "@/lib/current-user";
+import { parseJson, withAdmin } from "@/lib/route-helpers";
 import {
   addScanLocation,
   listScanLocations,
@@ -9,37 +9,22 @@ import { walkAndScan } from "@/lib/scanner";
 import { restartWatcher } from "@/lib/scanner/watcher";
 
 // GET /api/locations — list configured library folders (admin only).
-export async function GET() {
-  try {
-    await requireAdmin();
-  } catch (e) {
-    return authError(e);
-  }
+export const GET = withAdmin(async () => {
   return NextResponse.json({ locations: await listScanLocations() });
-}
+});
 
 // POST /api/locations — add a library folder, scan it, and start watching it.
 // Body: { path }
-export async function POST(req: Request) {
-  try {
-    await requireAdmin();
-  } catch (e) {
-    return authError(e);
-  }
-
-  let body: { path?: string };
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "invalid json" }, { status: 400 });
-  }
-  if (!body.path) {
+export const POST = withAdmin(async (_admin, req) => {
+  const parsed = await parseJson<{ path?: string }>(req);
+  if (!parsed.ok) return parsed.res;
+  if (!parsed.body.path) {
     return NextResponse.json({ error: "missing path" }, { status: 400 });
   }
 
   let location;
   try {
-    location = await addScanLocation(body.path);
+    location = await addScanLocation(parsed.body.path);
   } catch (e) {
     if (e instanceof LocationError) {
       return NextResponse.json({ error: e.message }, { status: 400 });
@@ -55,4 +40,4 @@ export async function POST(req: Request) {
     { location: { ...location, bookCount: result.scanned }, scanned: result.scanned },
     { status: 201 },
   );
-}
+});

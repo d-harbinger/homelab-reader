@@ -1,10 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import {
-  getCurrentUser,
-  authError,
-  UnauthenticatedError,
-} from "@/lib/current-user";
+import { withUser } from "@/lib/route-helpers";
 import { buildFolderTree } from "@/lib/library/folder-tree";
 
 // GET /api/library/folders — the on-disk shelf tree derived from book paths.
@@ -14,25 +10,18 @@ import { buildFolderTree } from "@/lib/library/folder-tree";
 // Privacy: buildFolderTree strips the scan root, so the response carries only
 // relative folder names (e.g. "python/web") — the full filesystem paths, which
 // on a homelab are home-directory paths, never reach the client.
-export async function GET() {
-  try {
-    const user = await getCurrentUser();
-    if (!user) return authError(new UnauthenticatedError());
+export const GET = withUser(async () => {
+  const [books, locations] = await Promise.all([
+    prisma.book.findMany({ select: { filePath: true } }),
+    prisma.scanLocation.findMany({
+      where: { enabled: true },
+      select: { path: true },
+    }),
+  ]);
 
-    const [books, locations] = await Promise.all([
-      prisma.book.findMany({ select: { filePath: true } }),
-      prisma.scanLocation.findMany({
-        where: { enabled: true },
-        select: { path: true },
-      }),
-    ]);
-
-    const tree = buildFolderTree(
-      books,
-      locations.map((l) => l.path),
-    );
-    return NextResponse.json({ tree });
-  } catch (e) {
-    return authError(e);
-  }
-}
+  const tree = buildFolderTree(
+    books,
+    locations.map((l) => l.path),
+  );
+  return NextResponse.json({ tree });
+});

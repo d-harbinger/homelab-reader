@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { authenticateOpds, opdsChallenge } from "@/lib/opds-auth";
+import { parseJson } from "@/lib/parse-json";
 
 // POST /api/opds/progress — OPDS-context reading-progress write (OPDS-03).
 //
@@ -24,14 +25,10 @@ export async function POST(req: Request) {
   const user = await authenticateOpds(req);
   if (!user) return opdsChallenge();
 
-  let body: ProgressPayload;
-  try {
-    body = (await req.json()) as ProgressPayload;
-  } catch {
-    return NextResponse.json({ error: "invalid json" }, { status: 400 });
-  }
+  const parsed = await parseJson<ProgressPayload>(req);
+  if (!parsed.ok) return parsed.res;
 
-  const { bookId, anchor, percent } = body;
+  const { bookId, anchor, percent } = parsed.body;
   if (!bookId || !anchor || typeof anchor !== "object") {
     return NextResponse.json(
       { error: "missing bookId or anchor" },

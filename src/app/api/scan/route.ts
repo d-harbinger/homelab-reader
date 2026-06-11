@@ -1,18 +1,12 @@
 import { NextResponse } from "next/server";
-import { authError, requireAdmin } from "@/lib/current-user";
+import { withAdmin } from "@/lib/route-helpers";
 import { walkAndScan } from "@/lib/scanner";
 import { markFullScan, watcherStatus } from "@/lib/scanner/watcher";
 import { enabledLocationPaths, listScanLocations, touchScanLocation } from "@/lib/scanner/locations";
 
 // POST /api/scan — manual full-tree walk of every enabled library. Idempotent.
 // Admin only — triggering a rescan is a privileged action.
-export async function POST() {
-  try {
-    await requireAdmin();
-  } catch (e) {
-    return authError(e);
-  }
-
+export const POST = withAdmin(async () => {
   const locations = await listScanLocations();
   const enabled = locations.filter((l) => l.enabled);
 
@@ -40,7 +34,7 @@ export async function POST() {
       { status: 500 },
     );
   }
-}
+});
 
 // GET /api/scan — status payload, for convenience.
 export async function GET() {
