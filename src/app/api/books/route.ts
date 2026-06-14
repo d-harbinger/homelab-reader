@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { relativeFolder } from "@/lib/library/folder-tree";
 
 // GET /api/books — flat list, newest first by default.
 //
@@ -51,17 +52,22 @@ export async function GET(req: Request) {
   if (format === "epub" || format === "pdf") where.format = format;
   if (tag) where.tags = { some: { name: tag } };
 
+  // Enabled scan roots, normalized (trailing slashes stripped). Fetched
+  // unconditionally — the `folder` filter below needs them, and so does the
+  // server-side genre derivation in the response map. They never enter the
+  // response; only the comparison and the genre-name derivation touch them.
+  const roots = (
+    await prisma.scanLocation.findMany({
+      where: { enabled: true },
+      select: { path: true },
+    })
+  ).map((l) => l.path.replace(/\/+$/, ""));
+
   if (folder) {
     // Match in SQL against each enabled scan root: a book is "in" the folder
     // when its absolute path begins with "<root>/<target>/". Normalize the
-    // roots (strip trailing slashes) and the target (strip leading/trailing
-    // slashes) so the joined prefix has exactly one slash at each seam.
-    const roots = (
-      await prisma.scanLocation.findMany({
-        where: { enabled: true },
-        select: { path: true },
-      })
-    ).map((l) => l.path.replace(/\/+$/, ""));
+    // target (strip leading/trailing slashes) so the joined prefix has exactly
+    // one slash at each seam.
     // No enabled roots → nothing can match. Skip the query entirely.
     if (roots.length === 0) {
       return NextResponse.json({ books: [] });
@@ -84,16 +90,25 @@ export async function GET(req: Request) {
   });
 
   return NextResponse.json({
-    books: books.map((b) => ({
-      id: b.id,
-      title: b.title,
-      format: b.format,
-      authors: b.authors.map((a) => a.name),
-      language: b.language ?? null,
-      pageCount: b.pageCount ?? null,
-      fileSizeBytes: b.fileSizeBytes ?? null,
-      coverUrl: b.coverPath ? `/api/covers/${b.id}` : null,
-      addedAt: b.addedAt,
-    })),
+    books: books.map((b) => {
+      // Top-level genre = the first segment of the book's root-relative folder.
+      // relativeFolder returns "" for a file sitting directly under a root and
+      // null when the file is under no root; both mean "no genre". filePath is
+      // read ONLY here to derive the name and is never copied into the response.
+      const rel = relativeFolder(b.filePath, roots);
+      const genre = rel ? rel.split("/")[0] : null;
+      return {
+        id: b.id,
+        title: b.title,
+        format: b.format,
+        authors: b.authors.map((a) => a.name),
+        language: b.language ?? null,
+        pageCount: b.pageCount ?? null,
+        fileSizeBytes: b.fileSizeBytes ?? null,
+        coverUrl: b.coverPath ? `/api/covers/${b.id}` : null,
+        addedAt: b.addedAt,
+        genre,
+      };
+    }),
   });
 }

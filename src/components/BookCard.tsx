@@ -7,6 +7,10 @@ export interface BookCardData {
   authors: string[];
   pageCount: number | null;
   coverUrl: string | null;
+  // Top-level on-disk folder this book sits under (server-derived), or null
+  // for a book directly under a scan root. The chip that renders it lands in
+  // a later slice; this is the data/type seam only.
+  genre?: string | null;
 }
 
 export function BookCard({ book }: { book: BookCardData }) {
