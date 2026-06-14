@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { parseJson, withUser, type IdContext } from "@/lib/route-helpers";
-
-const VALID_COLORS = new Set(["yellow", "green", "blue", "pink"]);
+import { isHighlightColor } from "@/lib/highlight-colors";
 
 // PATCH /api/highlights/[id] — change color.
 // Body: { color }
@@ -16,10 +15,9 @@ export const PATCH = withUser<IdContext>(async (user, req, { params }) => {
     return new NextResponse(null, { status: 404 });
   }
 
-  const color =
-    parsed.body.color && VALID_COLORS.has(parsed.body.color)
-      ? parsed.body.color
-      : existing.color;
+  const color = isHighlightColor(parsed.body.color)
+    ? parsed.body.color
+    : existing.color;
 
   const row = await prisma.highlight.update({
     where: { id },
