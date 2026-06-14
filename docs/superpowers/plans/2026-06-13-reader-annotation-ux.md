@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development. Mixed lanes — one slice is agent-env/AUTO, the rest are owner-present (schema) or host-verify (reader interaction). Respect the per-slice markers.
 
-**STATUS:** PENDING · valid-as-of 2026-06-13
+**STATUS:** Slice 1 DONE (`2260739` palette→7 + single-sourced validation across BOTH highlights routes; orchestrator-gate-verified: 9 tests, full suite 168/168, tsc 0, build 0) · Slice 2a READY (agent-env, held for the schema window — no-op until 2b's FK exists) · Slices 2b (owner-present) + 3 (host-verify) PENDING · valid-as-of 2026-06-13
 **Value:** H — owner dogfood verdict 2026-06-11: annotations *"work, but a power user would be underwhelmed"* (the "Zotero bar"). Three concrete gaps: (1) no right-click context menu in the reader, (2) no add-note-on-highlight flow, (3) the color set is small. This is the depth pass that makes the reader feel like a real annotation tool.
 
 **Goal:** Make highlighting + note-taking feel first-class: a richer color palette, a context menu on selection/highlight, and a note explicitly bound to its highlight (not paired by a fragile CFI string).
