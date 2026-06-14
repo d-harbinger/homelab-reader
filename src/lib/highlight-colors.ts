@@ -5,7 +5,14 @@
 // without losing legibility. Names map 1:1 to the validated color values
 // the /api/highlights routes accept.
 
-export type HighlightColor = "yellow" | "green" | "blue" | "pink";
+export type HighlightColor =
+  | "yellow"
+  | "green"
+  | "blue"
+  | "pink"
+  | "orange"
+  | "purple"
+  | "red";
 
 export const HIGHLIGHT_COLORS: Record<
   HighlightColor,
@@ -31,6 +38,21 @@ export const HIGHLIGHT_COLORS: Record<
     swatch: "#f472b6",
     label: "Pink",
   },
+  orange: {
+    fill: "rgba(251, 146, 60, 0.4)",
+    swatch: "#fb923c",
+    label: "Orange",
+  },
+  purple: {
+    fill: "rgba(167, 139, 250, 0.4)",
+    swatch: "#a78bfa",
+    label: "Purple",
+  },
+  red: {
+    fill: "rgba(248, 113, 113, 0.4)",
+    swatch: "#f87171",
+    label: "Red",
+  },
 };
 
 export const HIGHLIGHT_ORDER: HighlightColor[] = [
@@ -38,4 +60,18 @@ export const HIGHLIGHT_ORDER: HighlightColor[] = [
   "green",
   "blue",
   "pink",
+  "orange",
+  "purple",
+  "red",
 ];
+
+// The canonical set of accepted color names, derived from the palette so the
+// reader popover, the rendered annotation, and the /api/highlights route
+// validation can never drift. Single source of truth — do not inline a copy.
+export const VALID_HIGHLIGHT_COLORS = new Set<string>(
+  Object.keys(HIGHLIGHT_COLORS),
+);
+
+export function isHighlightColor(value: unknown): value is HighlightColor {
+  return typeof value === "string" && VALID_HIGHLIGHT_COLORS.has(value);
+}

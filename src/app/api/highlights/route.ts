@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { parseJson, withUser } from "@/lib/route-helpers";
+import { isHighlightColor } from "@/lib/highlight-colors";
 
 interface HighlightPayload {
   bookId?: string;
@@ -8,8 +9,6 @@ interface HighlightPayload {
   text?: string;
   color?: string;
 }
-
-const VALID_COLORS = new Set(["yellow", "green", "blue", "pink"]);
 
 // POST /api/highlights — create a highlight on a book.
 // Body: { bookId, anchor: { type: "epub-cfi-range", cfi } | { type: "pdf-rect", page, rects },
@@ -26,10 +25,16 @@ export const POST = withUser(async (user, req) => {
     );
   }
 
+  // A supplied color must be a real palette color; reject unknown values rather
+  // than silently coercing them. No color supplied → default to yellow.
+  if (color !== undefined && !isHighlightColor(color)) {
+    return NextResponse.json({ error: "invalid color" }, { status: 400 });
+  }
+
   const book = await prisma.book.findUnique({ where: { id: bookId } });
   if (!book) return NextResponse.json({ error: "unknown book" }, { status: 404 });
 
-  const safeColor = color && VALID_COLORS.has(color) ? color : "yellow";
+  const safeColor = color ?? "yellow";
 
   const row = await prisma.highlight.create({
     data: {
