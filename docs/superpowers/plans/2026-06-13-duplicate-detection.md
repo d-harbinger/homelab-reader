@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development (one slice = one Task, gated, then stop).
 
-**STATUS:** PENDING · valid-as-of 2026-06-13
+**STATUS:** Slice 1 DONE (`96a14f4`, night-built + orchestrator-gate-verified 2026-06-13: 8 tests + openlibrary 5 green, tsc 0, build 0, full suite 159/159; shared tokenizer extracted to `src/lib/text/normalize.ts`) · Slice 2 PENDING (host-verify) · valid-as-of 2026-06-13
 **Value:** H — owner question 2026-06-11 (first dogfood session). The scanner already converges **byte-identical** files (hash match re-points one row), but **same-work-different-file** (epub+pdf of one book, re-downloads, editions) has NO detection — the owner asked for exactly this. A read-only report surfaces the groups so the owner can decide what to prune.
 
 **Goal:** A "possible duplicates" surface that groups existing `Book` rows that are probably the same work, **without touching the scanner or the schema.** Group by ISBN when present; fall back to a normalized title+author key.
