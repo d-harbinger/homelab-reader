@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development (one slice = one Task, gated, then stop). Steps use checkbox (`- [ ]`) syntax.
 
-**STATUS:** Slice 1 DONE (`54e154c`, night-built + orchestrator-gate-verified 2026-06-13: 9 tests, tsc 0, build 0, full suite 159/159) · Slices 2–3 PENDING · valid-as-of 2026-06-13
+**STATUS:** Slices 1–2 DONE (`54e154c` route + `799c2a6` card-payload genre; orchestrator-gate-verified 2026-06-13: full suite 171/171, tsc 0, build 0) · Slice 3 PENDING (host-verify: home wiring + chip render + recently-added cap) · valid-as-of 2026-06-13
 **Value:** H — owner request 2026-06-11 ("Netflix-style" landing rows). Turns the existing on-disk folder taxonomy into a browsable home lens with zero invented categories. Revives the parked Phase 2 of `2026-05-31-library-views-and-notes.md` with concrete owner intent.
 
 **Goal:** A home page that opens onto genre rows derived from the **top-level folder** each book lives under (python/, ai/, …). Each row is recent-first and capped; a genre chip on each card names its top folder; Recently-added is capped to a single row.
