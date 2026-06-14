@@ -41,15 +41,10 @@ export interface SearchOptions {
 
 // --- matching ---------------------------------------------------------------
 
-// Tokenize for fuzzy comparison: lowercase, drop punctuation, split on
-// whitespace. Unicode-aware so accented titles tokenize sensibly.
-function tokens(s: string): string[] {
-  return s
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]/gu, " ")
-    .split(/\s+/)
-    .filter(Boolean);
-}
+// The tokenizer is shared with the duplicate-detection helper — see
+// src/lib/text/normalize.ts. (Behavior is unchanged from the inline version
+// this used to carry.)
+import { tokens } from "@/lib/text/normalize";
 
 function jaccard(a: string[], b: string[]): number {
   if (a.length === 0 || b.length === 0) return 0;
