@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development. Mixed lanes — the schema + scan-wiring is owner-present (`prisma migrate dev`); the pure pipeline composition + accept/reject logic is agent-env; the review screen is host-verify.
 
-**STATUS:** PENDING · valid-as-of 2026-06-13
+**STATUS:** Slice 2 DONE (`8d227a4` — `enrichBook`/`isThin`/`applyAcceptance` pure functions, orchestrator-gate-verified 2026-06-14: 15 tests, full suite 186/186, tsc 0, build 0; schema + scanner untouched) · Slice 1 (migration) + 3 (scan hook/routes) owner-present · Slice 4 host-verify · valid-as-of 2026-06-14
 **Value:** H — owner dogfood 2026-06-11 specifically praised Zotero-style metadata detection and named this *"the highest-leverage candidate of the three."* The two halves already exist, shipped + unit-tested, and sit **dormant**: `parseFilenameSignals` (filename → title/ISBN) and `searchOpenLibrary` (→ ranked `MetadataSuggestion[]`). What's missing is the connective tissue: a place to store suggestions, the scan-time call that fills it, and a screen to accept/bulk-accept them.
 
 **Goal:** On scan, a freshly-imported book whose metadata is thin gets ranked OpenLibrary suggestions stored against it; a review screen lets the owner accept the best match (or bulk-accept above a confidence threshold), writing the chosen fields back to the `Book`. FOSS, no Google — OpenLibrary only, matching the project's privacy posture.
