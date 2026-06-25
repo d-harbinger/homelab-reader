@@ -65,3 +65,54 @@ describe("orphanNotes", () => {
     expect(orphans.map((o) => o.id)).toEqual(["book-note"]);
   });
 });
+
+// Slice 2a — the pairing rule prefers a structural `highlightId` when present,
+// and DEGRADES to the existing guarded CFI equality when it is absent. Building
+// this before the FK migration (Slice 2b) is safe precisely because the field is
+// optional: with no highlightId anywhere, every branch below collapses to the
+// pre-existing CFI behavior pinned by the tests above.
+type NId = { id: string; anchor: { cfi?: string }; highlightId?: string | null };
+const nh = (id: string, cfi: string | undefined, highlightId?: string | null): NId => ({
+  id,
+  anchor: { cfi },
+  highlightId,
+});
+
+describe("highlightId pairing (Slice 2a)", () => {
+  it("highlightId match wins: a note pairs to the highlight whose id it carries", () => {
+    const highlights = [h("h1", "/6/2!/4/2"), h("h2", "/6/4!/8/6")];
+    const notes = [nh("n1", "/6/4!/8/6", "h1")]; // cfi points at h2, but FK says h1
+    const map = notesByHighlight(highlights, notes);
+    expect(map.get("h1")?.id).toBe("n1");
+    // and it must NOT also leak onto h2 via the coincident cfi
+    expect(map.get("h2") ?? null).toBeNull();
+  });
+
+  it("legacy CFI-only note (no highlightId) still pairs via matchesCfi", () => {
+    const highlights = [h("h1", "/6/2!/4/2")];
+    const notes = [nh("legacy", "/6/2!/4/2", undefined)];
+    const map = notesByHighlight(highlights, notes);
+    expect(map.get("h1")?.id).toBe("legacy");
+  });
+
+  it("a WRONG highlightId does NOT pair even when the cfi coincides with the highlight", () => {
+    // The note's cfi equals h1's cfi (would pair under the legacy rule), but its
+    // highlightId points elsewhere — the structural key wins and BLOCKS the match.
+    const highlights = [h("h1", "/6/2!/4/2")];
+    const notes = [nh("n1", "/6/2!/4/2", "h-other")];
+    const map = notesByHighlight(highlights, notes);
+    expect(map.get("h1") ?? null).toBeNull();
+    // …and it is therefore an orphan.
+    const orphans = orphanNotes(highlights, notes);
+    expect(orphans.map((o) => o.id)).toEqual(["n1"]);
+  });
+
+  it("a note with neither cfi nor highlightId never pairs (the existing guard holds)", () => {
+    const highlights = [h("h1", undefined)];
+    const notes = [nh("n1", undefined, undefined)];
+    const map = notesByHighlight(highlights, notes);
+    expect(map.get("h1") ?? null).toBeNull();
+    const orphans = orphanNotes(highlights, notes);
+    expect(orphans.map((o) => o.id)).toEqual(["n1"]);
+  });
+});

@@ -13,46 +13,77 @@
 // detail page, not in the reader panel); all this rule needs is `id` and
 // `anchor.cfi?`. No Prisma, no React, no fetch — fully unit-testable in-VM.
 //
-// NOTE: there is no Note.highlightId column; the CFI string is the join key.
-// Adding that FK is a planned schema change, not this helper's concern.
+// NOTE: the Note.highlightId FK column does not exist in the schema YET (it is
+// the owner-present Slice 2b migration). This rule is written ahead of it on
+// purpose: `highlightId` is OPTIONAL on the note shape, so when it is absent
+// everywhere — the case for all current data — the rule degrades EXACTLY to the
+// legacy guarded-CFI behavior. Once the FK + data land, notes carrying a
+// highlightId pair structurally instead of by a fragile CFI string, and legacy
+// CFI-only notes keep pairing via the fallback. That optionality is what makes
+// building the rule before the migration non-destructive.
 
 /** Minimal highlight shape this rule needs. */
 interface HasCfiAnchor {
   anchor: { cfi?: string };
 }
 
-/** A note that also exposes a stable id (so callers can map back to it). */
-interface NoteLike extends HasCfiAnchor {
+/** A highlight this rule can pair against: a stable id + a CFI anchor. */
+interface HighlightLike extends HasCfiAnchor {
   id: string;
 }
 
 /**
- * Map each highlight's id to the note whose cfi matches it, if any. Highlights
- * with no matching note are absent from the map (callers use `?? null`).
- * Matching is the guarded CFI-equality rule; a cfi-less anchor never matches.
+ * A note that exposes a stable id (so callers can map back to it) and,
+ * optionally, the id of the highlight it is structurally bound to. The
+ * `highlightId` is the forward-looking FK (Slice 2b); until that column exists
+ * it is simply absent on every note, and the rule falls back to CFI.
  */
-export function notesByHighlight<H extends HasCfiAnchor & { id: string }, N extends NoteLike>(
+interface NoteLike extends HasCfiAnchor {
+  id: string;
+  highlightId?: string | null;
+}
+
+/**
+ * The single pairing rule. A note pairs with a highlight when:
+ *   1. the note carries a `highlightId` → STRUCTURAL match on `highlight.id`.
+ *      A present-but-different highlightId BLOCKS the CFI fallback: a note bound
+ *      to another highlight must never pair here, even if the CFIs coincide.
+ *   2. the note has no `highlightId` → the legacy guarded CFI equality.
+ * With no highlightId anywhere this is identical to the pre-FK behavior.
+ */
+function pairs(note: NoteLike, highlight: HighlightLike): boolean {
+  if (note.highlightId != null) return note.highlightId === highlight.id;
+  return matchesCfi(note, highlight);
+}
+
+/**
+ * Map each highlight's id to the note that pairs with it, if any. Highlights
+ * with no matching note are absent from the map (callers use `?? null`).
+ * Pairing prefers the structural `highlightId`, falling back to guarded CFI.
+ */
+export function notesByHighlight<H extends HighlightLike, N extends NoteLike>(
   highlights: H[],
   notes: N[],
 ): Map<string, N> {
   const map = new Map<string, N>();
   for (const h of highlights) {
-    const match = notes.find((nt) => matchesCfi(nt, h));
+    const match = notes.find((nt) => pairs(nt, h));
     if (match) map.set(h.id, match);
   }
   return map;
 }
 
 /**
- * The notes that match no highlight — the freeform/orphan notes (e.g. book-level
- * notes with `anchor.type === "book"` and no cfi). Inverse of notesByHighlight,
- * using the same guarded rule so the two can never disagree.
+ * The notes that pair with no highlight — the freeform/orphan notes (e.g.
+ * book-level notes with `anchor.type === "book"` and no cfi, or a note whose
+ * highlightId points at a highlight not in this set). Inverse of
+ * notesByHighlight, using the same `pairs` rule so the two can never disagree.
  */
-export function orphanNotes<H extends HasCfiAnchor, N extends NoteLike>(
+export function orphanNotes<H extends HighlightLike, N extends NoteLike>(
   highlights: H[],
   notes: N[],
 ): N[] {
-  return notes.filter((nt) => !highlights.some((h) => matchesCfi(nt, h)));
+  return notes.filter((nt) => !highlights.some((h) => pairs(nt, h)));
 }
 
 /** Guarded CFI equality: equal AND non-empty on both sides. */
