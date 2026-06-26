@@ -5,6 +5,7 @@ import { fileHash } from "./hash";
 import { extractEpub } from "./epub";
 import { extractPdf } from "./pdf";
 import { writeCover } from "./covers";
+import { enrichBook, isThin } from "@/lib/metadata/enrich";
 
 export type BookFormat = "epub" | "pdf";
 
@@ -150,6 +151,66 @@ export async function scanFile(filePath: string): Promise<void> {
       where: { id: book.id },
       data: { coverPath: coverFile },
     });
+  }
+
+  // Enrich-on-import (D3): a freshly imported book whose embedded metadata is
+  // thin gets ranked OpenLibrary suggestions stored against it for the owner to
+  // review. Best-effort by contract — a thrown/failed enrich must NEVER break
+  // the import (the book is already created above), so this is fenced and
+  // swallows. Only runs on the brand-new-file branch: a re-extract / move keeps
+  // the owner's earlier suggestion decisions (D-3e).
+  await enrichNewBook(
+    { id: book.id, title: book.title, isbn: book.isbn },
+    filePath,
+    extracted.authors,
+  );
+}
+
+// Map the in-memory MetadataSuggestion pipeline onto persisted BookSuggestion
+// rows for a just-created thin book. The fetch is read from the global at call
+// time so tests can inject canned OpenLibrary JSON via vi.stubGlobal("fetch", …)
+// without forking scanFile's signature (the watcher calls scanFile(path) only).
+//
+// Best-effort: every failure path — a thin-check throw, a network failure inside
+// enrichBook (which itself resolves to []), or a DB write error — is swallowed.
+// The import has already succeeded; enrichment never regresses that.
+async function enrichNewBook(
+  book: { id: string; title: string; isbn: string | null },
+  filePath: string,
+  authorNames: string[],
+): Promise<void> {
+  try {
+    const thin = isThin({
+      title: book.title,
+      filePath,
+      isbn: book.isbn,
+      authors: authorNames.map((name) => ({ name })),
+    });
+    if (!thin) return;
+
+    const suggestions = await enrichBook(filePath, globalThis.fetch);
+    if (suggestions.length === 0) return;
+
+    // Map MetadataSuggestion (in-memory) → BookSuggestion columns: string[]
+    // (authors/subjects) become JSON strings (SQLite has no array type);
+    // undefined optionals become null. status defaults to "pending".
+    await prisma.bookSuggestion.createMany({
+      data: suggestions.map((s) => ({
+        bookId: book.id,
+        source: s.source,
+        confidence: s.confidence,
+        title: s.title ?? null,
+        authors: JSON.stringify(s.authors),
+        publishedYear: s.publishedYear ?? null,
+        publisher: s.publisher ?? null,
+        isbn: s.isbn ?? null,
+        subjects: JSON.stringify(s.subjects),
+        coverUrl: s.coverUrl ?? null,
+        workKey: s.workKey ?? null,
+      })),
+    });
+  } catch {
+    // Swallow — enrichment is best-effort and must never break an import.
   }
 }
 

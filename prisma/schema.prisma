@@ -93,9 +93,41 @@ model Book {
   notes         Note[]
   highlights    Highlight[]
   progress      Progress[]
+  suggestions   BookSuggestion[]
 
   @@index([title])
   @@index([format])
+}
+
+// A ranked metadata candidate proposed for a Book at scan time (D3 enrich-on-
+// import). One row per OpenLibrary candidate; created best-effort when a freshly
+// imported book is "thin" (src/lib/metadata/enrich.ts → isThin). Deliberately
+// named BookSuggestion, NOT MetadataSuggestion: the latter is the in-memory
+// search-result interface in src/lib/metadata/openlibrary.ts, and the scan hook
+// MAPS that shape onto these columns (authors/subjects are string[] in memory →
+// JSON-encoded String here, since SQLite has no array type). The owner reviews
+// pending rows and accepts the best match, which writes the chosen fields back
+// onto the Book (applyAcceptance) and marks the siblings rejected.
+model BookSuggestion {
+  id            String   @id @default(cuid())
+  bookId        String
+  source        String   // "openlibrary"
+  confidence    Float
+  title         String?
+  authors       String   // JSON string[] (SQLite has no array)
+  publishedYear Int?
+  publisher     String?
+  isbn          String?
+  subjects      String   // JSON string[]
+  coverUrl      String?
+  workKey       String?  // OpenLibrary /works/OL…W — stable handle
+  status        String   @default("pending") // pending | accepted | rejected
+  createdAt     DateTime @default(now())
+
+  book Book @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  @@index([bookId])
+  @@index([status])
 }
 
 model Author {

@@ -19,6 +19,7 @@ import {
   beforeAll,
   afterAll,
   beforeEach,
+  afterEach,
   vi,
 } from "vitest";
 import { execFileSync } from "node:child_process";
@@ -90,8 +91,24 @@ afterAll(async () => {
 beforeEach(async () => {
   vi.clearAllMocks();
   lib = mkdtempSync(path.join(tmpdir(), "hlr-lib-"));
+  // The enrich-on-import hook (D3) now runs after a brand-new book.create. The
+  // committed fixtures are "thin" (no ISBN), so scanFile would call the real
+  // OpenLibrary fetch during these reconcile-branch tests. Stub the global fetch
+  // to an empty-docs response: offline + deterministic, and (since searchOpen-
+  // Library returns [] for no docs) zero BookSuggestion rows, so the branch
+  // assertions about Book counts are untouched. The dedicated enrich coverage
+  // lives in tests/scanner-enrich.test.ts.
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => new Response(JSON.stringify({ docs: [] }), { status: 200 })),
+  );
+  await h.prisma.bookSuggestion.deleteMany();
   await h.prisma.failedImport.deleteMany();
   await h.prisma.book.deleteMany();
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe("scanFile reconcile branches (TEST-03)", () => {
