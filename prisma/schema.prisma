@@ -134,13 +134,20 @@ model Note {
   // Quoted text snippet near the anchor (helps if anchor breaks later)
   context   String?
   body      String
+  // Optional FK to the highlight this note annotates (Slice 2b). SetNull, NOT
+  // Cascade: deleting a highlight orphans the note (the text is the user's),
+  // it never deletes it. Absent for freeform/book-level notes and legacy data,
+  // which keep pairing via the CFI fallback in src/lib/annotations.ts.
+  highlightId String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  book Book @relation(fields: [bookId], references: [id], onDelete: Cascade)
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  book      Book       @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  highlight Highlight? @relation(fields: [highlightId], references: [id], onDelete: SetNull)
 
   @@index([bookId])
+  @@index([highlightId])
 }
 
 model Highlight {
@@ -156,6 +163,8 @@ model Highlight {
 
   book Book @relation(fields: [bookId], references: [id], onDelete: Cascade)
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Inverse of Note.highlight — the notes structurally bound to this highlight.
+  notes Note[]
 
   @@index([bookId])
 }
