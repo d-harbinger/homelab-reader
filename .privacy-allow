@@ -9,3 +9,10 @@
 # (e.g. /media/sf_*) still fires.
 /mnt/Projects
 /mnt/shared
+
+# The GitHub SSH user@host trips the email regex but is a public, non-identifying
+# value — it appears in clone-URL examples in deploy docs. Current source now uses
+# the HTTPS clone URL (correct for a public repo's audience); this literal remains
+# in older history, and a filter-repo rewrite would be absurd for a benign host
+# string. Declared known-safe rather than scrubbed.
+git@github.com

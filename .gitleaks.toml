@@ -29,6 +29,12 @@ paths = [
   '''^scripts/hooks/pre-commit$''',
   '''^scripts/audit-privacy\.sh$''',
   '''^\.privacy-patterns\.example$''',
+  # .privacy-allow.example exists to DOCUMENT known-safe synthetic values (e.g.
+  # the canonical AWS doc key AKIAIOSFODNN7EXAMPLE) — same self-example class as
+  # .privacy-patterns.example above, so the scanner must not flag its own
+  # teaching samples. (Canonical-template gap: the privacy-guard source template
+  # omits this line; flagged for pg-update-all so every repo greens.)
+  '''^\.privacy-allow\.example$''',
   '''^\.gitleaks\.toml$''',
   # privacy-guard canonical sources — inert in normal projects (no templates/
   # dir), used by <privacy-guard>/ itself to self-host without

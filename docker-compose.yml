@@ -5,7 +5,7 @@
 # ── First-time setup on the homelab ───────────────────────────
 #
 #   # 1. Clone the repo onto the host (any directory)
-#   git clone git@github.com:d-harbinger/homelab-reader.git
+#   git clone https://github.com/d-harbinger/homelab-reader.git
 #   cd homelab-reader
 #
 #   # 2. Tell the container where your books live. Two equivalent ways:
