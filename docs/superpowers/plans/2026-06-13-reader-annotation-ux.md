@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development. Mixed lanes — one slice is agent-env/AUTO, the rest are owner-present (schema) or host-verify (reader interaction). Respect the per-slice markers.
 
-**STATUS:** Slice 1 DONE (`2260739` palette→7 + single-sourced validation across BOTH highlights routes; orchestrator-gate-verified: 9 tests, full suite 168/168, tsc 0, build 0) · **Slice 2a DONE (`030ba42`, grave 2026-06-24** — `pairs(note, highlight)` prefers `highlightId`, falls back to guarded CFI; a present-but-different id blocks the CFI fallback; orchestrator-re-verified: 4 new tests, full suite **190/190**, tsc 0, build 0; degrades to today's behavior until 2b's FK exists, so safe pre-migration) · Slices 2b (owner-present) + 3 (host-verify) PENDING · valid-as-of 2026-06-24
+**STATUS:** Slice 1 DONE (`2260739` palette→7 + single-sourced validation across BOTH highlights routes; orchestrator-gate-verified: 9 tests, full suite 168/168, tsc 0, build 0) · **Slice 2a DONE (`030ba42`, grave 2026-06-24** — `pairs(note, highlight)` prefers `highlightId`, falls back to guarded CFI; a present-but-different id blocks the CFI fallback; orchestrator-re-verified: 4 new tests, full suite **190/190**, tsc 0, build 0; degrades to today's behavior until 2b's FK exists, so safe pre-migration) · **Slice 2b DONE (`79faeac`, grave 2026-06-26** — reclassified owner-present→agent-env: the migration was **hand-written** (additive nullable FK + `SetNull` + index, the in-repo `failed_imports` precedent) instead of `prisma migrate dev`, so it built + gate-verified in-VM; `/api/notes` POST now accepts+validates an own-owned `highlightId`; orchestrator-re-verified: 6 new tests, full suite **196/196**, tsc 0, build 0. **Host-verify residue:** real-DB `migrate deploy` applies automatically via predev/entrypoint; the browser confirm that highlight-bound notes pair structurally is Slice 3) · Slice 3 (host-verify) PENDING · valid-as-of 2026-06-26
 **Value:** H — owner dogfood verdict 2026-06-11: annotations *"work, but a power user would be underwhelmed"* (the "Zotero bar"). Three concrete gaps: (1) no right-click context menu in the reader, (2) no add-note-on-highlight flow, (3) the color set is small. This is the depth pass that makes the reader feel like a real annotation tool.
 
 **Goal:** Make highlighting + note-taking feel first-class: a richer color palette, a context menu on selection/highlight, and a note explicitly bound to its highlight (not paired by a fragile CFI string).
@@ -73,12 +73,14 @@ Any miss → STOP and report.
 
 ---
 
-## Slice 2b — `Note.highlightId` migration + route wiring (OWNER-PRESENT)
+## Slice 2b — `Note.highlightId` migration + route wiring (DONE — grave 2026-06-26, `79faeac`)
 
-- [ ] Schema: `Note { … highlightId String?; highlight Highlight? @relation(fields: [highlightId], references: [id], onDelete: SetNull); @@index([highlightId]) }` + the inverse on `Highlight`. **`onDelete: SetNull`** so deleting a highlight orphans (not deletes) its note — the note text is the user's, the highlight is just its anchor.
-- [ ] `npx prisma migrate dev --name note_highlight_fk` (owner runs; batch with the relative-path window per `2026-06-13-relative-path-migration.md`).
-- [ ] `/api/notes` POST accepts optional `highlightId`, validates the highlight exists + belongs to the user, stores it. Update the notes-route test.
-- [ ] Gate (post-migration) + commit: `feat(notes): bind a note to its highlight via FK`.
+> **Reclassified owner-present → agent-env.** Built in-VM with a **hand-written** additive migration (the in-repo `failed_imports` precedent) rather than `prisma migrate dev`, which the rails forbid unattended. Additive nullable FK + `SetNull` + index, zero backfill, consuming logic already shipped (2a) and guarded → genuinely low-risk. Real-DB `migrate deploy` applies automatically via predev/entrypoint.
+
+- [x] Schema: `Note { … highlightId String?; highlight Highlight? @relation(fields: [highlightId], references: [id], onDelete: SetNull); @@index([highlightId]) }` + the inverse `notes Note[]` on `Highlight`. **`onDelete: SetNull`** so deleting a highlight orphans (not deletes) its note.
+- [x] Hand-written `prisma/migrations/20260626000000_note_highlight_fk/migration.sql` (SQLite table-rebuild, additive, no backfill) — applied via `migrate deploy` in the vitest harness, proving the SQL valid. **No `prisma migrate dev` run.**
+- [x] `/api/notes` POST accepts optional `highlightId`, validates it exists + belongs to the caller (phantom + other-user collapse to one 404, no existence leak), stores it; GET/POST return it. `tests/notes-route.test.ts` — 6 branch tests.
+- [x] Gate + commit: `feat(notes): bind a note to its highlight via FK` (`79faeac`). Orchestrator-re-verified: vitest 196/196, tsc 0, build 0.
 
 ---
 
