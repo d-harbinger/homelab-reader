@@ -354,13 +354,15 @@ the second pass found.
 
 | # | Finding | Action | Status |
 |---|---------|--------|--------|
-| 7 | Catalog-mutation authz inconsistency (accept route is `withUser`, all other shared-state mutators are `withAdmin`) | Owner decides admin-only vs any-user; if admin-only, `withUser`→`withAdmin` + 403 test; else record intent in a comment | **OPEN — owner decision.** One-line code change once the curation model is confirmed |
-| 8 | Enrich has no network timeout; awaited in the scan loop → a hung OpenLibrary can stall a cold scan ~5 min/book | Pass `AbortSignal.timeout(...)` from `enrichBook`; keep the serial-vs-background latency call as the pre-existing owner decision | **OPEN — safe to apply.** Correctness-preserving hardening; the broader batching/backgrounding decision stays owner-gated |
+| 7 | Catalog-mutation authz inconsistency (accept route is `withUser`, all other shared-state mutators are `withAdmin`) | Owner decides admin-only vs any-user; if admin-only, `withUser`→`withAdmin` + 403 test; else record intent in a comment | **DONE — 2026-06-29.** Owner confirmed it was unintentional (they assumed accepting a suggestion wrote *per-user* metadata; the schema has one shared `Book` row, so there is no per-user metadata to write). Best-practice check: self-hosted library servers gate catalog-metadata editing behind a privileged capability — Calibre-Web's "Allow Edit" permission, Komga's manager role, admin-only in Plex/Jellyfin — never the default for every reader. Gated **`withUser`→`withAdmin`** in `suggestions/[sid]/route.ts` (the comment now records the why + the future granular-role option); added a reader→403 case in `suggestions-route.test.ts` and to the AUTHZ-04 list in `authz-gates.test.ts` |
+| 8 | Enrich has no network timeout; awaited in the scan loop → a hung OpenLibrary can stall a cold scan ~5 min/book | Pass `AbortSignal.timeout(...)` from `enrichBook`; keep the serial-vs-background latency call as the pre-existing owner decision | **DONE — 2026-06-29.** `enrichBook` now passes `AbortSignal.timeout(ENRICH_TIMEOUT_MS = 8000)` to `searchOpenLibrary`, so a hung request aborts to the already-handled `[]`. The broader serial-vs-background latency on a large first scan stays the pre-existing owner design decision (batch/concurrency/background) — the timeout is the floor, not that whole fix |
 
-Both items are small. #8 is a safe mechanical hardening (a timeout only converts a
-hang into the already-handled `[]`). #7 is one line *after* the owner confirms
-whether non-admins may curate shared catalog metadata — the kind of product
-decision an audit surfaces but does not make.
+Both fixes landed 2026-06-29. The *per-user metadata* model the owner had assumed
+(each reader editing their own copy of a book's catalog fields) is not how the
+reference library servers work and is not in this schema — it would be a new
+per-user override layer, a feature for another day, not the bug fix. The granular
+"can edit metadata" role (Calibre-Web style) is the clean future path if specific
+non-admins should curate without full admin; recorded in the route comment.
 
 ## Verification gate — re-audit (2026-06-29)
 
@@ -379,6 +381,13 @@ self-heals):
 Not verifiable from this environment, and therefore **not claimed** (unchanged
 from 2026-06-10): live reader behavior, the scanner against a real folder under
 load, OPDS against a real mobile client, and the Docker image / entrypoint
-migration path. Findings #7 and #8 are surfaced from reading + gate runs; neither
-is *applied* in this pass — #7 needs the owner's curation-model call, #8 is queued
-as a safe apply.
+migration path.
+
+**Both findings were applied the same day** (owner-approved): #7's `withAdmin`
+gate and #8's enrich timeout. Re-measured after the fixes: **tsc 0 · lint 0 ·
+vitest 214/214 (26 files)** (+3 from the new authz cases) — the new
+reader→403 assertions pass and the four accept happy-paths were updated to an
+admin session. The *behavioral* effect of #7 (a non-admin genuinely blocked in
+the running app) and #8 (a real slow-OpenLibrary scan completing instead of
+stalling) are gate-proven here but, like all runtime behavior, host-confirmable
+by the owner against a live instance.

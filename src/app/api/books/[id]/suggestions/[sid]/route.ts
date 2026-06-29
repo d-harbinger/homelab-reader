@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { parseJson, withUser } from "@/lib/route-helpers";
+import { parseJson, withAdmin } from "@/lib/route-helpers";
 import { applyAcceptance } from "@/lib/metadata/enrich";
 import type { MetadataSuggestion } from "@/lib/metadata/openlibrary";
 
@@ -16,10 +16,21 @@ interface AcceptPayload {
 // POST /api/books/[id]/suggestions/[sid] — accept a metadata suggestion (D3,
 // D-3d). Transactional write-back: the chosen fields fill empty Book columns
 // (or overwrite when force), subjects are attached as tags, the accepted row is
-// marked "accepted", and its siblings are marked "rejected". Session-gated like
-// the sibling routes; a non-existent book/suggestion and a suggestion that
-// belongs to a different book collapse to the same 404.
-export const POST = withUser<SuggestionContext>(async (_user, req, { params }) => {
+// marked "accepted", and its siblings are marked "rejected".
+//
+// ADMIN-GATED — this writes the SHARED Book catalog row (title/isbn/publisher)
+// and attaches library-wide tags, so it is a curation action, not per-user data.
+// It is admin-only to match the other shared-state mutators (`scan`,
+// `locations`, `users`); the per-book siblings (highlights/notes/progress) are
+// `withUser` precisely because they ARE per-user data. (The established pattern
+// in self-hosted library servers — e.g. Calibre-Web's "Allow Edit" permission —
+// is that editing shared catalog metadata is a privileged capability, never the
+// default for every reader. A future granular "can edit metadata" role could
+// let specific non-admins curate without full admin.)
+//
+// A non-existent book/suggestion and a suggestion that belongs to a different
+// book collapse to the same 404.
+export const POST = withAdmin<SuggestionContext>(async (_admin, req, { params }) => {
   const { id, sid } = await params;
 
   // force is optional; an absent/empty body is fine (default force=false). Only a
