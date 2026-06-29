@@ -1,0 +1,46 @@
+# DOGFOOD — homelab-reader
+
+Session-based dogfooding. Practice + why: `dev-tools/docs/dogfooding.md`. Pick one
+charter, set a 60–90 min timer, run it against the **live Docker container** (the
+library of record at `/app/books`), and log what happens. Capture bugs as
+reproductions and keep going — fixes are a separate session.
+
+## Charters — the ways a real user touches this
+
+- [ ] **C1. Cold start + library scan.** Explore the container booting from cold
+  with a real shelf of EPUB and PDF files dropped into `/app/books`, to find
+  scan, indexing, duplicate-detection, and genre-row bugs. · 60m · needs: container
+- [ ] **C2. Long-book reading.** Explore the EPUB reader on a 300+ page book —
+  page turning, progress percentage, table-of-contents jumps, font and theme
+  switches — to find rendering and progress-persistence bugs (does progress
+  survive a reload?). · 60m · needs: container
+- [ ] **C3. Annotations.** Explore the highlight / note flow end to end —
+  create, edit, and the highlight-to-text binding — plus the new context-menu, to
+  find lost or mis-bound annotations. · 60m · needs: container
+- [ ] **C4. Enrich-on-import review.** Explore the metadata-suggestion review
+  screen with a deliberately messy or missing-metadata book, to find
+  suggestion / accept / reject bugs. · 45m · needs: container
+- [ ] **C5. Mobile client over OPDS.** Explore a mobile reading app connecting to
+  the live container over OPDS (the open catalog protocol e-readers use) —
+  sign-in, browse, download — to find authentication and listing bugs. · 60m ·
+  needs: container + a mobile reader app on a device
+- [ ] **C6. Two accounts.** Explore two user accounts in parallel, each with its
+  own progress and highlights, to find cross-user leakage. · 45m · needs: container
+
+## Bug log — capture-and-continue
+
+```
+### B1 — <one-line summary>
+- build:     homelab-reader @ <commit> (container)
+- did / expected / got:
+- severity:  annoying | blocks-flow | data-loss
+- status:    open
+```
+
+(none yet)
+
+## Session log
+
+| date | charter | dur | T/B/S | bugs found | notes |
+|------|---------|-----|-------|-----------|-------|
+|      |         |     |       |           |       |
