@@ -47,6 +47,7 @@ import {
 import { GET as fsGet } from "@/app/api/fs/route";
 import { GET as bookFileGet } from "@/app/api/books/[id]/file/route";
 import { GET as coverGet } from "@/app/api/covers/[id]/route";
+import { POST as suggestionAccept } from "@/app/api/books/[id]/suggestions/[sid]/route";
 
 // Reset to signed-out before each test so a leaked session can't mask a gate.
 beforeEach(() => {
@@ -116,6 +117,18 @@ describe("Admin routes reject non-admin + unauthenticated (AUTHZ-04)", () => {
     { name: "POST /api/locations", call: () => locationsPost(jsonReq("http://test/api/locations", { path: "/x" })) },
     { name: "GET /api/fs", call: () => fsGet(new Request("http://test/api/fs?path=/")) },
     { name: "POST /api/scan", call: () => scanPost() },
+    {
+      // Accepting a suggestion writes the SHARED Book catalog row, so it is
+      // admin-only like the other shared-state mutators — not withUser like the
+      // per-user highlights/notes/progress siblings. The reject short-circuits
+      // in withAdmin before any Prisma call, so no DB is needed here.
+      name: "POST /api/books/[id]/suggestions/[sid]",
+      call: () =>
+        suggestionAccept(
+          jsonReq("http://test/api/books/b/suggestions/s", {}),
+          { params: Promise.resolve({ id: "b", sid: "s" }) },
+        ),
+    },
   ];
 
   for (const { name, call } of cases) {

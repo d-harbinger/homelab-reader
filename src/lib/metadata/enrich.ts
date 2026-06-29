@@ -17,6 +17,14 @@ import { parseFilenameSignals } from "./filename-signals";
 import { searchOpenLibrary } from "./openlibrary";
 import type { MetadataSuggestion } from "./openlibrary";
 
+// Hard ceiling on a single OpenLibrary round-trip. enrichBook runs on the scan
+// path, awaited once per thin book — and Node's global fetch has no short
+// default request timeout (undici's headers/body timeouts are ~5 min), so a
+// slow or hung server would otherwise stall a cold bulk scan for minutes per
+// book. A bounded AbortSignal turns a hang into the same empty result every
+// other failure already resolves to, preserving the best-effort contract.
+const ENRICH_TIMEOUT_MS = 8000;
+
 /**
  * Compose the dormant pipeline: filename → signals → ranked OpenLibrary
  * suggestions (best confidence first). Network is injected so this stays a pure
@@ -32,8 +40,13 @@ export async function enrichBook(
 ): Promise<MetadataSuggestion[]> {
   const query = parseFilenameSignals(signalsSource);
   // searchOpenLibrary already short-circuits to [] when the query is empty and
-  // swallows network/parse errors, so no try/catch is needed here.
-  return searchOpenLibrary(query, { fetchImpl });
+  // swallows network/parse errors (an abort included), so no try/catch is needed
+  // here. The bounded signal caps a slow/hung request at ENRICH_TIMEOUT_MS so it
+  // can never stall the scan loop this is awaited inside.
+  return searchOpenLibrary(query, {
+    fetchImpl,
+    signal: AbortSignal.timeout(ENRICH_TIMEOUT_MS),
+  });
 }
 
 /** Minimal book shape the thin-check needs (D-3a). */

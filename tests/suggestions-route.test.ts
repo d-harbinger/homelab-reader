@@ -10,9 +10,10 @@
 // Branches (branch-coverage rule):
 //   GET  — 401 signed-out · 404 unknown book · 200 ranked pending (rejected/
 //          accepted excluded)
-//   POST — 401 signed-out · 404 unknown book · 404 suggestion of another book ·
-//          200 accept fills empty fields, does NOT clobber present ones, marks
-//          siblings rejected · 200 force overwrites a present field
+//   POST — 401 signed-out · 403 non-admin reader (catalog curation is admin-only,
+//          it writes the shared Book row) · 404 unknown book · 404 suggestion of
+//          another book · 200 accept fills empty fields, does NOT clobber present
+//          ones, marks siblings rejected · 200 force overwrites a present field
 
 import {
   describe,
@@ -41,7 +42,7 @@ const h = await vi.hoisted(async () => {
 vi.mock("@/lib/prisma", () => ({ prisma: h.prisma }));
 vi.mock("@/auth", () => ({ auth: vi.fn() }));
 
-import { asReader, signOut } from "./helpers/auth-mock";
+import { asReader, asAdmin, signOut } from "./helpers/auth-mock";
 import { GET } from "@/app/api/books/[id]/suggestions/route";
 import { POST } from "@/app/api/books/[id]/suggestions/[sid]/route";
 
@@ -169,9 +170,16 @@ describe("POST /api/books/[id]/suggestions/[sid] (accept)", () => {
     expect(res.status).toBe(401);
   });
 
-  it("404s an unknown book", async () => {
+  it("403s a non-admin reader (catalog curation is admin-only)", async () => {
     await makeUser("u");
     asReader("u");
+    const res = await POST(postReq(), pctx("b", "s"));
+    expect(res.status).toBe(403);
+  });
+
+  it("404s an unknown book", async () => {
+    await makeUser("u");
+    asAdmin("u");
     const res = await POST(postReq(), pctx("nope", "s"));
     expect(res.status).toBe(404);
   });
@@ -182,7 +190,7 @@ describe("POST /api/books/[id]/suggestions/[sid] (accept)", () => {
     const bookB = await makeBook();
     const sugOfB = await makeSuggestion(bookB.id, { confidence: 0.9 });
 
-    asReader("u");
+    asAdmin("u");
     const res = await POST(postReq(), pctx(bookA.id, sugOfB.id));
     expect(res.status).toBe(404);
   });
@@ -201,7 +209,7 @@ describe("POST /api/books/[id]/suggestions/[sid] (accept)", () => {
     });
     const sibling = await makeSuggestion(book.id, { confidence: 0.6 });
 
-    asReader("u");
+    asAdmin("u");
     const res = await POST(postReq(), pctx(book.id, chosen.id));
     expect(res.status).toBe(200);
 
@@ -229,7 +237,7 @@ describe("POST /api/books/[id]/suggestions/[sid] (accept)", () => {
       title: "Forced Title",
     });
 
-    asReader("u");
+    asAdmin("u");
     const res = await POST(postReq({ force: true }), pctx(book.id, chosen.id));
     expect(res.status).toBe(200);
 
