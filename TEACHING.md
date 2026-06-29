@@ -248,3 +248,137 @@ Not verifiable from this audit environment, and therefore **not claimed**:
 
 Any "fixed/working" claim for findings #2 (visual) or #3 (route behavior) requires the
 full gate set above plus a host-side smoke of the touched surface.
+
+---
+
+## Re-audit — 2026-06-29
+
+Second pass, run after the metadata-enrichment and annotation-FK work landed
+(commits `030ba42`→`7a0d856`). Focus: the new code (enrich-on-import scan hook,
+`BookSuggestion` table + accept route, `Note.highlightId` FK) plus a fresh
+security sweep of the auth and filesystem surfaces. The 2026-06-10 findings above
+are preserved as the teaching record; this section records what changed and what
+the second pass found.
+
+### Snapshot — 2026-06-29
+
+- **Stack unchanged** (Next.js 15 + Prisma/SQLite + NextAuth v5). ~128 TS/TSX
+  files in `src/`. git: 145 commits, `main` in sync with origin, clean tree.
+- **Slop profile is now genuinely low — the 2026-06-10 cleanup held.** The old
+  headline finding (#1, 377-LOC unwired metadata layer) is **resolved**: every
+  module now has product surface — `openlibrary`/`filename-signals` are wired
+  through the enrich-on-import scan hook, `citation`/`folder-tree` through their
+  routes. The duplicated `fetcher` (#2) is centralized in `src/lib/fetcher.ts`
+  with **0 inline copies remaining**; route boilerplate (#3) is gone behind
+  `withUser`/`withAdmin`; the CFI matcher (#4) is shared. Fresh greps: **0 bare
+  `catch {}`, 0 TODO/FIXME/HACK markers** across `src/`.
+- **Strengths, re-confirmed and extended.** The filesystem-serving surfaces are
+  textbook-defensive: `books/[id]/file` authenticates before the DB lookup (no
+  id-probing oracle), serves only scanner-recorded absolute paths (never request
+  input), and parses Range headers defensively with threat-ID references; `/api/fs`
+  is jailed with `path.relative` and returns one opaque error for
+  out-of-jail/missing/unreadable alike (no existence oracle); `covers/[id]` routes
+  through a guarded `resolveCoverPath`. The new accept route is transactional
+  (all-or-nothing Book update + suggestion status flips) and collapses
+  missing/cross-book suggestions to one 404. The enrich pipeline is best-effort by
+  contract — every failure resolves to `[]`/swallow so a bad enrich can never break
+  an import.
+- **Gate health (re-measured, see Verification gate below): tsc 0 · lint 0 ·
+  vitest 211/211 (26 files) · privacy audit clean.** All green.
+
+### 7. Catalog-mutation authorization is inconsistent with the rest of the model  *(MODERATE→HIGH — privilege)*
+
+- **Tell:** `POST /api/books/[id]/suggestions/[sid]` (accept a metadata
+  suggestion) is gated `withUser` — any signed-in account. But accepting writes
+  **shared Book catalog fields** (title, isbn, publisher, publishedAt) and attaches
+  arbitrary subject **tags** library-wide. Every *other* shared-library mutation is
+  `withAdmin`: `users`, `scan`, and `locations` (the scan roots). And `books/[id]`
+  itself is **GET-only** — so the accept route is the *single* way to hand-edit a
+  Book's catalog metadata, and it is the one shared-state mutator that any reader
+  can reach. In a multi-user homelab (family/housemate reader accounts), any of
+  them can rewrite catalog titles/authors/publishers and inject tags for everyone.
+- **Why:** the route was modelled on its *siblings under `books/[id]/`* —
+  highlights, notes, progress — which are correctly `withUser` because they are
+  **per-user** data the user owns. The accept route looks like one of them
+  (same path prefix, same `withUser` import) but it mutates **shared** state, not
+  the caller's own. The category boundary (per-user vs shared-catalog) cuts across
+  the URL tree, so pattern-matching on the neighbours picks the wrong gate.
+- **Detect:** the gate map —
+  `for f in $(grep -rl "export const \(POST\|PATCH\|DELETE\)" src/app/api --include=route.ts); do echo "$f: $(grep -oE 'with(User|Admin)' "$f" | sort -u)"; done`
+  — shows `suggestions/[sid]` as the lone `withUser` route that writes a
+  `prisma.book.update`, against `scan`/`locations`/`users` on `withAdmin`.
+  Confirm `books/[id]` has no PATCH/DELETE:
+  `grep -oE "export (async function|const) (GET|POST|PATCH|DELETE)" "src/app/api/books/[id]/route.ts"` → `GET` only.
+- **Fix:** **an owner decision, then a one-line change.** If catalog curation is
+  meant to be admin-only (consistent with `scan`/`locations`), swap
+  `withUser<SuggestionContext>` → `withAdmin<SuggestionContext>` in
+  `src/app/api/books/[id]/suggestions/[sid]/route.ts` and add a non-admin→403
+  authz test alongside the existing suite. If non-admins *are* meant to curate,
+  the current code is correct — but then record that intent in the route comment so
+  the inconsistency with `locations`/`scan` reads as deliberate, not an oversight.
+
+### 8. Enrich-on-import has no network timeout, and is awaited inside the scan loop  *(MODERATE — resource/liveness)*
+
+- **Tell:** `enrichBook` (`src/lib/metadata/enrich.ts:36`) calls
+  `searchOpenLibrary(query, { fetchImpl })` with **no `signal`** — and
+  `searchOpenLibrary` only applies a timeout if one is passed in `opts.signal`, so
+  none is enforced. The call is `await`ed inside `enrichNewBook`, which is itself
+  `await`ed inside `scanFile` (`src/lib/scanner/index.ts:162,191`). Node's global
+  `fetch` (undici) defaults to a 300-second headers/body timeout, so a slow or
+  hung OpenLibrary response can block a thin book's import for up to ~5 minutes —
+  serially, once per thin book — on a cold bulk scan. The failure is swallowed
+  (best-effort), so it surfaces only as a scan that appears to hang.
+- **Why:** the network was made injectable for testability (`fetchImpl`), and the
+  unit tests pass a canned fetch that resolves instantly — so the missing timeout
+  is invisible in-VM. The contract guarantees *correctness* under failure
+  (resolve to `[]`), but says nothing about *latency* under a slow-but-not-failing
+  server; the gap is liveness, not correctness, which unit tests don't probe. The
+  grave run that built this already flagged the *serial-latency* shape; the missing
+  timeout is the compounding half — without it, "slow" can become "stalled."
+- **Detect:** `grep -n "searchOpenLibrary(" src/lib/metadata/enrich.ts` shows the
+  call passes no `signal`; `grep -n "AbortSignal.timeout\|signal:" src/lib/metadata/*.ts`
+  shows the only `signal` plumbing is the optional `opts.signal` the scan path
+  never supplies.
+- **Fix:** give `enrichBook` a bounded signal —
+  `searchOpenLibrary(query, { fetchImpl, signal: AbortSignal.timeout(8000) })`
+  (or a small `ENRICH_TIMEOUT_MS` const) — so a hung request aborts to `[]` like
+  any other failure, preserving the best-effort contract. This is a safe,
+  correctness-preserving hardening (a timeout only ever turns a hang into the
+  already-handled empty result). The deeper *serial-per-book* latency on a large
+  first scan (batch/concurrency/background the enrich) remains the owner-flagged
+  design decision it already was — the timeout is the floor, not the whole fix.
+
+---
+
+## Triage / cleanup plan — re-audit (2026-06-29)
+
+| # | Finding | Action | Status |
+|---|---------|--------|--------|
+| 7 | Catalog-mutation authz inconsistency (accept route is `withUser`, all other shared-state mutators are `withAdmin`) | Owner decides admin-only vs any-user; if admin-only, `withUser`→`withAdmin` + 403 test; else record intent in a comment | **OPEN — owner decision.** One-line code change once the curation model is confirmed |
+| 8 | Enrich has no network timeout; awaited in the scan loop → a hung OpenLibrary can stall a cold scan ~5 min/book | Pass `AbortSignal.timeout(...)` from `enrichBook`; keep the serial-vs-background latency call as the pre-existing owner decision | **OPEN — safe to apply.** Correctness-preserving hardening; the broader batching/backgrounding decision stays owner-gated |
+
+Both items are small. #8 is a safe mechanical hardening (a timeout only converts a
+hang into the already-handled `[]`). #7 is one line *after* the owner confirms
+whether non-admins may curate shared catalog metadata — the kind of product
+decision an audit surfaces but does not make.
+
+## Verification gate — re-audit (2026-06-29)
+
+Re-measured in-VM at re-audit time (`prisma generate` run first to refresh the
+generated client — a stale client reads red in-VM; the host predev hook
+self-heals):
+
+- `npx tsc --noEmit` — **pass** (0 errors).
+- `npm run lint` (eslint) — **pass** (0 errors, 0 warnings).
+- `npx vitest run` — **pass**, **26 files / 211 tests** (up from 17/125 at the
+  2026-06-10 close: the route-helper, annotation-FK, enrich, suggestions-accept,
+  duplicates, and genre-section suites), all against real ephemeral SQLite DBs.
+- `./scripts/audit-privacy.sh` — **clean** (gitleaks 145 commits, no leaks;
+  pattern scan clean).
+
+Not verifiable from this environment, and therefore **not claimed** (unchanged
+from 2026-06-10): live reader behavior, the scanner against a real folder under
+load, OPDS against a real mobile client, and the Docker image / entrypoint
+migration path. Findings #7 and #8 are surfaced from reading + gate runs; neither
+is *applied* in this pass — #7 needs the owner's curation-model call, #8 is queued
+as a safe apply.
