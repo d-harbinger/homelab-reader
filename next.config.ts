@@ -6,10 +6,19 @@ const securityHeaders = [
     value: [
       "default-src 'self'",
       "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
-      "style-src 'self' 'unsafe-inline'",
+      // blob: — epub.js injects each EPUB's own stylesheets as blob: URLs into
+      // the reader iframe (same pattern as img-src/worker-src below). Without it
+      // the book's CSS (code-block formatting, syntax highlighting) is blocked,
+      // which matters most for the technical books this server targets. Strictly
+      // narrower than the 'unsafe-inline' already present.
+      "style-src 'self' 'unsafe-inline' blob:",
       "connect-src 'self'",
       "img-src 'self' data: blob:",
-      "font-src 'self' data:",
+      // blob: — EPUBs embed their own fonts (often monospace faces for code
+      // blocks); epub.js exposes them to the reader iframe as blob: URLs, same
+      // as its stylesheets above. Without it those fonts fall back and code
+      // samples lose their intended face.
+      "font-src 'self' data: blob:",
       "frame-ancestors 'none'",
       "object-src 'none'",
       "form-action 'self'",
