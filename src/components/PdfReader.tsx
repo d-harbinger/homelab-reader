@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
-import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, Notebook } from "lucide-react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
@@ -11,6 +11,16 @@ import {
   readSetting,
   writeSetting,
 } from "./ReaderToolbar";
+import {
+  HIGHLIGHT_COLORS,
+  type HighlightColor,
+} from "@/lib/highlight-colors";
+import {
+  HighlightsPanel,
+  type PanelHighlight,
+  type PanelNote,
+} from "./HighlightsPanel";
+import { ColorPickerPopover, HighlightMenu } from "./HighlightPopover";
 
 pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
 
@@ -20,6 +30,43 @@ interface Props {
   fileUrl: string;
   initialPage: number;
   scannerPageCount: number | null;
+}
+
+// A highlight rectangle stored as fractions (0..1) of the page box, NOT pixels.
+// Fractions survive zoom and re-render: the overlay positions each rect with CSS
+// percentages against the (position:relative) page wrapper, so no pixel math runs
+// at paint time and the highlight tracks the text at any zoom level.
+interface PdfRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+interface PdfAnchor {
+  type: "pdf-rect";
+  page: number;
+  rects: PdfRect[];
+}
+interface PdfHighlight {
+  id: string;
+  color: HighlightColor;
+  text: string;
+  anchor: PdfAnchor;
+}
+interface PdfSelection {
+  page: number;
+  rects: PdfRect[];
+  text: string;
+  // Viewport coordinates for the floating color picker (no iframe here, unlike
+  // the EPUB reader, so client coordinates are already page-absolute).
+  x: number;
+  y: number;
+}
+interface OpenHighlightMenu {
+  id: string;
+  color: HighlightColor;
+  x: number;
+  y: number;
 }
 
 const ZOOM_STEPS = [60, 75, 90, 100, 110, 125, 150, 175, 200, 250];
@@ -59,6 +106,25 @@ export function PdfReader({
   );
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Annotation state. highlightsRef mirrors the list for the selection handler
+  // (which reads it outside React's render cycle); React state drives paint.
+  const highlightsRef = useRef<Map<string, PdfHighlight>>(new Map());
+  const [highlights, setHighlights] = useState<PdfHighlight[]>([]);
+  const [notes, setNotes] = useState<PanelNote[]>([]);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [selection, setSelection] = useState<PdfSelection | null>(null);
+  const [openMenu, setOpenMenu] = useState<OpenHighlightMenu | null>(null);
+
+  // Stable ref registrar shared by both render modes so selection lookup and
+  // scroll-to-page can always find a page's wrapper element by number.
+  const registerPage = useCallback(
+    (p: number) => (el: HTMLDivElement | null) => {
+      if (el) pageRefs.current.set(p, el);
+      else pageRefs.current.delete(p);
+    },
+    [],
+  );
+
   // Fit-to-width baseline. The user's zoom slider is applied multiplicatively.
   useEffect(() => {
     const el = containerRef.current;
@@ -73,6 +139,40 @@ export function PdfReader({
   // Persist preferences.
   useEffect(() => writeSetting("pdf.mode", mode), [mode]);
   useEffect(() => writeSetting("pdf.zoom", zoom), [zoom]);
+
+  // Load saved highlights + notes once, independent of PDF render. Highlights
+  // paint onto their page as it mounts; notes surface in the side panel.
+  const loadAnnotations = useCallback(async () => {
+    try {
+      const [hRes, nRes] = await Promise.all([
+        fetch(`/api/highlights?bookId=${encodeURIComponent(bookId)}`),
+        fetch(`/api/notes?bookId=${encodeURIComponent(bookId)}`),
+      ]);
+      if (hRes.ok) {
+        const data = (await hRes.json()) as {
+          highlights: { id: string; color: HighlightColor; text: string; anchor: unknown }[];
+        };
+        const pdfHls = data.highlights.filter(
+          (h): h is PdfHighlight =>
+            !!h.anchor &&
+            (h.anchor as PdfAnchor).type === "pdf-rect" &&
+            Array.isArray((h.anchor as PdfAnchor).rects),
+        );
+        highlightsRef.current = new Map(pdfHls.map((h) => [h.id, h]));
+        setHighlights(pdfHls);
+      }
+      if (nRes.ok) {
+        const data = (await nRes.json()) as { notes: PanelNote[] };
+        setNotes(data.notes);
+      }
+    } catch {
+      /* non-blocking */
+    }
+  }, [bookId]);
+
+  useEffect(() => {
+    loadAnnotations();
+  }, [loadAnnotations]);
 
   // Progress save on page change. Debounced so a fast-flip burst saves once.
   useEffect(() => {
@@ -148,24 +248,207 @@ export function PdfReader({
     return () => observer.disconnect();
   }, [mode, loaded, numPages, page]);
 
-  const onDocLoad = useCallback(
-    ({ numPages: n }: { numPages: number }) => {
-      setNumPages(n);
-      setPage((p) => Math.min(Math.max(p, 1), n));
-      setLoaded(true);
-    },
-    [],
-  );
+  // Text selection → color-picker popover. Reads the live selection on mouseup,
+  // maps it to the page it lands in, and converts each line-rect of the range
+  // into page-relative fractions. No iframe here (unlike EPUB), so getClientRects
+  // is already in viewport coordinates.
+  const onMouseUp = useCallback(() => {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
+    const text = sel.toString().trim();
+    if (!text) return;
+
+    const range = sel.getRangeAt(0);
+    let node: Node | null = range.startContainer;
+    let pageEl: HTMLElement | null = null;
+    while (node) {
+      if (node instanceof HTMLElement && node.dataset.page) {
+        pageEl = node;
+        break;
+      }
+      node = node.parentNode;
+    }
+    if (!pageEl) return;
+
+    const pageNum = Number(pageEl.dataset.page);
+    const pageRect = pageEl.getBoundingClientRect();
+    if (!pageRect.width || !pageRect.height) return;
+
+    const clientRects = Array.from(range.getClientRects());
+    const rects: PdfRect[] = clientRects
+      .filter((r) => r.width > 1 && r.height > 1)
+      .map((r) => ({
+        x: (r.left - pageRect.left) / pageRect.width,
+        y: (r.top - pageRect.top) / pageRect.height,
+        w: r.width / pageRect.width,
+        h: r.height / pageRect.height,
+      }))
+      // Drop fragments outside this page (a selection dragged across a page
+      // boundary in scroll mode) — anchor the highlight to the start page only.
+      .filter((r) => r.y >= -0.02 && r.y <= 1.02);
+    if (rects.length === 0) return;
+
+    const first = clientRects[0];
+    setSelection({
+      page: pageNum,
+      rects,
+      text,
+      x: first.left + first.width / 2,
+      y: first.top,
+    });
+    setOpenMenu(null);
+  }, []);
+
+  // Dismiss popovers on outside click (microtask skips the opening click).
+  useEffect(() => {
+    if (!selection && !openMenu) return;
+    const onDocClick = () => {
+      setSelection(null);
+      setOpenMenu(null);
+    };
+    const t = setTimeout(
+      () => document.addEventListener("click", onDocClick, { once: true }),
+      0,
+    );
+    return () => {
+      clearTimeout(t);
+      document.removeEventListener("click", onDocClick);
+    };
+  }, [selection, openMenu]);
+
+  const onDocLoad = useCallback(({ numPages: n }: { numPages: number }) => {
+    setNumPages(n);
+    setPage((p) => Math.min(Math.max(p, 1), n));
+    setLoaded(true);
+  }, []);
 
   const goPrev = () => setPage((p) => Math.max(p - 1, 1));
   const goNext = () => setPage((p) => Math.min(p + 1, numPages || p + 1));
 
+  async function saveHighlight(color: HighlightColor) {
+    if (!selection) return;
+    const anchor: PdfAnchor = {
+      type: "pdf-rect",
+      page: selection.page,
+      rects: selection.rects,
+    };
+    try {
+      const r = await fetch("/api/highlights", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bookId, anchor, text: selection.text, color }),
+      });
+      if (!r.ok) return;
+      const row = (await r.json()) as PdfHighlight;
+      highlightsRef.current.set(row.id, row);
+      setHighlights((prev) => [...prev, row]);
+    } catch {
+      /* fail silently — user can retry */
+    } finally {
+      setSelection(null);
+      window.getSelection()?.removeAllRanges();
+    }
+  }
+
+  async function changeColor(id: string, color: HighlightColor) {
+    try {
+      const r = await fetch(`/api/highlights/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ color }),
+      });
+      if (!r.ok) return;
+      const current = highlightsRef.current.get(id);
+      if (!current) return;
+      const next = { ...current, color };
+      highlightsRef.current.set(id, next);
+      setHighlights((prev) => prev.map((h) => (h.id === id ? next : h)));
+    } finally {
+      setOpenMenu(null);
+    }
+  }
+
+  async function deleteHighlight(id: string) {
+    try {
+      await fetch(`/api/highlights/${id}`, { method: "DELETE" });
+      highlightsRef.current.delete(id);
+      setHighlights((prev) => prev.filter((x) => x.id !== id));
+      // A note bound to this highlight is orphaned; drop it from the panel too.
+      setNotes((prev) => prev.filter((n) => n.highlightId !== id));
+    } finally {
+      setOpenMenu(null);
+    }
+  }
+
+  async function saveNote(
+    h: PanelHighlight,
+    body: string,
+    existingId: string | null,
+  ) {
+    try {
+      if (existingId) {
+        const r = await fetch(`/api/notes/${existingId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ body }),
+        });
+        if (!r.ok) return;
+        const row = (await r.json()) as PanelNote;
+        setNotes((prev) =>
+          prev.map((n) => (n.id === existingId ? { ...n, body: row.body } : n)),
+        );
+      } else {
+        const r = await fetch("/api/notes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            bookId,
+            anchor: { type: "pdf-rect", page: h.anchor.page },
+            body,
+            context: h.text.slice(0, 200),
+            // PDF highlights carry no cfi, so the note binds by FK.
+            highlightId: h.id,
+          }),
+        });
+        if (!r.ok) return;
+        const row = (await r.json()) as PanelNote;
+        setNotes((prev) => [...prev, row]);
+      }
+    } catch {
+      /* transient */
+    }
+  }
+
+  async function deleteNote(id: string) {
+    try {
+      await fetch(`/api/notes/${id}`, { method: "DELETE" });
+      setNotes((prev) => prev.filter((n) => n.id !== id));
+    } catch {
+      /* transient */
+    }
+  }
+
+  function jumpToHighlight(h: PanelHighlight) {
+    const p = h.anchor.page;
+    if (typeof p !== "number") return;
+    if (mode === "scrolled") {
+      pageRefs.current.get(p)?.scrollIntoView({ block: "start" });
+    } else {
+      setPage(Math.min(Math.max(p, 1), numPages || p));
+    }
+  }
+
+  const openHighlightMenu = (h: PdfHighlight, e: React.MouseEvent) => {
+    setOpenMenu({ id: h.id, color: h.color, x: e.clientX, y: e.clientY });
+    setSelection(null);
+  };
+
+  const highlightsForPage = (p: number) =>
+    highlights.filter((h) => h.anchor.page === p);
+
   // baseRenderWidth = fit-to-width, then user zoom factor applied.
   const baseRenderWidth = Math.min(Math.max(width - 80, 320), 1100);
   const renderWidth = (baseRenderWidth * zoom) / 100;
-  // Spacer height for off-window pages (~US-Letter aspect). Rough is fine: the
-  // current page and its neighbors always render real, so any layout shift
-  // happens off-screen at the window edges.
   const estPageHeight = Math.round(renderWidth * 1.3);
   const progressPct = numPages > 0 ? (page / numPages) * 100 : 0;
 
@@ -185,14 +468,34 @@ export function PdfReader({
           mode={mode}
           onModeChange={setMode}
         />
-        <div className="text-xs text-zinc-600 tabular-nums">
-          {numPages > 0 ? `${page} / ${numPages}` : "Loading…"}
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setPanelOpen((v) => !v)}
+            aria-label="Highlights and notes"
+            title="Highlights & notes"
+            className={`relative rounded p-1.5 transition-colors ${
+              panelOpen
+                ? "bg-zinc-800 text-zinc-100"
+                : "text-zinc-500 hover:bg-zinc-900 hover:text-zinc-200"
+            }`}
+          >
+            <Notebook size={14} />
+            {highlights.length > 0 && (
+              <span className="absolute -right-1 -top-1 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-amber-500/80 px-1 text-[9px] font-medium text-zinc-950">
+                {highlights.length}
+              </span>
+            )}
+          </button>
+          <div className="text-xs text-zinc-600 tabular-nums">
+            {numPages > 0 ? `${page} / ${numPages}` : "Loading…"}
+          </div>
         </div>
       </header>
 
       <div
         ref={containerRef}
         className="relative flex-1 overflow-auto"
+        onMouseUp={onMouseUp}
       >
         <Document
           file={fileUrl}
@@ -201,20 +504,26 @@ export function PdfReader({
             <div className="p-8 text-sm text-zinc-600">Loading book…</div>
           }
           error={
-            <div className="p-8 text-sm text-amber-500">
-              Failed to load PDF
-            </div>
+            <div className="p-8 text-sm text-amber-500">Failed to load PDF</div>
           }
         >
           {mode === "paginated" ? (
             <div className="flex min-h-full items-start justify-center py-6">
               {width > 0 && (
-                <div className="shadow-2xl shadow-black/60">
+                <div
+                  data-page={page}
+                  ref={registerPage(page)}
+                  className="relative shadow-2xl shadow-black/60"
+                >
                   <Page
                     pageNumber={page}
                     width={renderWidth}
                     renderAnnotationLayer={false}
                     renderTextLayer
+                  />
+                  <HighlightLayer
+                    highlights={highlightsForPage(page)}
+                    onOpen={openHighlightMenu}
                   />
                 </div>
               )}
@@ -233,19 +542,22 @@ export function PdfReader({
                     <div
                       key={p}
                       data-page={p}
-                      ref={(el) => {
-                        if (el) pageRefs.current.set(p, el);
-                        else pageRefs.current.delete(p);
-                      }}
-                      className={active ? "shadow-2xl shadow-black/60" : ""}
+                      ref={registerPage(p)}
+                      className={`relative ${active ? "shadow-2xl shadow-black/60" : ""}`}
                     >
                       {active ? (
-                        <Page
-                          pageNumber={p}
-                          width={renderWidth}
-                          renderAnnotationLayer={false}
-                          renderTextLayer
-                        />
+                        <>
+                          <Page
+                            pageNumber={p}
+                            width={renderWidth}
+                            renderAnnotationLayer={false}
+                            renderTextLayer
+                          />
+                          <HighlightLayer
+                            highlights={highlightsForPage(p)}
+                            onOpen={openHighlightMenu}
+                          />
+                        </>
                       ) : (
                         <div
                           style={{ width: renderWidth, height: estPageHeight }}
@@ -289,6 +601,73 @@ export function PdfReader({
           style={{ width: `${progressPct.toFixed(2)}%` }}
         />
       </div>
+
+      {selection && (
+        <ColorPickerPopover
+          x={selection.x}
+          y={selection.y}
+          onPick={(c) => saveHighlight(c)}
+        />
+      )}
+
+      {openMenu && (
+        <HighlightMenu
+          x={openMenu.x}
+          y={openMenu.y}
+          activeColor={openMenu.color}
+          onPick={(c) => changeColor(openMenu.id, c)}
+          onDelete={() => deleteHighlight(openMenu.id)}
+        />
+      )}
+
+      <HighlightsPanel
+        open={panelOpen}
+        onClose={() => setPanelOpen(false)}
+        highlights={highlights}
+        notes={notes}
+        onJump={jumpToHighlight}
+        onColorChange={changeColor}
+        onDelete={deleteHighlight}
+        onNoteSave={saveNote}
+        onNoteDelete={deleteNote}
+      />
+    </div>
+  );
+}
+
+// Overlay painted inside each page wrapper (position:relative). The layer itself
+// ignores pointer events so text selection passes through to the PDF text layer;
+// each highlight rect re-enables them so a click opens the recolor/delete menu.
+// Rects are CSS percentages, so they track the page at any zoom with no recompute.
+function HighlightLayer({
+  highlights,
+  onOpen,
+}: {
+  highlights: PdfHighlight[];
+  onOpen: (h: PdfHighlight, e: React.MouseEvent) => void;
+}) {
+  return (
+    <div className="pointer-events-none absolute inset-0 z-10">
+      {highlights.flatMap((h) =>
+        h.anchor.rects.map((r, i) => (
+          <div
+            key={`${h.id}-${i}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpen(h, e);
+            }}
+            className="pointer-events-auto absolute cursor-pointer"
+            style={{
+              left: `${r.x * 100}%`,
+              top: `${r.y * 100}%`,
+              width: `${r.w * 100}%`,
+              height: `${r.h * 100}%`,
+              background: HIGHLIGHT_COLORS[h.color].fill,
+              mixBlendMode: "multiply",
+            }}
+          />
+        )),
+      )}
     </div>
   );
 }

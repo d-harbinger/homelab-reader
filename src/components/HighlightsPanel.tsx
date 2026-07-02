@@ -13,13 +13,18 @@ export interface PanelHighlight {
   id: string;
   color: HighlightColor;
   text: string;
-  anchor: { type: string; cfi?: string };
+  // cfi for EPUB anchors, page for PDF anchors — both optional so the one
+  // reader shape covers both formats.
+  anchor: { type: string; cfi?: string; page?: number };
 }
 
 export interface PanelNote {
   id: string;
   body: string;
-  anchor: { type: string; cfi?: string };
+  anchor: { type: string; cfi?: string; page?: number };
+  // Structural FK to the highlight this note annotates. PDF highlights have no
+  // cfi, so their notes must pair here rather than by anchor string.
+  highlightId?: string | null;
 }
 
 interface Props {
