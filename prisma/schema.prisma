@@ -43,6 +43,7 @@ model User {
   progress     Progress[]
   notes        Note[]
   highlights   Highlight[]
+  inkStrokes   InkStroke[]
   opdsTokens   OpdsToken[]
 }
 
@@ -92,6 +93,7 @@ model Book {
   tags          Tag[]     @relation("BookTags")
   notes         Note[]
   highlights    Highlight[]
+  inkStrokes    InkStroke[]
   progress      Progress[]
   suggestions   BookSuggestion[]
 
@@ -199,6 +201,27 @@ model Highlight {
   notes Note[]
 
   @@index([bookId])
+}
+
+// A single freehand ink stroke drawn over a PDF page (the reader's Draw tool).
+// Per-user, like Highlight. One row per stroke keeps erase/undo trivial.
+model InkStroke {
+  id        String   @id @default(cuid())
+  bookId    String
+  userId    String
+  page      Int
+  // JSON: { points: [[x, y, pressure], ...] } in page-fraction coords (0..1),
+  // so a stroke scales with the page at any zoom — same model as pdf-rect
+  // highlights. Pressure is 0..1 (0.5 for devices that don't report it).
+  path      String
+  color     String   @default("#1c1c1e")
+  width     Float    @default(6)
+  createdAt DateTime @default(now())
+
+  book Book @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([bookId, userId])
 }
 
 model ScanLocation {
