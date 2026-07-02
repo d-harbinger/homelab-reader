@@ -96,3 +96,5 @@ graveyard-logs/
 .lan-allow
 # privacy-guard: local script log output (audit, host gates, build/test logs)
 .dev-logs/
+ink-prototype.html
+ink-drawn-verify.png

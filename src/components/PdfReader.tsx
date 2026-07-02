@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
-import { ArrowLeft, ChevronLeft, ChevronRight, Notebook } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, Notebook, Pencil } from "lucide-react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
@@ -21,6 +21,9 @@ import {
   type PanelNote,
 } from "./HighlightsPanel";
 import { ColorPickerPopover, HighlightMenu } from "./HighlightPopover";
+import { InkLayer } from "./InkLayer";
+import { InkToolbar } from "./InkToolbar";
+import { INK_COLORS, INK_WIDTHS, type InkStroke, type InkPoint } from "@/lib/ink";
 
 pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
 
@@ -115,6 +118,15 @@ export function PdfReader({
   const [selection, setSelection] = useState<PdfSelection | null>(null);
   const [openMenu, setOpenMenu] = useState<OpenHighlightMenu | null>(null);
 
+  // Draw-tool state. Drawing takes over the pointer, so it's a distinct mode
+  // from reading/highlighting (which use text selection).
+  const [drawMode, setDrawMode] = useState(false);
+  const [erasing, setErasing] = useState(false);
+  const [inkColor, setInkColor] = useState<string>(INK_COLORS[0].value);
+  const [inkWidth, setInkWidth] = useState<number>(INK_WIDTHS[1].value);
+  const [inkStrokes, setInkStrokes] = useState<InkStroke[]>([]);
+  const inkTemp = useRef(0);
+
   // Stable ref registrar shared by both render modes so selection lookup and
   // scroll-to-page can always find a page's wrapper element by number.
   const registerPage = useCallback(
@@ -173,6 +185,81 @@ export function PdfReader({
   useEffect(() => {
     loadAnnotations();
   }, [loadAnnotations]);
+
+  // Load saved ink strokes; each paints on its page as that page mounts.
+  const loadInk = useCallback(async () => {
+    try {
+      const r = await fetch(`/api/ink?bookId=${encodeURIComponent(bookId)}`);
+      if (r.ok) {
+        const data = (await r.json()) as { strokes: InkStroke[] };
+        setInkStrokes(data.strokes);
+      }
+    } catch {
+      /* non-blocking */
+    }
+  }, [bookId]);
+
+  useEffect(() => {
+    loadInk();
+  }, [loadInk]);
+
+  // Commit a finished stroke: show it immediately (optimistic, temp id), POST,
+  // then swap in the server id. On failure, drop the optimistic stroke.
+  const saveStroke = useCallback(
+    async (pageNum: number, points: InkPoint[]) => {
+      const tempId = `tmp-${++inkTemp.current}`;
+      const optimistic: InkStroke = {
+        id: tempId,
+        page: pageNum,
+        color: inkColor,
+        width: inkWidth,
+        points,
+      };
+      setInkStrokes((prev) => [...prev, optimistic]);
+      try {
+        const r = await fetch("/api/ink", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            bookId,
+            page: pageNum,
+            points,
+            color: inkColor,
+            width: inkWidth,
+          }),
+        });
+        if (!r.ok) throw new Error("save failed");
+        const row = (await r.json()) as InkStroke;
+        setInkStrokes((prev) => prev.map((s) => (s.id === tempId ? row : s)));
+      } catch {
+        setInkStrokes((prev) => prev.filter((s) => s.id !== tempId));
+      }
+    },
+    [bookId, inkColor, inkWidth],
+  );
+
+  const eraseStroke = useCallback(async (id: string) => {
+    setInkStrokes((prev) => prev.filter((s) => s.id !== id));
+    if (id.startsWith("tmp-")) return; // never persisted
+    try {
+      await fetch(`/api/ink/${id}`, { method: "DELETE" });
+    } catch {
+      /* the row will reappear on next load if this failed; acceptable */
+    }
+  }, []);
+
+  const undoInk = useCallback(() => {
+    setInkStrokes((prev) => {
+      if (prev.length === 0) return prev;
+      const last = prev[prev.length - 1];
+      if (!last.id.startsWith("tmp-")) {
+        fetch(`/api/ink/${last.id}`, { method: "DELETE" }).catch(() => {});
+      }
+      return prev.slice(0, -1);
+    });
+  }, []);
+
+  const inkForPage = (p: number) => inkStrokes.filter((s) => s.page === p);
 
   // Progress save on page change. Debounced so a fast-flip burst saves once.
   useEffect(() => {
@@ -253,6 +340,7 @@ export function PdfReader({
   // into page-relative fractions. No iframe here (unlike EPUB), so getClientRects
   // is already in viewport coordinates.
   const onMouseUp = useCallback(() => {
+    if (drawMode) return; // the ink overlay owns the pointer while drawing
     const sel = window.getSelection();
     if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
     const text = sel.toString().trim();
@@ -297,7 +385,7 @@ export function PdfReader({
       y: first.top,
     });
     setOpenMenu(null);
-  }, []);
+  }, [drawMode]);
 
   // Dismiss popovers on outside click (microtask skips the opening click).
   useEffect(() => {
@@ -470,6 +558,22 @@ export function PdfReader({
         />
         <div className="flex items-center gap-3">
           <button
+            onClick={() => {
+              setDrawMode((v) => !v);
+              setErasing(false);
+            }}
+            aria-label="Draw"
+            aria-pressed={drawMode}
+            title="Draw on the page"
+            className={`rounded p-1.5 transition-colors ${
+              drawMode
+                ? "bg-amber-500 text-zinc-950"
+                : "text-zinc-500 hover:bg-zinc-900 hover:text-zinc-200"
+            }`}
+          >
+            <Pencil size={14} />
+          </button>
+          <button
             onClick={() => setPanelOpen((v) => !v)}
             aria-label="Highlights and notes"
             title="Highlights & notes"
@@ -492,6 +596,22 @@ export function PdfReader({
         </div>
       </header>
 
+      {drawMode && (
+        <InkToolbar
+          color={inkColor}
+          width={inkWidth}
+          erasing={erasing}
+          canUndo={inkStrokes.length > 0}
+          onColor={(c) => {
+            setInkColor(c);
+            setErasing(false);
+          }}
+          onWidth={setInkWidth}
+          onToggleErase={() => setErasing((v) => !v)}
+          onUndo={undoInk}
+        />
+      )}
+
       <div
         ref={containerRef}
         className="relative flex-1 overflow-auto"
@@ -513,7 +633,7 @@ export function PdfReader({
                 <div
                   data-page={page}
                   ref={registerPage(page)}
-                  className="relative shadow-2xl shadow-black/60"
+                  className={`relative shadow-2xl shadow-black/60 ${drawMode ? "select-none" : ""}`}
                 >
                   <Page
                     pageNumber={page}
@@ -524,6 +644,15 @@ export function PdfReader({
                   <HighlightLayer
                     highlights={highlightsForPage(page)}
                     onOpen={openHighlightMenu}
+                  />
+                  <InkLayer
+                    strokes={inkForPage(page)}
+                    drawMode={drawMode}
+                    erasing={erasing}
+                    color={inkColor}
+                    width={inkWidth}
+                    onCommit={(pts) => saveStroke(page, pts)}
+                    onErase={eraseStroke}
                   />
                 </div>
               )}
@@ -543,7 +672,7 @@ export function PdfReader({
                       key={p}
                       data-page={p}
                       ref={registerPage(p)}
-                      className={`relative ${active ? "shadow-2xl shadow-black/60" : ""}`}
+                      className={`relative ${active ? "shadow-2xl shadow-black/60" : ""} ${drawMode ? "select-none" : ""}`}
                     >
                       {active ? (
                         <>
@@ -556,6 +685,15 @@ export function PdfReader({
                           <HighlightLayer
                             highlights={highlightsForPage(p)}
                             onOpen={openHighlightMenu}
+                          />
+                          <InkLayer
+                            strokes={inkForPage(p)}
+                            drawMode={drawMode}
+                            erasing={erasing}
+                            color={inkColor}
+                            width={inkWidth}
+                            onCommit={(pts) => saveStroke(p, pts)}
+                            onErase={eraseStroke}
                           />
                         </>
                       ) : (
