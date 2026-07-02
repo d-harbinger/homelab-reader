@@ -58,6 +58,7 @@
   },
   "overrides": {
     "postcss": "^8.5.10",
-    "@xmldom/xmldom": "^0.8.13"
+    "@xmldom/xmldom": "^0.8.13",
+    "vite": "^8.0.16"
   }
 }
