@@ -23,7 +23,13 @@ const securityHeaders = [
       "object-src 'none'",
       "form-action 'self'",
       "worker-src 'self' blob:",
-      "upgrade-insecure-requests",
+      // No `upgrade-insecure-requests`: homelab-reader is served over plain HTTP
+      // (localhost or a LAN IP / hostname via docker-compose). Browsers only
+      // auto-exempt localhost from that directive — LAN IPs and bare hostnames
+      // still get every subresource upgraded to https://, which has no listener
+      // here, so the page loads unstyled (HTML arrives, all /_next/static CSS+JS
+      // fail). Matches the chimera / chef-calc-pro siblings. Put TLS in front
+      // (Caddy/Traefik/nginx) before re-adding this.
     ].join("; "),
   },
   { key: "X-Frame-Options", value: "DENY" },
