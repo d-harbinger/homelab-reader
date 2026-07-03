@@ -4,6 +4,11 @@
 #
 # ── First-time setup on the homelab ───────────────────────────
 #
+#   Interactive alternative: ./launch.sh asks where the books live and which
+#   network to serve, saves the answers to .env, and starts the app — and
+#   afterwards doubles as the on-site menu (restart / status / logs / update).
+#   The manual steps below remain the canonical reference.
+#
 #   # 1. Clone the repo onto the host (any directory)
 #   git clone https://github.com/d-harbinger/homelab-reader.git
 #   cd homelab-reader
