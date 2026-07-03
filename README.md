@@ -90,7 +90,7 @@ This only resets existing accounts; it does not create them.
 Mount your library at `/books` and persistent data at `/data`:
 
 ```bash
-docker compose up -d --build   # host port 3334 (set HOMELAB_PORT to change)
+docker compose up -d --build   # host port 5456 (set HOMELAB_PORT to change)
 ```
 
 ## Privacy posture
