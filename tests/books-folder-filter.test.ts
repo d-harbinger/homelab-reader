@@ -135,7 +135,9 @@ describe("GET /api/books?folder=", () => {
   // folder, then >200 OTHER books with NEWER addedAt timestamps so the target
   // book sits outside a recent-first 200-row fetch window. The folder filter
   // must still return it — proving the match happens in SQL, before the cap.
-  it("returns a folder book buried beyond the 200-row recency cap", async () => {
+  // The 251 sequential inserts routinely exceed the default 5s timeout when
+  // the full suite runs in parallel workers, so this test carries its own.
+  it("returns a folder book buried beyond the 200-row recency cap", { timeout: 30_000 }, async () => {
     await h.prisma.scanLocation.create({ data: { path: "/books" } });
     const base = new Date("2020-01-01T00:00:00Z").getTime();
     // The target book is the OLDEST (earliest addedAt) — last in recency order.
