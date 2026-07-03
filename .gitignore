@@ -82,6 +82,13 @@ next-env.d.ts
 # not source, never committed.
 /public/pdf.worker.min.mjs
 
+# Playwright end-to-end run artifacts (failure screenshots, traces) and its
+# generated report. The isolated E2E database (data/e2e.db*) is already covered
+# by the /data/ and *.db rules above.
+/e2e/.artifacts/
+/playwright-report/
+/test-results/
+
 # Prisma — generated client lives in node_modules; nothing to ignore.
 
 # Inter-agent coordination mailbox (local only, never committed)

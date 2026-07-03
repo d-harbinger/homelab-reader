@@ -1,4 +1,4 @@
-import { defineConfig } from "vitest/config";
+import { defineConfig, configDefaults } from "vitest/config";
 import tsconfigPaths from "vite-tsconfig-paths";
 
 // Node-environment Vitest config for route-handler + library tests.
@@ -19,5 +19,8 @@ export default defineConfig({
     environment: "node",
     globals: false,
     setupFiles: ["./tests/setup.ts"],
+    // The end-to-end suite (e2e/) runs under Playwright, whose `test` export is
+    // incompatible with Vitest's runner. Keep Vitest to the unit/route tests.
+    exclude: [...configDefaults.exclude, "e2e/**"],
   },
 });

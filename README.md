@@ -49,6 +49,20 @@ missing, prints exactly what to fix instead of a cryptic stack trace. Run it
 on its own any time with `npm run check`. The `predev` hook also runs
 `prisma generate && prisma migrate deploy`, so the schema self-heals.
 
+### Tests
+
+```bash
+npm test          # unit + route suite (vitest, mocks the auth and DB seams)
+npm run test:e2e  # core-flow browser journey (Playwright, real served surface)
+```
+
+The Playwright suite (`e2e/`) boots a real Next.js server against an isolated,
+freshly-seeded SQLite database and drives one browser context through the whole
+journey — first-run setup, login, library, opening an EPUB and a PDF, creating a
+highlight and note, an OPDS token fetch, and accepting a metadata suggestion. It
+runs headless on the local loopback interface and reuses the already-cached
+Chromium, so no browser download is needed.
+
 ### Working with the database
 
 Use the npm scripts, not `npx prisma` — they bind to the project's pinned
