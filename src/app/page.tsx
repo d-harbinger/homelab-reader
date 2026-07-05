@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import useSWR from "swr";
+import useSWR, { mutate } from "swr";
 import Link from "next/link";
 import { LibraryHeader } from "@/components/LibraryHeader";
 import { FailedImportsBanner } from "@/components/FailedImportsBanner";
@@ -67,7 +67,13 @@ export default function Home() {
 
   async function manualScan() {
     await fetch("/api/scan", { method: "POST" });
-    await Promise.all([refreshStatus(), refreshBooks()]);
+    // The folder rail derives from books' paths, so a rescan can add or
+    // remove folders — revalidate it alongside the grids or it goes stale.
+    await Promise.all([
+      refreshStatus(),
+      refreshBooks(),
+      mutate("/api/library/folders"),
+    ]);
   }
 
   const books = booksResp?.books ?? [];
@@ -98,7 +104,10 @@ export default function Home() {
       <FailedImportsBanner />
 
       <div className="flex flex-col gap-8 lg:flex-row">
-        <aside className="lg:w-56 lg:flex-none">
+        {/* self-start stops the default flex stretch so the rail is shorter
+            than the scroll area and sticky has room to travel; its own
+            overflow keeps tall trees scrollable within the viewport. */}
+        <aside className="lg:sticky lg:top-6 lg:max-h-[calc(100vh-3rem)] lg:w-56 lg:flex-none lg:self-start lg:overflow-y-auto">
           <FolderTree
             selected={selectedFolder}
             onSelect={setSelectedFolder}

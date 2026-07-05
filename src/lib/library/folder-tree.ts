@@ -74,11 +74,17 @@ export function buildFolderTree(
     }
 
     let node = root;
-    let rel = "";
     for (const seg of segs) {
-      rel = rel ? `${rel}/${seg}` : seg;
-      let child = node.children.find((c) => c.name === seg);
+      // Case-insensitive grouping: the /api/books folder filter compiles to
+      // SQLite LIKE, which is case-insensitive for ASCII, so "Python/" and
+      // "python/" are one folder as far as filtering goes. Group them into one
+      // node (first-seen spelling wins for display and path) or the rail's
+      // counts disagree with the filtered results it drives.
+      let child = node.children.find(
+        (c) => c.name.toLowerCase() === seg.toLowerCase(),
+      );
       if (!child) {
+        const rel = node.path ? `${node.path}/${seg}` : seg;
         child = newNode(seg, rel);
         node.children.push(child);
       }

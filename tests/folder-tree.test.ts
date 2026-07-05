@@ -49,6 +49,34 @@ describe("buildFolderTree", () => {
     // longest root "/books/sub" -> relative "python/a.pdf" -> shelf "python"
     expect(tree.children.map((c) => c.name)).toEqual(["python"]);
   });
+
+  it("merges folders differing only by case into one node (matches the filter's case-insensitive LIKE)", () => {
+    // The /api/books folder filter compiles to SQLite LIKE, which is
+    // case-insensitive for ASCII — selecting "Python" returns books from
+    // Python/ and python/ alike. The tree must group the same way or its
+    // counts disagree with the filtered results.
+    const tree = buildFolderTree(
+      [
+        { filePath: "/books/Python/a.pdf" },
+        { filePath: "/books/python/b.pdf" },
+        { filePath: "/books/python/Web/c.pdf" },
+        { filePath: "/books/Python/web/d.pdf" },
+      ],
+      ["/books"],
+    );
+
+    expect(tree.children).toHaveLength(1);
+    const py = tree.children[0];
+    expect(py.name).toBe("Python"); // first-seen spelling is the display name
+    expect(py.bookCount).toBe(2);
+    expect(py.totalCount).toBe(4);
+    expect(py.children).toHaveLength(1);
+    expect(py.children[0].name).toBe("Web");
+    expect(py.children[0].totalCount).toBe(2);
+    // The node path keeps the first-seen spelling too — the filter is
+    // case-insensitive, so either spelling round-trips.
+    expect(py.children[0].path).toBe("Python/Web");
+  });
 });
 
 describe("relativeFolder", () => {
