@@ -4,7 +4,7 @@ import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import useSWR from "swr";
-import { BookOpen, FolderTree, KeyRound, LogOut, Search, Users } from "lucide-react";
+import { BookOpen, Copy, FolderTree, KeyRound, LogOut, Search, Users } from "lucide-react";
 import { doSignOut } from "@/app/actions";
 import { fetcher } from "@/lib/fetcher";
 
@@ -105,6 +105,14 @@ export function LibraryHeader({
             </Link>
           </>
         )}
+        <Link
+          href="/duplicates"
+          aria-label="Duplicate report"
+          title="Duplicates"
+          className="rounded-md p-1.5 text-zinc-500 transition-colors hover:bg-zinc-900 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60"
+        >
+          <Copy size={15} />
+        </Link>
         <Link
           href="/settings/tokens"
           aria-label="OPDS tokens"
