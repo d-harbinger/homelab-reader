@@ -75,6 +75,13 @@ export default defineConfig({
       DATABASE_URL,
       AUTH_SECRET: "e2e-fixed-test-secret-not-used-in-production",
       AUTH_TRUST_HOST: "true",
+      // Both names, and both REQUIRED here: NextAuth v5 reads AUTH_URL first
+      // (NEXTAUTH_URL is the legacy v4 name), and `next dev` also loads the
+      // machine-local .env — a developer .env pinning the auth origin to the
+      // default port 3000 otherwise wins, and every server-action redirect
+      // (setup, sign-in) sends the browser to a port nothing listens on.
+      // Diagnosed live: POST /login 303'd to localhost:3000 → chrome-error.
+      AUTH_URL: BASE_URL,
       NEXTAUTH_URL: BASE_URL,
       NEXT_TELEMETRY_DISABLED: "1",
     },
