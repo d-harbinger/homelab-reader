@@ -30,7 +30,8 @@ export const authConfig = {
     },
     // Gatekeeper for matched routes (see middleware matcher). Returning
     // false bounces an unauthenticated request to /login.
-    authorized({ auth, request: { nextUrl } }) {
+    authorized({ auth, request }) {
+      const { nextUrl } = request;
       const loggedIn = !!auth?.user;
       const { pathname } = nextUrl;
 
@@ -56,10 +57,17 @@ export const authConfig = {
 
       // First-run setup and the login form are reachable while signed out.
       // /setup closes itself once an admin exists (enforced in the page);
-      // /login bounces an already-signed-in user back to the library.
+      // /login bounces an already-signed-in user back to the library — but
+      // ONLY on GET. The login form submits as a server-action POST to
+      // /login, and answering that POST with a bare 302 breaks the action
+      // protocol (the client shows "unexpected response from the server"
+      // and never navigates). A signed-in POST happens in real life — two
+      // tabs, a session restored mid-form — and signing in again is the
+      // correct, harmless outcome, so let the action run.
       if (pathname.startsWith("/setup")) return true;
       if (pathname.startsWith("/login")) {
-        if (loggedIn) return Response.redirect(new URL("/", nextUrl));
+        if (loggedIn && request.method === "GET")
+          return Response.redirect(new URL("/", nextUrl));
         return true;
       }
 
