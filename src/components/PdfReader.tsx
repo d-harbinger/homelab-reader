@@ -23,7 +23,7 @@ import {
 import { ColorPickerPopover, HighlightMenu } from "./HighlightPopover";
 import { InkLayer } from "./InkLayer";
 import { InkToolbar } from "./InkToolbar";
-import { INK_COLORS, INK_WIDTHS, type InkStroke, type InkPoint } from "@/lib/ink";
+import { INK_COLORS, INK_OPACITIES, INK_WIDTHS, type InkStroke, type InkPoint } from "@/lib/ink";
 
 pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
 
@@ -124,6 +124,7 @@ export function PdfReader({
   const [erasing, setErasing] = useState(false);
   const [inkColor, setInkColor] = useState<string>(INK_COLORS[0].value);
   const [inkWidth, setInkWidth] = useState<number>(INK_WIDTHS[1].value);
+  const [inkOpacity, setInkOpacity] = useState<number>(INK_OPACITIES[0].value);
   const [inkStrokes, setInkStrokes] = useState<InkStroke[]>([]);
   const inkTemp = useRef(0);
 
@@ -213,6 +214,7 @@ export function PdfReader({
         page: pageNum,
         color: inkColor,
         width: inkWidth,
+        opacity: inkOpacity,
         points,
       };
       setInkStrokes((prev) => [...prev, optimistic]);
@@ -226,6 +228,7 @@ export function PdfReader({
             points,
             color: inkColor,
             width: inkWidth,
+            opacity: inkOpacity,
           }),
         });
         if (!r.ok) throw new Error("save failed");
@@ -235,7 +238,7 @@ export function PdfReader({
         setInkStrokes((prev) => prev.filter((s) => s.id !== tempId));
       }
     },
-    [bookId, inkColor, inkWidth],
+    [bookId, inkColor, inkWidth, inkOpacity],
   );
 
   const eraseStroke = useCallback(async (id: string) => {
@@ -600,6 +603,7 @@ export function PdfReader({
         <InkToolbar
           color={inkColor}
           width={inkWidth}
+          opacity={inkOpacity}
           erasing={erasing}
           canUndo={inkStrokes.length > 0}
           onColor={(c) => {
@@ -607,6 +611,7 @@ export function PdfReader({
             setErasing(false);
           }}
           onWidth={setInkWidth}
+          onOpacity={setInkOpacity}
           onToggleErase={() => setErasing((v) => !v)}
           onUndo={undoInk}
         />
@@ -651,6 +656,7 @@ export function PdfReader({
                     erasing={erasing}
                     color={inkColor}
                     width={inkWidth}
+                    opacity={inkOpacity}
                     onCommit={(pts) => saveStroke(page, pts)}
                     onErase={eraseStroke}
                   />
@@ -692,6 +698,7 @@ export function PdfReader({
                             erasing={erasing}
                             color={inkColor}
                             width={inkWidth}
+                            opacity={inkOpacity}
                             onCommit={(pts) => saveStroke(p, pts)}
                             onErase={eraseStroke}
                           />

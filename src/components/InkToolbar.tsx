@@ -1,15 +1,17 @@
 "use client";
 
 import { Eraser, Undo2 } from "lucide-react";
-import { INK_COLORS, INK_WIDTHS } from "@/lib/ink";
+import { INK_COLORS, INK_OPACITIES, INK_WIDTHS } from "@/lib/ink";
 
 interface Props {
   color: string;
   width: number;
+  opacity: number;
   erasing: boolean;
   canUndo: boolean;
   onColor: (c: string) => void;
   onWidth: (w: number) => void;
+  onOpacity: (o: number) => void;
   onToggleErase: () => void;
   onUndo: () => void;
 }
@@ -19,10 +21,12 @@ interface Props {
 export function InkToolbar({
   color,
   width,
+  opacity,
   erasing,
   canUndo,
   onColor,
   onWidth,
+  onOpacity,
   onToggleErase,
   onUndo,
 }: Props) {
@@ -68,6 +72,33 @@ export function InkToolbar({
               <span
                 className="rounded-full bg-zinc-100"
                 style={{ width: w.dot, height: w.dot }}
+              />
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex flex-none items-center gap-2">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+          Opacity
+        </span>
+        <div className="flex items-center gap-1.5">
+          {INK_OPACITIES.map((o) => (
+            <button
+              key={o.value}
+              aria-label={o.name}
+              aria-pressed={o.value === opacity}
+              title={o.name}
+              onClick={() => onOpacity(o.value)}
+              className={`grid h-6 w-8 place-items-center rounded border transition-colors ${
+                o.value === opacity
+                  ? "border-amber-500 bg-amber-500/15"
+                  : "border-zinc-800 hover:border-zinc-700"
+              }`}
+            >
+              <span
+                className="h-2.5 w-2.5 rounded-full bg-zinc-100"
+                style={{ opacity: o.value }}
               />
             </button>
           ))}
