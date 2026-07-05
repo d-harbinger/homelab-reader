@@ -111,6 +111,9 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const highlightsRef = useRef<Map<string, StoredHighlight>>(new Map());
   const [ready, setReady] = useState(false);
+  // Surfaced when the book file itself can't be fetched — previously a 404/500
+  // just left "Loading…" up forever with no indication anything went wrong.
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [percent, setPercent] = useState(0);
   const [mode, setMode] = useState<"paginated" | "scrolled">(() =>
     readSetting<string>("epub.mode", "paginated") === "scrolled"
@@ -161,7 +164,16 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
         setSelection(null);
       },
       undefined,
-      { fill: HIGHLIGHT_COLORS[h.color].fill, "fill-opacity": "0.45" },
+      // The palette rgba already carries the intended 0.4 alpha. fill-opacity
+      // must be an explicit 1 — combined with the rgba it used to multiply
+      // down to ~0.18 (washed-out highlights), and omitting it would let
+      // epub.js's own default sneak back in. multiply matches the PDF
+      // reader's blend so the same color reads the same in both formats.
+      {
+        fill: HIGHLIGHT_COLORS[h.color].fill,
+        "fill-opacity": "1",
+        "mix-blend-mode": "multiply",
+      },
     );
   }, []);
 
@@ -200,8 +212,22 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
       const { default: ePub } = await import("epubjs");
       if (cancelled) return;
 
-      const response = await fetch(fileUrl);
-      if (!response.ok || cancelled) return;
+      let response: Response;
+      try {
+        response = await fetch(fileUrl);
+      } catch {
+        if (!cancelled) setLoadError("Could not reach the server.");
+        return;
+      }
+      if (cancelled) return;
+      if (!response.ok) {
+        setLoadError(
+          response.status === 404
+            ? "Book file not found — it may have been moved or removed."
+            : `Could not load the book (server responded ${response.status}).`,
+        );
+        return;
+      }
       const buffer = await response.arrayBuffer();
       if (cancelled) return;
 
@@ -582,13 +608,21 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
             )}
           </button>
           <div className="text-xs text-zinc-600 tabular-nums">
-            {ready ? `${Math.round(percent * 100)}%` : "Loading…"}
+            {loadError ? "—" : ready ? `${Math.round(percent * 100)}%` : "Loading…"}
           </div>
         </div>
       </header>
 
       <div className="relative flex-1 overflow-hidden">
         <div ref={viewerRef} className="h-full w-full" />
+
+        {loadError && (
+          <div className="absolute inset-0 z-20 flex items-center justify-center bg-zinc-950/80">
+            <p className="max-w-sm rounded-md border border-red-900/50 bg-zinc-900 px-4 py-3 text-center text-sm text-red-300">
+              {loadError}
+            </p>
+          </div>
+        )}
 
         {mode === "paginated" && (
           <>
