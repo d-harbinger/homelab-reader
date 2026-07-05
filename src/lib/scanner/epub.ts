@@ -21,6 +21,26 @@ export interface EpubExtraction {
 // 4. Find the cover image: EPUB 3 uses `properties="cover-image"`,
 //    EPUB 2 uses a `<meta name="cover" content="ITEM_ID">` pointer.
 // 5. Extract the cover bytes if present.
+// Look up a zip entry by a path referenced from EPUB XML. Zip entry names are
+// stored as literal bytes, but paths in container.xml (`full-path`) and
+// manifest hrefs are URIs and MAY be percent-encoded ("My%20Book.opf" for
+// "My Book.opf"). Try the raw key first, then the decoded form — a miss here
+// used to fail the whole import even though the entry existed.
+function zipEntry(
+  entries: Map<string, Buffer>,
+  key: string,
+): Buffer | undefined {
+  const direct = entries.get(key);
+  if (direct) return direct;
+  try {
+    const decoded = decodeURIComponent(key);
+    if (decoded !== key) return entries.get(decoded);
+  } catch {
+    // Malformed escape sequence — treat as a plain literal key (already missed).
+  }
+  return undefined;
+}
+
 export async function extractEpub(filePath: string): Promise<EpubExtraction> {
   const entries = await readZipEntries(filePath);
 
@@ -33,7 +53,7 @@ export async function extractEpub(filePath: string): Promise<EpubExtraction> {
     throw new Error("EPUB container.xml did not reference an OPF");
   }
 
-  const opfBytes = entries.get(opfPath);
+  const opfBytes = zipEntry(entries, opfPath);
   if (!opfBytes) {
     throw new Error(`EPUB OPF not found at ${opfPath}`);
   }
@@ -43,7 +63,7 @@ export async function extractEpub(filePath: string): Promise<EpubExtraction> {
 
   let cover: EpubExtraction["cover"] | undefined;
   if (coverHref) {
-    const coverBytes = entries.get(coverHref);
+    const coverBytes = zipEntry(entries, coverHref);
     if (coverBytes) {
       const ext = path.extname(coverHref).slice(1) || "jpg";
       cover = { buffer: coverBytes, ext };
