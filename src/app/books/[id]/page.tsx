@@ -60,16 +60,19 @@ export default async function BookDetail({
           </div>
         </div>
 
-        <div className="space-y-6">
+        {/* min-w-0: a 1fr grid track's minimum is min-content, so one long
+            unbreakable token (title/author/ISBN) would otherwise force the
+            track wider than the column and bleed across the cover boundary. */}
+        <div className="min-w-0 space-y-6">
           <div className="space-y-2">
-            <h1 className="text-3xl font-semibold tracking-tight text-zinc-100">
+            <h1 className="text-3xl font-semibold tracking-tight text-zinc-100 break-words">
               {book.title}
             </h1>
             {book.subtitle && (
-              <p className="text-lg text-zinc-400">{book.subtitle}</p>
+              <p className="text-lg text-zinc-400 break-words">{book.subtitle}</p>
             )}
             {book.authors.length > 0 && (
-              <p className="text-sm text-zinc-400">
+              <p className="text-sm text-zinc-400 break-words">
                 {book.authors.map((a) => a.name).join(", ")}
               </p>
             )}
@@ -122,7 +125,7 @@ export default async function BookDetail({
               <h2 className="text-xs uppercase tracking-wider text-zinc-500">
                 Description
               </h2>
-              <p className="text-sm leading-relaxed text-zinc-300 whitespace-pre-wrap">
+              <p className="text-sm leading-relaxed text-zinc-300 whitespace-pre-wrap break-words">
                 {book.description}
               </p>
             </div>
@@ -152,7 +155,7 @@ function Meta({ label, value }: { label: string; value: string }) {
   return (
     <div className="space-y-1">
       <dt className="text-zinc-600 uppercase tracking-wider">{label}</dt>
-      <dd className="text-zinc-200">{value}</dd>
+      <dd className="text-zinc-200 break-words">{value}</dd>
     </div>
   );
 }
