@@ -37,10 +37,12 @@ reproductions and keep going — fixes are a separate session.
 - status:    open
 ```
 
-(none yet)
+(none yet — the 2026-07-03 server-deploy captures were logged in the workspace
+queue and fixed in the 2026-07-05 polish pass; see the session log.)
 
 ## Session log
 
 | date | charter | dur | T/B/S | bugs found | notes |
 |------|---------|-----|-------|-----------|-------|
-|      |         |     |       |           |       |
+| 2026-07-03 | server deploy (owner) | — | — | 4 + 2 tickets | rail not sticky · folder filters uneven · one EPUB import failed · detail-page font overflow · highlighter washed out · ink needs opacity |
+| 2026-07-05 | fix pass (agent) | — | — | +2 found while fixing | all six above fixed (commits a377951..208f209); found+fixed: manual rescans never recorded failed imports; middleware 302'd the login form's own action POST. Captured, not fixed: byte-identical copies ping-pong one row between paths on rescans (copy-vs-move design question). |
