@@ -255,6 +255,32 @@ describe("malformed archive → FailedImport, not a silent drop (TEST-03 / ROBUS
     expect(await h.prisma.failedImport.count()).toBe(0);
     expect(await h.prisma.book.count()).toBe(1);
   });
+
+  it("walkAndScan (manual rescan) records failures and clears them on success", async () => {
+    // Previously only the watcher recorded FailedImport rows; a book failing
+    // during a manual rescan just bumped a counter nobody rendered, so the
+    // banner stayed empty. walkAndScan now uses the same record/clear pair.
+    const { walkAndScan } = await import("@/lib/scanner/index");
+
+    const broken = stage(CORRUPT_EPUB, "broken.epub");
+    stage(VALID_EPUB, "fine.epub");
+
+    const stats = await walkAndScan(lib);
+    expect(stats.scanned).toBe(1);
+    expect(stats.errors).toBe(1);
+
+    const failures = await h.prisma.failedImport.findMany();
+    expect(failures).toHaveLength(1);
+    expect(failures[0].filePath).toBe(broken);
+    expect(await h.prisma.book.count()).toBe(1); // the valid one imported
+
+    // Fix the broken file in place; the next manual rescan clears the record.
+    copyFileSync(VALID2_EPUB, broken);
+    const stats2 = await walkAndScan(lib);
+    expect(stats2.errors).toBe(0);
+    expect(await h.prisma.failedImport.count()).toBe(0);
+    expect(await h.prisma.book.count()).toBe(2);
+  });
 });
 
 describe("removeFileFromLibrary (TEST-03)", () => {

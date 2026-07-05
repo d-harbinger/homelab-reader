@@ -6,6 +6,7 @@ import { extractEpub } from "./epub";
 import { extractPdf } from "./pdf";
 import { writeCover } from "./covers";
 import { enrichBook, isThin } from "@/lib/metadata/enrich";
+import { clearFailedImport, recordFailedImport } from "./failed-imports";
 
 export type BookFormat = "epub" | "pdf";
 
@@ -293,9 +294,19 @@ export async function walkAndScan(
         try {
           await scanFile(full);
           stats.scanned++;
+          // Succeeded — drop any prior failure record, same contract as the
+          // watcher path: a fixed book stops being reported.
+          await clearFailedImport(full);
         } catch (err) {
           console.error(`[scanner] scan failed for ${full}`, err);
           stats.errors++;
+          // Record a visible FailedImport — previously only the watcher did
+          // this, so a book failing during a manual rescan never surfaced in
+          // the banner (it only bumped a counter nobody rendered).
+          await recordFailedImport(full, formatOf(full) ?? "epub", err).catch(
+            (recErr) =>
+              console.error(`[scanner] recordFailedImport failed: ${full}`, recErr),
+          );
         }
       }
     }
