@@ -23,6 +23,10 @@ export function FolderTree({ selected, onSelect }: Props) {
   const { data } = useSWR<{ tree: FolderNode }>(
     "/api/library/folders",
     fetcher,
+    // The tree changes when a scan adds/removes folders; a slow refresh keeps
+    // it from going stale next to the 5s book grid (manual rescans also
+    // mutate this key directly).
+    { refreshInterval: 30000 },
   );
   const tree = data?.tree;
 
@@ -66,9 +70,14 @@ interface RowProps {
 }
 
 function FolderRow({ node, depth, selected, onSelect }: RowProps) {
-  const [open, setOpen] = useState(false);
+  const [manuallyOpen, setOpen] = useState(false);
   const hasChildren = node.children.length > 0;
   const isSelected = selected === node.path;
+  // Keep ancestors of the active selection expanded — a selected row hidden
+  // inside a collapsed branch reads as "my filter vanished".
+  const containsSelection =
+    !isSelected && selected.startsWith(`${node.path}/`);
+  const open = manuallyOpen || containsSelection;
 
   return (
     <div>
