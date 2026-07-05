@@ -9,6 +9,8 @@ export interface InkStroke {
   page: number;
   color: string;
   width: number;
+  /** 0..1 stroke opacity; 1 (solid) for strokes saved before the field existed. */
+  opacity: number;
   points: InkPoint[];
 }
 
@@ -36,6 +38,20 @@ export const INK_WIDTHS: { name: string; value: number; dot: number }[] = [
 const INK_WIDTH_SET = new Set(INK_WIDTHS.map((w) => w.value));
 export function isInkWidth(v: unknown): v is number {
   return typeof v === "number" && INK_WIDTH_SET.has(v);
+}
+
+// Opacity presets. Solid keeps the original opaque-pen look; the translucent
+// steps make the pen usable as a marker over text without hiding it. Applied
+// at the stroke GROUP level when rendering — per-segment opacity would show
+// alpha build-up at every overlapping round cap of a pressure stroke.
+export const INK_OPACITIES: { name: string; value: number }[] = [
+  { name: "Solid", value: 1 },
+  { name: "Soft", value: 0.6 },
+  { name: "Marker", value: 0.35 },
+];
+const INK_OPACITY_SET = new Set(INK_OPACITIES.map((o) => o.value));
+export function isInkOpacity(v: unknown): v is number {
+  return typeof v === "number" && INK_OPACITY_SET.has(v);
 }
 
 // A stroke can't reasonably hold more points than this; cap to bound request

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { parseJson, withUser } from "@/lib/route-helpers";
-import { isInkColor, isInkWidth, parseInkPoints } from "@/lib/ink";
+import { isInkColor, isInkOpacity, isInkWidth, parseInkPoints } from "@/lib/ink";
 
 interface InkPayload {
   bookId?: string;
@@ -9,6 +9,7 @@ interface InkPayload {
   points?: unknown;
   color?: string;
   width?: number;
+  opacity?: number;
 }
 
 type InkRow = {
@@ -16,6 +17,7 @@ type InkRow = {
   page: number;
   color: string;
   width: number;
+  opacity: number;
   path: string;
 };
 
@@ -32,6 +34,7 @@ function serialize(row: InkRow) {
     page: row.page,
     color: row.color,
     width: row.width,
+    opacity: row.opacity,
     points,
   };
 }
@@ -42,7 +45,7 @@ export const POST = withUser(async (user, req) => {
   const parsed = await parseJson<InkPayload>(req);
   if (!parsed.ok) return parsed.res;
 
-  const { bookId, page, points, color, width } = parsed.body;
+  const { bookId, page, points, color, width, opacity } = parsed.body;
   if (!bookId || typeof page !== "number" || !Number.isInteger(page) || page < 1) {
     return NextResponse.json(
       { error: "missing bookId or valid page" },
@@ -59,6 +62,9 @@ export const POST = withUser(async (user, req) => {
   if (width !== undefined && !isInkWidth(width)) {
     return NextResponse.json({ error: "invalid width" }, { status: 400 });
   }
+  if (opacity !== undefined && !isInkOpacity(opacity)) {
+    return NextResponse.json({ error: "invalid opacity" }, { status: 400 });
+  }
 
   const book = await prisma.book.findUnique({ where: { id: bookId } });
   if (!book) return NextResponse.json({ error: "unknown book" }, { status: 404 });
@@ -71,6 +77,7 @@ export const POST = withUser(async (user, req) => {
       path: JSON.stringify({ points: pts }),
       color: color ?? "#1c1c1e",
       width: width ?? 4,
+      opacity: opacity ?? 1,
     },
   });
   return NextResponse.json(serialize(row));

@@ -16,6 +16,7 @@ interface Props {
   erasing: boolean;
   color: string;
   width: number;
+  opacity: number;
   onCommit: (points: InkPoint[]) => void; // a finished stroke — parent persists
   onErase: (id: string) => void;
 }
@@ -33,6 +34,7 @@ export function InkLayer({
   erasing,
   color,
   width,
+  opacity,
   onCommit,
   onErase,
 }: Props) {
@@ -116,6 +118,7 @@ export function InkLayer({
           d={inkPath(current)}
           stroke={color}
           strokeWidth={width}
+          opacity={opacity}
           fill="none"
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -137,7 +140,11 @@ function SavedStroke({
 }) {
   const variable = hasPressureVariation(stroke.points);
   return (
-    <g>
+    // Opacity applies at the GROUP level: a pressure stroke is many opaque
+    // overlapping round-capped segments, and per-segment alpha would visibly
+    // double up at every joint. Group opacity composites the whole stroke
+    // once. Strokes saved before the field existed carry opacity 1.
+    <g opacity={stroke.opacity ?? 1}>
       {variable ? (
         inkSegments(stroke.points, stroke.width).map((seg, i) => (
           <path

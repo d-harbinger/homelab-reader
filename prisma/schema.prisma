@@ -215,7 +215,12 @@ model InkStroke {
   // highlights. Pressure is 0..1 (0.5 for devices that don't report it).
   path      String
   color     String   @default("#1c1c1e")
-  width     Float    @default(6)
+  // 4 matches what the API and toolbar actually default to (the old 6 was
+  // never used — every create passes an explicit width).
+  width     Float    @default(4)
+  // 0..1 stroke opacity; backfills existing rows to fully opaque, so strokes
+  // saved before the field existed render exactly as they always did.
+  opacity   Float    @default(1)
   createdAt DateTime @default(now())
 
   book Book @relation(fields: [bookId], references: [id], onDelete: Cascade)
