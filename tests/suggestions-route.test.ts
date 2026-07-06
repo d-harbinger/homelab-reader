@@ -44,7 +44,7 @@ vi.mock("@/auth", () => ({ auth: vi.fn() }));
 
 import { asReader, asAdmin, signOut } from "./helpers/auth-mock";
 import { GET } from "@/app/api/books/[id]/suggestions/route";
-import { POST } from "@/app/api/books/[id]/suggestions/[sid]/route";
+import { DELETE, POST } from "@/app/api/books/[id]/suggestions/[sid]/route";
 
 beforeAll(() => {
   execFileSync("npx", ["prisma", "migrate", "deploy"], {
@@ -243,5 +243,76 @@ describe("POST /api/books/[id]/suggestions/[sid] (accept)", () => {
 
     const after = await h.prisma.book.findUniqueOrThrow({ where: { id: book.id } });
     expect(after.title).toBe("Forced Title"); // force overwrote the present field
+  });
+});
+
+describe("DELETE /api/books/[id]/suggestions/[sid] (dismiss)", () => {
+  function delReq(): Request {
+    return new Request("http://test", { method: "DELETE" });
+  }
+
+  it("401s an unauthenticated request", async () => {
+    signOut();
+    const res = await DELETE(delReq(), pctx("b", "s"));
+    expect(res.status).toBe(401);
+  });
+
+  it("403s a non-admin reader (review is admin-only, same as accept)", async () => {
+    await makeUser("u");
+    asReader("u");
+    const res = await DELETE(delReq(), pctx("b", "s"));
+    expect(res.status).toBe(403);
+  });
+
+  it("404s a suggestion that belongs to a different book (no cross-book leak)", async () => {
+    await makeUser("u");
+    const bookA = await makeBook();
+    const bookB = await makeBook();
+    const sugOfB = await makeSuggestion(bookB.id, { confidence: 0.9 });
+
+    asAdmin("u");
+    const res = await DELETE(delReq(), pctx(bookA.id, sugOfB.id));
+    expect(res.status).toBe(404);
+  });
+
+  it("404s an already-resolved suggestion (only pending rows are reviewable)", async () => {
+    await makeUser("u");
+    const book = await makeBook();
+    const resolved = await makeSuggestion(book.id, { status: "accepted" });
+
+    asAdmin("u");
+    const res = await DELETE(delReq(), pctx(book.id, resolved.id));
+    expect(res.status).toBe(404);
+  });
+
+  it("marks the row rejected without touching the book or its siblings", async () => {
+    await makeUser("u");
+    const book = await makeBook({ title: "Original Title" });
+    const dismissed = await makeSuggestion(book.id, {
+      confidence: 0.9,
+      title: "Suggested Title",
+      isbn: "9780132350884",
+    });
+    const sibling = await makeSuggestion(book.id, { confidence: 0.6 });
+
+    asAdmin("u");
+    const res = await DELETE(delReq(), pctx(book.id, dismissed.id));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, rejected: dismissed.id });
+
+    // The book row is untouched — dismiss never writes catalog fields.
+    const after = await h.prisma.book.findUniqueOrThrow({ where: { id: book.id } });
+    expect(after.title).toBe("Original Title");
+    expect(after.isbn).toBeNull();
+
+    // Only the dismissed row flips; the sibling stays reviewable.
+    const dis = await h.prisma.bookSuggestion.findUniqueOrThrow({
+      where: { id: dismissed.id },
+    });
+    const sib = await h.prisma.bookSuggestion.findUniqueOrThrow({
+      where: { id: sibling.id },
+    });
+    expect(dis.status).toBe("rejected");
+    expect(sib.status).toBe("pending");
   });
 });

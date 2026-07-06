@@ -110,6 +110,33 @@ export const POST = withAdmin<SuggestionContext>(async (_admin, req, { params })
   });
 });
 
+// DELETE /api/books/[id]/suggestions/[sid] — dismiss one suggestion without
+// touching the book. Marks the row "rejected" (kept, not deleted, so the scanner
+// won't re-propose the same candidate on the next enrich pass). Admin-gated for
+// the same reason accept is: review of the shared catalog is a curation action.
+// Missing book, missing suggestion, and a suggestion of another book collapse to
+// one 404, mirroring POST. Dismissing an already-resolved suggestion also 404s —
+// only "pending" rows are reviewable.
+export const DELETE = withAdmin<SuggestionContext>(
+  async (_admin, _req, { params }) => {
+    const { id, sid } = await params;
+
+    const row = await prisma.bookSuggestion.findFirst({
+      where: { id: sid, bookId: id, status: "pending" },
+    });
+    if (!row) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    await prisma.bookSuggestion.update({
+      where: { id: sid },
+      data: { status: "rejected" },
+    });
+
+    return NextResponse.json({ ok: true, rejected: sid });
+  },
+);
+
 function safeParseArray(s: string): string[] {
   try {
     const v = JSON.parse(s);

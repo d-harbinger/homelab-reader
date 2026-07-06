@@ -189,7 +189,7 @@ test("core flow: setup, login, library, readers, annotations, OPDS, enrich", asy
     expect(await feed.text()).toContain("All Books");
   });
 
-  await test.step("accept a pending metadata suggestion and confirm write-back", async () => {
+  await test.step("review screen: accept the pending suggestion through the UI", async () => {
     // Before: the book carries no publisher/isbn (only the extracted title).
     const before = await (
       await page.request.get(`/api/books/${epubId}`)
@@ -197,29 +197,29 @@ test("core flow: setup, login, library, readers, annotations, OPDS, enrich", asy
     expect(before.publisher).toBeNull();
     expect(before.isbn).toBeNull();
 
-    // The pending suggestion is listed for review.
-    const list = await (
-      await page.request.get(`/api/books/${epubId}/suggestions`)
-    ).json();
-    expect(list.suggestions).toHaveLength(1);
-    const sid = list.suggestions[0].id as string;
+    // The book detail page shows the review panel to the admin, listing the
+    // seeded pending suggestion with its proposed fields.
+    await page.goto(`/books/${epubId}`);
+    const panel = page.getByTestId("suggestions-panel");
+    await expect(panel).toBeVisible();
+    await expect(panel.getByText("E2E Test Press")).toBeVisible();
+    await expect(panel.getByText("9780000000001")).toBeVisible();
 
-    // Accept it (admin-gated; the signed-in user is the first-run admin).
-    const accept = await page.request.post(
-      `/api/books/${epubId}/suggestions/${sid}`,
-      { data: {} },
-    );
-    expect(accept.status()).toBe(200);
-    const acc = (await accept.json()) as {
-      ok: boolean;
-      applied: { publisher?: string; isbn?: string; tagNames: string[] };
-    };
-    expect(acc.ok).toBe(true);
-    expect(acc.applied.publisher).toBe("E2E Test Press");
-    expect(acc.applied.isbn).toBe("9780000000001");
-    expect(acc.applied.tagNames).toEqual(["Testing", "Automation"]);
+    // Accept through the UI. The panel reloads the page so the server-rendered
+    // metadata (publisher, ISBN, tags) reflects the write-back.
+    await panel.getByRole("button", { name: /^accept$/i }).click();
+    await page.waitForLoadState("load");
 
-    // After: the empty columns are filled and the subjects landed as tags.
+    // After: the applied fields render on the detail page itself...
+    await expect(page.getByText("E2E Test Press")).toBeVisible();
+    await expect(page.getByText("9780000000001")).toBeVisible();
+    await expect(page.getByText("Testing", { exact: true })).toBeVisible();
+    await expect(page.getByText("Automation", { exact: true })).toBeVisible();
+
+    // ...the panel is gone (nothing left pending)...
+    await expect(page.getByTestId("suggestions-panel")).toHaveCount(0);
+
+    // ...and the API confirms the columns landed.
     const after = await (
       await page.request.get(`/api/books/${epubId}`)
     ).json();
