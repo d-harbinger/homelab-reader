@@ -2,8 +2,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { prisma } from "@/lib/prisma";
+import { getCurrentUser } from "@/lib/current-user";
 import { BookAnnotations } from "@/components/BookAnnotations";
 import { CiteButton } from "@/components/CiteButton";
+import { SuggestionsPanel } from "@/components/SuggestionsPanel";
 
 function formatBytes(n: number | null | undefined): string | null {
   if (!n) return null;
@@ -18,6 +20,7 @@ export default async function BookDetail({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  const me = await getCurrentUser();
   const book = await prisma.book.findUnique({
     where: { id },
     include: { authors: true, tags: true, progress: true },
@@ -145,6 +148,11 @@ export default async function BookDetail({
           )}
         </div>
       </div>
+
+      {/* Review is a curation surface: accepting writes the shared catalog row,
+          so only admins see the panel (the accept/dismiss routes enforce the
+          same rule server-side). */}
+      {me?.role === "admin" && <SuggestionsPanel bookId={book.id} />}
 
       <BookAnnotations bookId={book.id} />
     </main>
