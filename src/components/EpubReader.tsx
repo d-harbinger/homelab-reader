@@ -17,7 +17,7 @@ import {
   type PanelHighlight,
   type PanelNote,
 } from "./HighlightsPanel";
-import { ColorPickerPopover, HighlightMenu } from "./HighlightPopover";
+import { ColorPickerPopover, HighlightMenu, NoteEditorPopover } from "./HighlightPopover";
 
 interface Props {
   bookId: string;
@@ -125,6 +125,14 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
   );
   const [selection, setSelection] = useState<SelectionState | null>(null);
   const [openMenu, setOpenMenu] = useState<OpenHighlightMenu | null>(null);
+  // Inline note editor floated at a highlight (opened from its menu).
+  const [noteDraft, setNoteDraft] = useState<{
+    h: PanelHighlight;
+    noteId: string | null;
+    body: string;
+    x: number;
+    y: number;
+  } | null>(null);
   // Panel state — list of highlights and notes for this book. Mirrored
   // by highlightsRef for the rendition-paint path; React state drives
   // the panel UI.
@@ -597,6 +605,9 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
             anchor: h.anchor,
             body,
             context: h.text.slice(0, 200),
+            // Bind structurally to the highlight (not just by CFI), so the
+            // pairing survives even if the CFI later shifts.
+            highlightId: h.id,
           }),
         });
         if (!r.ok) return;
@@ -621,6 +632,23 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
     if (h.anchor.cfi) {
       renditionRef.current?.display(h.anchor.cfi);
     }
+  }
+
+  // From the highlight menu's note action: open the note editor at the
+  // highlight, pre-filled if it already has a note.
+  function openNoteEditor() {
+    if (!openMenu) return;
+    const hl = highlightsRef.current.get(openMenu.id);
+    if (!hl) return;
+    const existing = notes.find((n) => n.highlightId === openMenu.id) ?? null;
+    setNoteDraft({
+      h: hl as PanelHighlight,
+      noteId: existing?.id ?? null,
+      body: existing?.body ?? "",
+      x: openMenu.x,
+      y: openMenu.y,
+    });
+    setOpenMenu(null);
   }
 
   return (
@@ -751,8 +779,23 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
           x={openMenu.x}
           y={openMenu.y}
           activeColor={openMenu.color}
+          hasNote={notes.some((n) => n.highlightId === openMenu.id)}
           onPick={(c) => changeColor(openMenu.id, c)}
+          onAddNote={openNoteEditor}
           onDelete={() => deleteHighlight(openMenu.id)}
+        />
+      )}
+
+      {noteDraft && (
+        <NoteEditorPopover
+          x={noteDraft.x}
+          y={noteDraft.y}
+          initialBody={noteDraft.body}
+          onSave={(body) => {
+            saveNote(noteDraft.h, body, noteDraft.noteId);
+            setNoteDraft(null);
+          }}
+          onCancel={() => setNoteDraft(null)}
         />
       )}
 

@@ -65,7 +65,7 @@ export function InkToolbar({
   );
 
   return (
-    <div className="flex items-center gap-5 overflow-x-auto border-b border-zinc-900 bg-zinc-900/60 px-4 py-2">
+    <div className="flex items-center justify-center gap-5 overflow-x-auto border-b border-zinc-900 bg-zinc-900/60 px-4 py-2">
       <div className="flex flex-none items-center gap-1.5">
         {tab("pen", "Pen", PenLine)}
         {tab("highlighter", "Highlighter", Highlighter)}
@@ -146,7 +146,7 @@ export function InkToolbar({
         </div>
       )}
 
-      <div className="ml-auto flex flex-none items-center gap-2">
+      <div className="flex flex-none items-center gap-2">
         <button
           onClick={onToggleErase}
           aria-pressed={erasing}
