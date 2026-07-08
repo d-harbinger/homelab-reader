@@ -27,3 +27,11 @@ code,
 pre {
   font-family: var(--font-mono);
 }
+
+/* Text selection matches the app's amber accent instead of the browser's
+   default blue, so dragging to highlight in the reader (and anywhere else)
+   reads as part of the app. Background only — text keeps its own color, so it
+   stays legible on both the dark chrome and a white book page. */
+::selection {
+  background: rgba(245, 158, 11, 0.3);
+}

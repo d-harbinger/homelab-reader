@@ -4,6 +4,13 @@
 
 export type InkPoint = [number, number, number]; // [x, y, pressure] — all 0..1
 
+// Two instruments share the freehand overlay. To a reader a pen and a
+// highlighter are different tools: the pen lays an opaque, pressure-varying
+// line; the highlighter lays a broad, flat-tipped, translucent swipe that
+// multiply-blends so the text shows through it. `kind` is what the renderer
+// switches on. Strokes saved before this field existed are pens.
+export type InkKind = "pen" | "highlighter";
+
 export interface InkStroke {
   id: string;
   page: number;
@@ -11,7 +18,14 @@ export interface InkStroke {
   width: number;
   /** 0..1 stroke opacity; 1 (solid) for strokes saved before the field existed. */
   opacity: number;
+  /** "pen" (default) or "highlighter"; drives cap shape + blend at render. */
+  kind: InkKind;
   points: InkPoint[];
+}
+
+export const INK_KINDS: InkKind[] = ["pen", "highlighter"];
+export function isInkKind(v: unknown): v is InkKind {
+  return v === "pen" || v === "highlighter";
 }
 
 // Pens are OPAQUE and saturated so they read on a white page (unlike the
@@ -52,6 +66,49 @@ export const INK_OPACITIES: { name: string; value: number }[] = [
 const INK_OPACITY_SET = new Set(INK_OPACITIES.map((o) => o.value));
 export function isInkOpacity(v: unknown): v is number {
   return typeof v === "number" && INK_OPACITY_SET.has(v);
+}
+
+// --- highlighter instrument -------------------------------------------------
+
+// Highlighter colors. These are the SAME swatch values as the select-text
+// highlight palette (src/lib/highlight-colors.ts) so freehand and text
+// highlights read as one system. They render translucent via multiply blend,
+// not via the pen's alpha, so the page shows through like a real marker.
+export const HIGHLIGHTER_COLORS: { name: string; value: string }[] = [
+  { name: "Yellow", value: "#fbbf24" },
+  { name: "Green", value: "#34d399" },
+  { name: "Blue", value: "#60a5fa" },
+  { name: "Pink", value: "#f472b6" },
+  { name: "Orange", value: "#fb923c" },
+];
+const HL_COLOR_SET = new Set(HIGHLIGHTER_COLORS.map((c) => c.value));
+export function isHighlighterColor(v: unknown): v is string {
+  return typeof v === "string" && HL_COLOR_SET.has(v);
+}
+
+// Highlighter widths are broad — a marker tip, not a pen nib (pen widths top
+// out at 7). Same viewBox units as INK_WIDTHS.
+export const HIGHLIGHTER_WIDTHS: { name: string; value: number; dot: number }[] = [
+  { name: "Slim", value: 16, dot: 6 },
+  { name: "Wide", value: 24, dot: 9 },
+  { name: "Broad", value: 34, dot: 12 },
+];
+const HL_WIDTH_SET = new Set(HIGHLIGHTER_WIDTHS.map((w) => w.value));
+export function isHighlighterWidth(v: unknown): v is number {
+  return typeof v === "number" && HL_WIDTH_SET.has(v);
+}
+
+// The highlighter draws at one fixed translucency; multiply blend does the
+// see-through work, so it has no opacity picker (unlike the pen).
+export const HIGHLIGHTER_OPACITY = 0.4;
+
+// Per-kind validation for the API: a highlighter can't be persisted with a pen
+// color/width and vice-versa, so a bad client can't smuggle mismatched values.
+export function isColorForKind(kind: InkKind, v: unknown): boolean {
+  return kind === "highlighter" ? isHighlighterColor(v) : isInkColor(v);
+}
+export function isWidthForKind(kind: InkKind, v: unknown): boolean {
+  return kind === "highlighter" ? isHighlighterWidth(v) : isInkWidth(v);
 }
 
 // A stroke can't reasonably hold more points than this; cap to bound request

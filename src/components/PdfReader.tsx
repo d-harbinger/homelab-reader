@@ -23,7 +23,17 @@ import {
 import { ColorPickerPopover, HighlightMenu } from "./HighlightPopover";
 import { InkLayer } from "./InkLayer";
 import { InkToolbar } from "./InkToolbar";
-import { INK_COLORS, INK_OPACITIES, INK_WIDTHS, type InkStroke, type InkPoint } from "@/lib/ink";
+import {
+  INK_COLORS,
+  INK_OPACITIES,
+  INK_WIDTHS,
+  HIGHLIGHTER_COLORS,
+  HIGHLIGHTER_WIDTHS,
+  HIGHLIGHTER_OPACITY,
+  type InkStroke,
+  type InkPoint,
+  type InkKind,
+} from "@/lib/ink";
 
 pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
 
@@ -122,11 +132,23 @@ export function PdfReader({
   // from reading/highlighting (which use text selection).
   const [drawMode, setDrawMode] = useState(false);
   const [erasing, setErasing] = useState(false);
+  // Two instruments share the Draw tool. Each remembers its own color/width;
+  // the highlighter's opacity is fixed (multiply blend does the see-through).
+  const [tool, setTool] = useState<InkKind>("pen");
   const [inkColor, setInkColor] = useState<string>(INK_COLORS[0].value);
   const [inkWidth, setInkWidth] = useState<number>(INK_WIDTHS[1].value);
   const [inkOpacity, setInkOpacity] = useState<number>(INK_OPACITIES[0].value);
+  const [hlColor, setHlColor] = useState<string>(HIGHLIGHTER_COLORS[0].value);
+  const [hlWidth, setHlWidth] = useState<number>(HIGHLIGHTER_WIDTHS[1].value);
   const [inkStrokes, setInkStrokes] = useState<InkStroke[]>([]);
   const inkTemp = useRef(0);
+
+  // The live values for whichever instrument is selected — fed to the toolbar
+  // and the overlay so drawing previews match what will be saved.
+  const drawingHl = tool === "highlighter";
+  const activeColor = drawingHl ? hlColor : inkColor;
+  const activeWidth = drawingHl ? hlWidth : inkWidth;
+  const activeOpacity = drawingHl ? HIGHLIGHTER_OPACITY : inkOpacity;
 
   // Stable ref registrar shared by both render modes so selection lookup and
   // scroll-to-page can always find a page's wrapper element by number.
@@ -209,12 +231,19 @@ export function PdfReader({
   const saveStroke = useCallback(
     async (pageNum: number, points: InkPoint[]) => {
       const tempId = `tmp-${++inkTemp.current}`;
+      // Snapshot the active instrument at commit time (strokeWidth is named to
+      // avoid shadowing the page-render `width` state).
+      const strokeKind: InkKind = tool;
+      const strokeColor = drawingHl ? hlColor : inkColor;
+      const strokeWidth = drawingHl ? hlWidth : inkWidth;
+      const strokeOpacity = drawingHl ? HIGHLIGHTER_OPACITY : inkOpacity;
       const optimistic: InkStroke = {
         id: tempId,
         page: pageNum,
-        color: inkColor,
-        width: inkWidth,
-        opacity: inkOpacity,
+        color: strokeColor,
+        width: strokeWidth,
+        opacity: strokeOpacity,
+        kind: strokeKind,
         points,
       };
       setInkStrokes((prev) => [...prev, optimistic]);
@@ -226,9 +255,10 @@ export function PdfReader({
             bookId,
             page: pageNum,
             points,
-            color: inkColor,
-            width: inkWidth,
-            opacity: inkOpacity,
+            color: strokeColor,
+            width: strokeWidth,
+            opacity: strokeOpacity,
+            kind: strokeKind,
           }),
         });
         if (!r.ok) throw new Error("save failed");
@@ -238,7 +268,7 @@ export function PdfReader({
         setInkStrokes((prev) => prev.filter((s) => s.id !== tempId));
       }
     },
-    [bookId, inkColor, inkWidth, inkOpacity],
+    [bookId, tool, drawingHl, inkColor, inkWidth, inkOpacity, hlColor, hlWidth],
   );
 
   const eraseStroke = useCallback(async (id: string) => {
@@ -601,16 +631,21 @@ export function PdfReader({
 
       {drawMode && (
         <InkToolbar
-          color={inkColor}
-          width={inkWidth}
-          opacity={inkOpacity}
+          tool={tool}
+          color={activeColor}
+          width={activeWidth}
+          opacity={activeOpacity}
           erasing={erasing}
           canUndo={inkStrokes.length > 0}
-          onColor={(c) => {
-            setInkColor(c);
+          onTool={(t) => {
+            setTool(t);
             setErasing(false);
           }}
-          onWidth={setInkWidth}
+          onColor={(c) => {
+            (tool === "highlighter" ? setHlColor : setInkColor)(c);
+            setErasing(false);
+          }}
+          onWidth={(w) => (tool === "highlighter" ? setHlWidth : setInkWidth)(w)}
           onOpacity={setInkOpacity}
           onToggleErase={() => setErasing((v) => !v)}
           onUndo={undoInk}
@@ -654,9 +689,10 @@ export function PdfReader({
                     strokes={inkForPage(page)}
                     drawMode={drawMode}
                     erasing={erasing}
-                    color={inkColor}
-                    width={inkWidth}
-                    opacity={inkOpacity}
+                    color={activeColor}
+                    width={activeWidth}
+                    opacity={activeOpacity}
+                    kind={tool}
                     onCommit={(pts) => saveStroke(page, pts)}
                     onErase={eraseStroke}
                   />
@@ -696,9 +732,10 @@ export function PdfReader({
                             strokes={inkForPage(p)}
                             drawMode={drawMode}
                             erasing={erasing}
-                            color={inkColor}
-                            width={inkWidth}
-                            opacity={inkOpacity}
+                            color={activeColor}
+                            width={activeWidth}
+                            opacity={activeOpacity}
+                            kind={tool}
                             onCommit={(pts) => saveStroke(p, pts)}
                             onErase={eraseStroke}
                           />
