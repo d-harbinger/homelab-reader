@@ -29,6 +29,7 @@ interface BookRow {
 test("core flow: setup, login, library, readers, annotations, OPDS, enrich", async ({
   page,
   context,
+  request,
 }) => {
   let epubId = "";
   let pdfId = "";
@@ -97,6 +98,46 @@ test("core flow: setup, login, library, readers, annotations, OPDS, enrich", asy
     const pdfRes = await page.request.get(`/api/books/${pdfId}/file`);
     expect(pdfRes.status()).toBe(200);
     expect(pdfRes.headers()["content-type"]).toContain("application/pdf");
+  });
+
+  await test.step("the file endpoint honors HTTP Range requests (206/416/suffix)", async () => {
+    // The EPUB fixture is 1762 bytes — comfortably larger than the 1024-byte
+    // window below, so a satisfiable range never clamps its end.
+    const FULL_SIZE = 1762;
+
+    // A satisfiable single range → 206 Partial Content with the exact window,
+    // Content-Range naming the total size, and Accept-Ranges advertising bytes.
+    const partial = await page.request.get(`/api/books/${epubId}/file`, {
+      headers: { Range: "bytes=0-1023" },
+    });
+    expect(partial.status()).toBe(206);
+    expect(partial.headers()["content-range"]).toBe(`bytes 0-1023/${FULL_SIZE}`);
+    expect(partial.headers()["accept-ranges"]).toBe("bytes");
+    expect(partial.headers()["content-length"]).toBe("1024");
+    expect((await partial.body()).length).toBe(1024);
+
+    // A start at/past EOF is unsatisfiable → 416 with Content-Range: bytes */size.
+    const unsatisfiable = await page.request.get(`/api/books/${epubId}/file`, {
+      headers: { Range: "bytes=5000-6000" },
+    });
+    expect(unsatisfiable.status()).toBe(416);
+    expect(unsatisfiable.headers()["content-range"]).toBe(`bytes */${FULL_SIZE}`);
+
+    // A suffix asking for more than the whole file clamps to the entire file
+    // (RFC 7233 W-3): rather than 416, parseRange returns the full [0, size-1]
+    // window, which the route serves as a 206 covering every byte — never a
+    // truncated body. Content-Range spans the whole file and Content-Length
+    // equals the total size.
+    const suffix = await page.request.get(`/api/books/${epubId}/file`, {
+      headers: { Range: "bytes=-999999" },
+    });
+    expect(suffix.status()).toBe(206);
+    expect(suffix.headers()["content-range"]).toBe(
+      `bytes 0-${FULL_SIZE - 1}/${FULL_SIZE}`,
+    );
+    expect(suffix.headers()["content-length"]).toBe(String(FULL_SIZE));
+    expect(suffix.headers()["accept-ranges"]).toBe("bytes");
+    expect((await suffix.body()).length).toBe(FULL_SIZE);
   });
 
   await test.step("open the EPUB reader and confirm it renders", async () => {
@@ -187,6 +228,36 @@ test("core flow: setup, login, library, readers, annotations, OPDS, enrich", asy
     expect(feed.status()).toBe(200);
     expect(feed.headers()["content-type"]).toContain("opds-catalog");
     expect(await feed.text()).toContain("All Books");
+  });
+
+  await test.step("the failed-import surface is session-gated (signed-out is denied)", async () => {
+    // The failed-import banner reads GET /api/scan/failures. It is cookie-gated:
+    // the Edge middleware's `authorized` callback (src/auth.config.ts) exempts
+    // only /api/opds*, /api/covers/*, and /api/books/*/file, so an unauthenticated
+    // request to /api/scan/failures is bounced to the login page BEFORE the route
+    // handler runs — the route's own withUser 401 is defense-in-depth behind it.
+    //
+    // The `request` fixture is a separate context that never carried the login
+    // cookie, so it stands in for a signed-out client. Without following the
+    // redirect we see the raw deny: a redirect to /login, never a 200 that would
+    // leak failure rows (and their filesystem paths).
+    const anon = await request.get("/api/scan/failures", { maxRedirects: 0 });
+    expect(anon.status(), "signed-out is redirected, not served").toBeGreaterThanOrEqual(300);
+    expect(anon.status()).toBeLessThan(400);
+    expect(anon.headers()["location"] ?? "").toContain("/login");
+
+    // The same endpoint over the cookie-authenticated browser context is served,
+    // and the payload exposes only basenames — never a full filesystem path
+    // (privacy T-03-07: no home-directory paths reach the client).
+    const authed = await page.request.get("/api/scan/failures");
+    expect(authed.status()).toBe(200);
+    const { failures } = (await authed.json()) as {
+      failures: { name: string }[];
+    };
+    for (const f of failures) {
+      expect(f.name).not.toContain("/");
+      expect(f.name).not.toContain("\\");
+    }
   });
 
   await test.step("review screen: accept the pending suggestion through the UI", async () => {
