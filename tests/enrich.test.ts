@@ -93,6 +93,47 @@ describe("enrichBook", () => {
     );
     expect(suggestions).toEqual([]);
   });
+
+  // Noise suppression: OpenLibrary's title search returns SOMETHING for almost
+  // any query, so a book with a poor filename signal (e.g. "tlcl.pdf") comes
+  // back matched to unrelated works at near-zero confidence. Surfacing those
+  // clutters the review panel and invites accepting wrong metadata. enrichBook
+  // drops anything below MIN_SUGGESTION_CONFIDENCE so only plausible matches
+  // reach the panel.
+  it("drops candidates whose confidence is below the floor (all noise → [])", async () => {
+    // The real-world case: "The Linux Command Line" matched OpenLibrary's
+    // Thallium (Tl-Cl) chemistry/medical papers — zero shared tokens.
+    const noise = {
+      numFound: 3,
+      docs: [
+        { key: "/works/A", title: "Étude des excitations électroniques", author_name: ["B. Brousseau"] },
+        { key: "/works/B", title: "Molecular beam magnetic resonance spectra", author_name: ["H. Zeiger"] },
+        { key: "/works/C", title: "Thallium-201 Myokard-ECT Untersuchungsprotokoll", author_name: ["J. Bathmann"] },
+      ],
+    };
+    const suggestions = await enrichBook(
+      "/books/The Linux Command Line.pdf",
+      fetchReturning(noise),
+    );
+    expect(suggestions).toEqual([]);
+  });
+
+  it("keeps a confident match while dropping the noise beside it", async () => {
+    const mixed = {
+      numFound: 2,
+      docs: [
+        { key: "/works/good", title: "The Linux Command Line", author_name: ["William Shotts"], first_publish_year: 2019 },
+        { key: "/works/bad", title: "Thallium Chemistry Handbook", author_name: ["Someone Else"] },
+      ],
+    };
+    const suggestions = await enrichBook(
+      "/books/The Linux Command Line.pdf",
+      fetchReturning(mixed),
+    );
+    expect(suggestions.length).toBe(1);
+    expect(suggestions[0].title).toBe("The Linux Command Line");
+    expect(suggestions[0].confidence).toBeGreaterThanOrEqual(0.1);
+  });
 });
 
 describe("isThin", () => {
