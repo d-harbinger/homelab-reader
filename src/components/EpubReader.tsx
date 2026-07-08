@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
-import { ArrowLeft, ChevronLeft, ChevronRight, Notebook } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, Highlighter, Notebook } from "lucide-react";
 import {
   ReaderToolbar,
   readSetting,
@@ -132,6 +132,22 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
   const [highlights, setHighlights] = useState<PanelHighlight[]>([]);
   const [notes, setNotes] = useState<PanelNote[]>([]);
 
+  // Highlighter mode: the reflowable-text answer to the PDF freehand
+  // highlighter. With it on, selecting text applies the chosen color straight
+  // away (no color popover) — swipe across the words and they're marked. It's
+  // anchored to the text (CFI), not pixels, so it survives reflow/resize/font
+  // changes, which a freehand stroke on reflowable text can't. Refs mirror the
+  // state so the selection handlers (created once inside the render effect) read
+  // the live values instead of a stale closure.
+  const [highlighterMode, setHighlighterMode] = useState(false);
+  const [highlighterColor, setHighlighterColor] = useState<HighlightColor>("yellow");
+  const highlighterModeRef = useRef(false);
+  const highlighterColorRef = useRef<HighlightColor>("yellow");
+  // The 'selected' event and the mouseup fallback both fire for one selection;
+  // in popover mode that's harmless (idempotent setState), but in highlighter
+  // mode it would create the highlight twice. Dedupe on the CFI range.
+  const lastAppliedCfiRef = useRef<string | null>(null);
+
   // Re-render an existing highlight (after a color change) by removing
   // the visual annotation and adding it back with the new fill color.
   const repaintHighlight = useCallback((h: StoredHighlight) => {
@@ -202,6 +218,42 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
       /* non-blocking */
     }
   }, [bookId, repaintHighlight]);
+
+  // Persist a highlight (CFI range + text + color) and paint it. Shared by the
+  // popover path (saveHighlight) and highlighter mode.
+  const createHighlight = useCallback(
+    async (cfiRange: string, text: string, color: HighlightColor) => {
+      const anchor = { type: "epub-cfi-range", cfi: cfiRange };
+      try {
+        const r = await fetch("/api/highlights", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ bookId, anchor, text, color }),
+        });
+        if (!r.ok) return;
+        const row = (await r.json()) as StoredHighlight;
+        highlightsRef.current.set(row.id, row);
+        setHighlights((prev) => [...prev, row as PanelHighlight]);
+        repaintHighlight(row);
+      } catch {
+        /* fail silently — user can retry */
+      }
+    },
+    [bookId, repaintHighlight],
+  );
+
+  // Mirror the mode/color/create-fn into refs so the selection handlers (built
+  // once, inside the render effect) always see the live values.
+  const createHighlightRef = useRef(createHighlight);
+  useEffect(() => {
+    createHighlightRef.current = createHighlight;
+  }, [createHighlight]);
+  useEffect(() => {
+    highlighterModeRef.current = highlighterMode;
+  }, [highlighterMode]);
+  useEffect(() => {
+    highlighterColorRef.current = highlighterColor;
+  }, [highlighterColor]);
 
   useEffect(() => {
     let cancelled = false;
@@ -329,6 +381,24 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
         const text = sel?.toString() ?? "";
         if (!text.trim()) return;
 
+        // Highlighter mode: apply the chosen color straight away, no popover.
+        // Dedupe the near-simultaneous 'selected' + mouseup double-fire on the
+        // same range, and clear the native selection so the marker stands alone.
+        if (highlighterModeRef.current) {
+          if (lastAppliedCfiRef.current === cfiRange) return;
+          lastAppliedCfiRef.current = cfiRange;
+          setTimeout(() => {
+            if (lastAppliedCfiRef.current === cfiRange) lastAppliedCfiRef.current = null;
+          }, 800);
+          createHighlightRef.current(cfiRange, text, highlighterColorRef.current);
+          try {
+            sel?.removeAllRanges();
+          } catch {
+            /* ignore */
+          }
+          return;
+        }
+
         let x = 0;
         let y = 0;
         try {
@@ -453,34 +523,14 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
 
   async function saveHighlight(color: HighlightColor) {
     if (!selection) return;
-    const anchor = { type: "epub-cfi-range", cfi: selection.cfiRange };
+    await createHighlight(selection.cfiRange, selection.text, color);
+    setSelection(null);
     try {
-      const r = await fetch("/api/highlights", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          bookId,
-          anchor,
-          text: selection.text,
-          color,
-        }),
-      });
-      if (!r.ok) return;
-      const row = (await r.json()) as StoredHighlight;
-      highlightsRef.current.set(row.id, row);
-      setHighlights((prev) => [...prev, row as PanelHighlight]);
-      repaintHighlight(row);
+      renditionRef.current
+        ?.getContents()
+        .forEach((c) => c.window.getSelection()?.removeAllRanges());
     } catch {
-      /* fail silently — user can retry */
-    } finally {
-      setSelection(null);
-      try {
-        renditionRef.current
-          ?.getContents()
-          .forEach((c) => c.window.getSelection()?.removeAllRanges());
-      } catch {
-        /* ignore */
-      }
+      /* ignore */
     }
   }
 
@@ -590,6 +640,43 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
           onModeChange={setMode}
         />
         <div className="flex items-center gap-3">
+          {/* Highlighter: a toggle, plus a color strip while it's on. With it
+              on, selecting text marks it in the chosen color — no popover. */}
+          <div className="flex items-center gap-1.5">
+            {highlighterMode && (
+              <div className="flex items-center gap-1">
+                {(Object.keys(HIGHLIGHT_COLORS) as HighlightColor[]).map((c) => (
+                  <button
+                    key={c}
+                    aria-label={HIGHLIGHT_COLORS[c].label}
+                    aria-pressed={highlighterColor === c}
+                    onClick={() => setHighlighterColor(c)}
+                    className={`h-4 w-4 rounded-full ring-1 ring-white/15 transition-transform hover:scale-110 ${
+                      highlighterColor === c ? "ring-2 ring-zinc-100" : ""
+                    }`}
+                    style={{ background: HIGHLIGHT_COLORS[c].swatch }}
+                  />
+                ))}
+              </div>
+            )}
+            <button
+              onClick={() => setHighlighterMode((v) => !v)}
+              aria-label="Highlighter"
+              aria-pressed={highlighterMode}
+              title={
+                highlighterMode
+                  ? "Highlighter on — select text to mark it"
+                  : "Highlighter — select text to mark it"
+              }
+              className={`rounded p-1.5 transition-colors ${
+                highlighterMode
+                  ? "bg-amber-500/20 text-amber-400"
+                  : "text-zinc-500 hover:bg-zinc-900 hover:text-zinc-200"
+              }`}
+            >
+              <Highlighter size={14} />
+            </button>
+          </div>
           <button
             onClick={() => setPanelOpen((v) => !v)}
             aria-label="Highlights and notes"
