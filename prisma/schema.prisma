@@ -221,6 +221,9 @@ model InkStroke {
   // 0..1 stroke opacity; backfills existing rows to fully opaque, so strokes
   // saved before the field existed render exactly as they always did.
   opacity   Float    @default(1)
+  // "pen" or "highlighter". Backfills existing rows to "pen", so strokes saved
+  // before the instrument split render exactly as they always did.
+  kind      String   @default("pen")
   createdAt DateTime @default(now())
 
   book Book @relation(fields: [bookId], references: [id], onDelete: Cascade)

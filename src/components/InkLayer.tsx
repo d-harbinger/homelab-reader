@@ -7,6 +7,7 @@ import {
   inkSegments,
   hasPressureVariation,
   type InkStroke,
+  type InkKind,
   type InkPoint,
 } from "@/lib/ink";
 
@@ -17,8 +18,18 @@ interface Props {
   color: string;
   width: number;
   opacity: number;
+  kind: InkKind; // instrument for the in-progress stroke (pen | highlighter)
   onCommit: (points: InkPoint[]) => void; // a finished stroke — parent persists
   onErase: (id: string) => void;
+}
+
+// A highlighter reads like a real marker: a broad, FLAT-tipped swipe that
+// multiply-blends so the text underneath shows through. A pen is opaque with a
+// round nib. This is the one visual difference the two instruments carry.
+const HIGHLIGHTER_CAP = "butt" as const;
+const PEN_CAP = "round" as const;
+function blendFor(kind: InkKind): "multiply" | undefined {
+  return kind === "highlighter" ? "multiply" : undefined;
 }
 
 function clamp01(n: number): number {
@@ -35,12 +46,18 @@ export function InkLayer({
   color,
   width,
   opacity,
+  kind,
   onCommit,
   onErase,
 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const rectRef = useRef<DOMRect | null>(null);
   const drawing = useRef(false);
+  // `current` drives the in-progress render; `latest` is the same points held in
+  // a ref so the commit reads them WITHOUT a side effect inside a setState
+  // updater — React StrictMode double-invokes updaters in dev, and committing
+  // there fired the save (and its network POST) twice.
+  const latest = useRef<InkPoint[] | null>(null);
   const [current, setCurrent] = useState<InkPoint[] | null>(null);
 
   const toPoint = useCallback(
@@ -59,7 +76,9 @@ export function InkLayer({
     rectRef.current = svgRef.current?.getBoundingClientRect() ?? null;
     svgRef.current?.setPointerCapture(e.pointerId);
     drawing.current = true;
-    setCurrent([toPoint(e.clientX, e.clientY, e.pressure, e.pointerType)]);
+    const first = [toPoint(e.clientX, e.clientY, e.pressure, e.pointerType)];
+    latest.current = first;
+    setCurrent(first);
   };
 
   const onPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
@@ -69,28 +88,28 @@ export function InkLayer({
     const coalesced =
       typeof native.getCoalescedEvents === "function" ? native.getCoalescedEvents() : [];
     const src = coalesced.length ? coalesced : [native];
-    setCurrent((cur) => {
-      if (!cur) return cur;
-      const next = cur.slice();
-      for (const ev of src) {
-        const pt = toPoint(ev.clientX, ev.clientY, ev.pressure, ev.pointerType);
-        const last = next[next.length - 1];
-        const dx = (pt[0] - last[0]) * INK_VB;
-        const dy = (pt[1] - last[1]) * INK_VB;
-        if (dx * dx + dy * dy < 4) continue; // drop sub-2-unit jitter
-        next.push(pt);
-      }
-      return next;
-    });
+    const cur = latest.current;
+    if (!cur) return;
+    const next = cur.slice();
+    for (const ev of src) {
+      const pt = toPoint(ev.clientX, ev.clientY, ev.pressure, ev.pointerType);
+      const last = next[next.length - 1];
+      const dx = (pt[0] - last[0]) * INK_VB;
+      const dy = (pt[1] - last[1]) * INK_VB;
+      if (dx * dx + dy * dy < 4) continue; // drop sub-2-unit jitter
+      next.push(pt);
+    }
+    latest.current = next;
+    setCurrent(next);
   };
 
   const endStroke = () => {
     if (!drawing.current) return;
     drawing.current = false;
-    setCurrent((cur) => {
-      if (cur && cur.length) onCommit(cur);
-      return null;
-    });
+    const pts = latest.current;
+    latest.current = null;
+    setCurrent(null);
+    if (pts && pts.length) onCommit(pts); // commit OUTSIDE any setState updater
   };
 
   return (
@@ -120,9 +139,9 @@ export function InkLayer({
           strokeWidth={width}
           opacity={opacity}
           fill="none"
-          strokeLinecap="round"
+          strokeLinecap={kind === "highlighter" ? HIGHLIGHTER_CAP : PEN_CAP}
           strokeLinejoin="round"
-          style={{ pointerEvents: "none" }}
+          style={{ pointerEvents: "none", mixBlendMode: blendFor(kind) }}
         />
       )}
     </svg>
@@ -138,13 +157,16 @@ function SavedStroke({
   erasing: boolean;
   onErase: (id: string) => void;
 }) {
-  const variable = hasPressureVariation(stroke.points);
+  const isHighlighter = stroke.kind === "highlighter";
+  // A highlighter is a uniform, flat-tipped, multiply-blended swipe — pressure
+  // variation and round caps are a pen concern, so it renders as one flat path.
+  const variable = !isHighlighter && hasPressureVariation(stroke.points);
   return (
     // Opacity applies at the GROUP level: a pressure stroke is many opaque
     // overlapping round-capped segments, and per-segment alpha would visibly
     // double up at every joint. Group opacity composites the whole stroke
     // once. Strokes saved before the field existed carry opacity 1.
-    <g opacity={stroke.opacity ?? 1}>
+    <g opacity={stroke.opacity ?? 1} style={{ mixBlendMode: isHighlighter ? "multiply" : undefined }}>
       {variable ? (
         inkSegments(stroke.points, stroke.width).map((seg, i) => (
           <path
@@ -163,7 +185,7 @@ function SavedStroke({
           stroke={stroke.color}
           strokeWidth={stroke.width}
           fill="none"
-          strokeLinecap="round"
+          strokeLinecap={isHighlighter ? "butt" : "round"}
           strokeLinejoin="round"
           style={{ pointerEvents: "none" }}
         />

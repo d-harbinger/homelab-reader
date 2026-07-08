@@ -1,7 +1,15 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { parseJson, withUser } from "@/lib/route-helpers";
-import { isInkColor, isInkOpacity, isInkWidth, parseInkPoints } from "@/lib/ink";
+import {
+  HIGHLIGHTER_OPACITY,
+  isColorForKind,
+  isInkKind,
+  isInkOpacity,
+  isWidthForKind,
+  parseInkPoints,
+  type InkKind,
+} from "@/lib/ink";
 
 interface InkPayload {
   bookId?: string;
@@ -10,6 +18,7 @@ interface InkPayload {
   color?: string;
   width?: number;
   opacity?: number;
+  kind?: string;
 }
 
 type InkRow = {
@@ -18,6 +27,7 @@ type InkRow = {
   color: string;
   width: number;
   opacity: number;
+  kind: string;
   path: string;
 };
 
@@ -35,6 +45,7 @@ function serialize(row: InkRow) {
     color: row.color,
     width: row.width,
     opacity: row.opacity,
+    kind: row.kind,
     points,
   };
 }
@@ -45,7 +56,7 @@ export const POST = withUser(async (user, req) => {
   const parsed = await parseJson<InkPayload>(req);
   if (!parsed.ok) return parsed.res;
 
-  const { bookId, page, points, color, width, opacity } = parsed.body;
+  const { bookId, page, points, color, width, opacity, kind } = parsed.body;
   if (!bookId || typeof page !== "number" || !Number.isInteger(page) || page < 1) {
     return NextResponse.json(
       { error: "missing bookId or valid page" },
@@ -56,28 +67,38 @@ export const POST = withUser(async (user, req) => {
   if (!pts) {
     return NextResponse.json({ error: "invalid points" }, { status: 400 });
   }
-  if (color !== undefined && !isInkColor(color)) {
+  if (kind !== undefined && !isInkKind(kind)) {
+    return NextResponse.json({ error: "invalid kind" }, { status: 400 });
+  }
+  const strokeKind: InkKind = isInkKind(kind) ? kind : "pen";
+  // Color and width are validated against the instrument, so a highlighter
+  // can't be saved with a pen swatch/nib or vice-versa.
+  if (color !== undefined && !isColorForKind(strokeKind, color)) {
     return NextResponse.json({ error: "invalid color" }, { status: 400 });
   }
-  if (width !== undefined && !isInkWidth(width)) {
+  if (width !== undefined && !isWidthForKind(strokeKind, width)) {
     return NextResponse.json({ error: "invalid width" }, { status: 400 });
   }
-  if (opacity !== undefined && !isInkOpacity(opacity)) {
+  // The highlighter has one fixed translucency (multiply does the see-through);
+  // only the pen carries a client-chosen opacity.
+  if (strokeKind === "pen" && opacity !== undefined && !isInkOpacity(opacity)) {
     return NextResponse.json({ error: "invalid opacity" }, { status: 400 });
   }
 
   const book = await prisma.book.findUnique({ where: { id: bookId } });
   if (!book) return NextResponse.json({ error: "unknown book" }, { status: 404 });
 
+  const isHl = strokeKind === "highlighter";
   const row = await prisma.inkStroke.create({
     data: {
       bookId,
       userId: user.id,
       page,
       path: JSON.stringify({ points: pts }),
-      color: color ?? "#1c1c1e",
-      width: width ?? 4,
-      opacity: opacity ?? 1,
+      color: color ?? (isHl ? "#fbbf24" : "#1c1c1e"),
+      width: width ?? (isHl ? 24 : 4),
+      opacity: isHl ? HIGHLIGHTER_OPACITY : (opacity ?? 1),
+      kind: strokeKind,
     },
   });
   return NextResponse.json(serialize(row));
