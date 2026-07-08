@@ -20,7 +20,7 @@ import {
   type PanelHighlight,
   type PanelNote,
 } from "./HighlightsPanel";
-import { ColorPickerPopover, HighlightMenu } from "./HighlightPopover";
+import { ColorPickerPopover, HighlightMenu, NoteEditorPopover } from "./HighlightPopover";
 import { InkLayer } from "./InkLayer";
 import { InkToolbar } from "./InkToolbar";
 import {
@@ -127,6 +127,14 @@ export function PdfReader({
   const [panelOpen, setPanelOpen] = useState(false);
   const [selection, setSelection] = useState<PdfSelection | null>(null);
   const [openMenu, setOpenMenu] = useState<OpenHighlightMenu | null>(null);
+  // The inline note editor floated at a highlight (opened from its menu).
+  const [noteDraft, setNoteDraft] = useState<{
+    h: PanelHighlight;
+    noteId: string | null;
+    body: string;
+    x: number;
+    y: number;
+  } | null>(null);
 
   // Draw-tool state. Drawing takes over the pointer, so it's a distinct mode
   // from reading/highlighting (which use text selection).
@@ -559,6 +567,23 @@ export function PdfReader({
     }
   }
 
+  // From the highlight menu's note action: open the note editor at the
+  // highlight, pre-filled if it already has a note.
+  const openNoteEditor = () => {
+    if (!openMenu) return;
+    const hl = highlightsRef.current.get(openMenu.id);
+    if (!hl) return;
+    const existing = notes.find((n) => n.highlightId === openMenu.id) ?? null;
+    setNoteDraft({
+      h: hl,
+      noteId: existing?.id ?? null,
+      body: existing?.body ?? "",
+      x: openMenu.x,
+      y: openMenu.y,
+    });
+    setOpenMenu(null);
+  };
+
   const openHighlightMenu = (h: PdfHighlight, e: React.MouseEvent) => {
     setOpenMenu({ id: h.id, color: h.color, x: e.clientX, y: e.clientY });
     setSelection(null);
@@ -797,8 +822,23 @@ export function PdfReader({
           x={openMenu.x}
           y={openMenu.y}
           activeColor={openMenu.color}
+          hasNote={notes.some((n) => n.highlightId === openMenu.id)}
           onPick={(c) => changeColor(openMenu.id, c)}
+          onAddNote={openNoteEditor}
           onDelete={() => deleteHighlight(openMenu.id)}
+        />
+      )}
+
+      {noteDraft && (
+        <NoteEditorPopover
+          x={noteDraft.x}
+          y={noteDraft.y}
+          initialBody={noteDraft.body}
+          onSave={(body) => {
+            saveNote(noteDraft.h, body, noteDraft.noteId);
+            setNoteDraft(null);
+          }}
+          onCancel={() => setNoteDraft(null)}
         />
       )}
 
