@@ -25,6 +25,20 @@ import type { MetadataSuggestion } from "./openlibrary";
 // other failure already resolves to, preserving the best-effort contract.
 const ENRICH_TIMEOUT_MS = 8000;
 
+// Confidence floor: OpenLibrary's title search returns *something* for almost
+// any query, so a book with a weak filename signal (e.g. "tlcl.pdf" → matched
+// to unrelated Thallium chemistry papers) comes back with near-zero-confidence
+// junk. Surfacing 0–3% matches clutters the review panel and invites accepting
+// wrong metadata, so anything below this floor is dropped before it is ever
+// persisted or shown. Grounded empirically: legitimate matches scored ≥0.33 in
+// the sample library while the noise sat at 0–0.03 (see the enrich tests).
+//
+// DECIDE-LOG (grave/day call, reversible): 0.1 is a conservative default tuned
+// to that sample — high enough to kill the observed noise, low enough to keep a
+// real-but-imperfect match ("eloquent js" ↔ "Eloquent JavaScript" ≈ 0.33).
+// Owner may re-rule the cutoff at the next batch; it is a single constant.
+export const MIN_SUGGESTION_CONFIDENCE = 0.1;
+
 /**
  * Compose the dormant pipeline: filename → signals → ranked OpenLibrary
  * suggestions (best confidence first). Network is injected so this stays a pure
@@ -43,10 +57,12 @@ export async function enrichBook(
   // swallows network/parse errors (an abort included), so no try/catch is needed
   // here. The bounded signal caps a slow/hung request at ENRICH_TIMEOUT_MS so it
   // can never stall the scan loop this is awaited inside.
-  return searchOpenLibrary(query, {
+  const ranked = await searchOpenLibrary(query, {
     fetchImpl,
     signal: AbortSignal.timeout(ENRICH_TIMEOUT_MS),
   });
+  // Drop low-confidence noise so only plausible matches are persisted/surfaced.
+  return ranked.filter((s) => s.confidence >= MIN_SUGGESTION_CONFIDENCE);
 }
 
 /** Minimal book shape the thin-check needs (D-3a). */

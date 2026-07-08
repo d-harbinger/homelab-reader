@@ -182,7 +182,9 @@ describe("scanFile enrich hook (Slice 3)", () => {
     vi.mocked(extractEpub).mockResolvedValue(THIN_META as never);
     vi.stubGlobal("fetch", olFetch([CLEAN_DOC]));
 
-    const at = stage("book.epub");
+    // Filename signal must actually match the canned doc, else the confidence
+    // floor (MIN_SUGGESTION_CONFIDENCE) correctly drops it as noise.
+    const at = stage("Clean Code.epub");
     await scanFile(at);
 
     const book = await h.prisma.book.findFirstOrThrow();
@@ -238,7 +240,9 @@ describe("scanFile enrich hook (Slice 3)", () => {
       .spyOn(h.prisma.bookSuggestion, "createMany")
       .mockRejectedValueOnce(new Error("boom"));
 
-    const at = stage("book.epub");
+    // Match the canned doc so a suggestion clears the confidence floor and the
+    // hook reaches the (mocked-to-throw) createMany this test is fencing.
+    const at = stage("Clean Code.epub");
     await expect(scanFile(at)).resolves.toBeUndefined();
 
     expect(spy).toHaveBeenCalled();
