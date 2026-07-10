@@ -41,3 +41,47 @@ export function groupByGenre<T extends { filePath: string }>(
     .sort((a, b) => a[0].localeCompare(b[0]))
     .map(([genre, b]) => ({ genre, books: b.slice(0, opts.maxPerSection) }));
 }
+
+// Book count per top-level genre folder — ALL genres, no minBooks threshold.
+// Powers the genre-management list (which shows every genre, even small ones).
+export function genreCounts<T extends { filePath: string }>(
+  books: T[],
+  roots: string[],
+): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const book of books) {
+    const rel = relativeFolder(book.filePath, roots);
+    if (rel === null || rel === "") continue;
+    const genre = rel.split("/")[0];
+    if (!genre) continue;
+    counts.set(genre, (counts.get(genre) ?? 0) + 1);
+  }
+  return counts;
+}
+
+// The stored display preferences for a genre (subset of the GenrePref row).
+export interface GenrePrefLike {
+  displayName: string | null;
+  order: number;
+  hidden: boolean;
+}
+
+// Apply stored prefs to derived genre sections: drop hidden genres, sort by
+// pref order (genres without a pref fall to the end, alphabetically), and
+// attach a `label` (the displayName override, else the raw folder key). Pure —
+// the raw `genre` key is preserved so callers keep a stable React key.
+export function applyGenrePrefs<S extends { genre: string }>(
+  sections: S[],
+  prefs: Map<string, GenrePrefLike>,
+): (S & { label: string })[] {
+  return sections
+    .filter((s) => !prefs.get(s.genre)?.hidden)
+    .slice()
+    .sort((a, b) => {
+      const oa = prefs.get(a.genre)?.order ?? Number.MAX_SAFE_INTEGER;
+      const ob = prefs.get(b.genre)?.order ?? Number.MAX_SAFE_INTEGER;
+      if (oa !== ob) return oa - ob;
+      return a.genre.localeCompare(b.genre);
+    })
+    .map((s) => ({ ...s, label: prefs.get(s.genre)?.displayName ?? s.genre }));
+}

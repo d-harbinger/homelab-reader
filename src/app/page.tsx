@@ -33,6 +33,12 @@ interface TagSection {
   books: BookCardData[];
 }
 
+interface GenreSection {
+  genre: string; // raw folder key (stable React key)
+  label: string; // display name (rename override, else the key)
+  books: BookCardData[];
+}
+
 export default function Home() {
   // The selected folder rail path ("" = all books / no filter). When set, the
   // library query carries it through to the server-side folder filter.
@@ -64,6 +70,11 @@ export default function Home() {
     fetcher,
     { refreshInterval: 30000 },
   );
+  const { data: genresResp } = useSWR<{ sections: GenreSection[] }>(
+    "/api/genres/sections",
+    fetcher,
+    { refreshInterval: 30000 },
+  );
 
   async function manualScan() {
     await fetch("/api/scan", { method: "POST" });
@@ -80,6 +91,7 @@ export default function Home() {
   const continueReading = continueResp?.books ?? [];
   const recentlyAdded = recentResp?.books ?? [];
   const tagSections = tagsResp?.sections ?? [];
+  const genreSections = genresResp?.sections ?? [];
 
   // Don't echo Recently Added if the library is small enough that it'd
   // duplicate the entire Library grid below — keeps tiny libraries from
@@ -125,6 +137,25 @@ export default function Home() {
 
               {showRecent && (
                 <Section title="Recently added" books={recentlyAdded} />
+              )}
+
+              {genreSections.length > 0 && (
+                <div className="space-y-12">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-xs font-medium uppercase tracking-wider text-zinc-500">
+                      Genres
+                    </h2>
+                    <Link
+                      href="/settings/genres"
+                      className="text-xs text-zinc-500 transition-colors hover:text-zinc-200"
+                    >
+                      Manage genres
+                    </Link>
+                  </div>
+                  {genreSections.map((s) => (
+                    <Section key={s.genre} title={s.label} books={s.books} />
+                  ))}
+                </div>
               )}
 
               {tagSections.map((s) => (

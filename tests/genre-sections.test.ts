@@ -26,7 +26,12 @@ import {
 import { execFileSync } from "node:child_process";
 import { rmSync } from "node:fs";
 
-import { groupByGenre } from "@/lib/library/genre-sections";
+import {
+  groupByGenre,
+  genreCounts,
+  applyGenrePrefs,
+  type GenrePrefLike,
+} from "@/lib/library/genre-sections";
 
 // --- hoisted: build the temp DB url + client before any module import -------
 const h = await vi.hoisted(async () => {
@@ -177,6 +182,70 @@ describe("groupByGenre (pure helper)", () => {
     // not invent a payload carrying the path under a different key, and the
     // genre string must be the folder name, never the absolute path.
     expect(JSON.stringify(sections.map((s) => s.genre))).not.toContain("/books");
+  });
+});
+
+describe("genreCounts (pure helper)", () => {
+  const roots = ["/books"];
+  it("counts books per top-level folder, no minBooks threshold, excludes loose/unrooted", () => {
+    const books = [
+      { id: "a", filePath: "/books/python/a.epub" },
+      { id: "b", filePath: "/books/python/sub/b.epub" },
+      { id: "c", filePath: "/books/ai/c.epub" },
+      { id: "loose", filePath: "/books/loose.epub" }, // directly under root → no folder
+      { id: "x", filePath: "/elsewhere/y/z.epub" }, // unrooted
+    ];
+    const counts = genreCounts(books, roots);
+    expect(counts.get("python")).toBe(2);
+    expect(counts.get("ai")).toBe(1);
+    expect(counts.has("loose")).toBe(false);
+    expect([...counts.keys()].sort()).toEqual(["ai", "python"]);
+  });
+});
+
+describe("applyGenrePrefs (pure helper)", () => {
+  const sections = [
+    { genre: "ai", books: [] },
+    { genre: "python", books: [] },
+    { genre: "zebra", books: [] },
+  ];
+  const prefs = (
+    entries: [string, GenrePrefLike][],
+  ): Map<string, GenrePrefLike> => new Map(entries);
+
+  it("with no prefs: alphabetical order, label == key", () => {
+    const out = applyGenrePrefs(sections, prefs([]));
+    expect(out.map((s) => s.genre)).toEqual(["ai", "python", "zebra"]);
+    expect(out.map((s) => s.label)).toEqual(["ai", "python", "zebra"]);
+  });
+
+  it("orders by pref.order; genres without a pref fall to the end alphabetically", () => {
+    const out = applyGenrePrefs(
+      sections,
+      prefs([
+        ["zebra", { displayName: null, order: 0, hidden: false }],
+        ["ai", { displayName: null, order: 1, hidden: false }],
+      ]),
+    );
+    expect(out.map((s) => s.genre)).toEqual(["zebra", "ai", "python"]);
+  });
+
+  it("applies displayName as label but preserves the raw key", () => {
+    const out = applyGenrePrefs(
+      sections,
+      prefs([["python", { displayName: "Python & Web", order: 0, hidden: false }]]),
+    );
+    const py = out.find((s) => s.genre === "python");
+    expect(py?.label).toBe("Python & Web");
+    expect(py?.genre).toBe("python");
+  });
+
+  it("drops hidden genres", () => {
+    const out = applyGenrePrefs(
+      sections,
+      prefs([["ai", { displayName: null, order: 0, hidden: true }]]),
+    );
+    expect(out.map((s) => s.genre)).toEqual(["python", "zebra"]);
   });
 });
 

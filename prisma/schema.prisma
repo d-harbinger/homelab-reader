@@ -144,6 +144,20 @@ model Tag {
   books Book[] @relation("BookTags")
 }
 
+// Display preferences for a genre. Genres themselves are derived live from the
+// top-level library folder each book sits under (see lib/library/genre-sections)
+// — they are NOT stored. This table only overrides how a derived genre is shown:
+// a custom label, a manual sort order, and a hide flag. `key` is the raw folder
+// name. Library-wide for now; per-user later = add a nullable userId + swap the
+// @id for @@unique([userId, key]) and resolve user-row over the global (null) row.
+model GenrePref {
+  key         String   @id
+  displayName String?
+  order       Int      @default(0)
+  hidden      Boolean  @default(false)
+  updatedAt   DateTime @updatedAt
+}
+
 model Progress {
   id         String   @id @default(cuid())
   bookId     String
