@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withUser } from "@/lib/route-helpers";
-import { groupByGenre } from "@/lib/library/genre-sections";
+import { groupByGenre, applyGenrePrefs, type GenrePrefLike } from "@/lib/library/genre-sections";
 
 // Folders that warrant their own home-view section. The threshold keeps
 // section-per-singleton-folder noise off the home page — a folder needs at
@@ -14,7 +14,7 @@ const MAX_BOOKS_PER_SECTION = 18;
 // to derive the genre name (groupByGenre) and never leaves the server; the
 // payload mirrors /api/tags/sections ({ sections: [{ genre, books[] }] }).
 export const GET = withUser(async () => {
-  const [books, locations] = await Promise.all([
+  const [books, locations, prefRows] = await Promise.all([
     prisma.book.findMany({
       orderBy: { addedAt: "desc" },
       include: { authors: true },
@@ -23,13 +23,20 @@ export const GET = withUser(async () => {
       where: { enabled: true },
       select: { path: true },
     }),
+    prisma.genrePref.findMany(),
   ]);
-  const sections = groupByGenre(
+  const prefs = new Map<string, GenrePrefLike>(
+    prefRows.map((p) => [p.key, { displayName: p.displayName, order: p.order, hidden: p.hidden }]),
+  );
+  const grouped = groupByGenre(
     books,
     locations.map((l) => l.path),
     { minBooks: MIN_BOOKS, maxPerSection: MAX_BOOKS_PER_SECTION },
-  ).map((s) => ({
-    genre: s.genre,
+  );
+  // Apply the admin's ordering / renames / hides before shaping the payload.
+  const sections = applyGenrePrefs(grouped, prefs).map((s) => ({
+    genre: s.genre, // raw folder key — stable React key
+    label: s.label, // display name (override or key)
     books: s.books.map((b) => ({
       id: b.id,
       title: b.title,
