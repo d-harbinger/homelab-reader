@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# pre-push — ship-boundary gate on container-shaping changes.
+#
+# Fires ONLY when the outgoing commits touch the files that shape the
+# production image (Dockerfile, .dockerignore, compose, entrypoint); every
+# other push is untouched. When it fires, the image is built (layer cache
+# makes unchanged stages cheap) and dev-tools' ship-check must pass:
+# no dev/test toolchain in shipped node_modules, no *.db/.env files in the
+# image, no data-seeding migrations outside the committed .ship-allow.
+#
+# Why pre-push: deployment pulls from origin and builds, so the push IS the
+# deploy gate. Same no-bypass rule as the privacy-guard pre-commit — fix the
+# finding or allowlist a ruled exception; never --no-verify.
+#
+# Per-host prereqs: docker on PATH; the dev-tools repo checked out as a
+# sibling (standard workspace layout). Missing prereqs fail the push loudly
+# rather than silently skipping the gate.
+
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+APP_NAME="$(basename "$REPO_ROOT")"
+SHIP_CHECK="$REPO_ROOT/../dev-tools/scripts/ship-check.sh"
+GATE_PATHS='^(Dockerfile|\.dockerignore|docker-compose[^/]*\.ya?ml|docker-entrypoint\.sh)$'
+
+Z40=0000000000000000000000000000000000000000
+touched=0
+while read -r _local_ref local_sha _remote_ref remote_sha; do
+  [ "$local_sha" = "$Z40" ] && continue            # branch deletion
+  if [ "$remote_sha" = "$Z40" ]; then
+    range="$local_sha --not --remotes=origin"      # new branch: only novel commits
+  else
+    range="$remote_sha..$local_sha"
+  fi
+  # shellcheck disable=SC2086
+  if git diff --name-only $range 2>/dev/null | grep -qE "$GATE_PATHS"; then
+    touched=1
+  fi
+done
+
+[ "$touched" = 0 ] && exit 0
+
+echo "[ship-gate] container-shaping files in outgoing commits — running ship-check"
+
+command -v docker >/dev/null 2>&1 || {
+  echo "[ship-gate] ✗ docker not on PATH — cannot verify the image this push ships. Aborting." >&2
+  exit 1
+}
+[ -f "$SHIP_CHECK" ] || {
+  echo "[ship-gate] ✗ dev-tools/scripts/ship-check.sh not found beside this repo. Aborting." >&2
+  exit 1
+}
+
+IMG="${APP_NAME}-shipcheck:prepush"
+docker build -q -t "$IMG" "$REPO_ROOT" >/dev/null
+bash "$SHIP_CHECK" "$IMG" --repo "$REPO_ROOT"
