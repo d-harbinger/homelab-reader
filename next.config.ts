@@ -78,6 +78,12 @@ const nextConfig: NextConfig = {
       "./node_modules/pdfjs-dist/package.json",
     ],
   },
+  // The inverse case: keep typescript OUT of the trace (8.7 MB pulled in
+  // because next.config.ts is TypeScript; the standalone server never
+  // compiles TS at runtime). Ship-check boot-verified.
+  outputFileTracingExcludes: {
+    "*": ["node_modules/typescript/**"],
+  },
   webpack: (config, { nextRuntime, webpack }) => {
     // instrumentation.ts boots the Node-only folder scanner (chokidar + yauzl +
     // pdfjs + our hash/locations helpers). Next also compiles instrumentation for
