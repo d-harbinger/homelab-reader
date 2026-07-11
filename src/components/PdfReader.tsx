@@ -679,7 +679,7 @@ export function PdfReader({
 
       <div
         ref={containerRef}
-        className="relative flex-1 overflow-auto"
+        className="scroll-slim relative flex-1 overflow-auto"
         onMouseUp={onMouseUp}
       >
         <Document

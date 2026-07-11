@@ -119,7 +119,7 @@ export default function Home() {
         {/* self-start stops the default flex stretch so the rail is shorter
             than the scroll area and sticky has room to travel; its own
             overflow keeps tall trees scrollable within the viewport. */}
-        <aside className="lg:sticky lg:top-6 lg:max-h-[calc(100vh-3rem)] lg:w-56 lg:flex-none lg:self-start lg:overflow-y-auto">
+        <aside className="scroll-slim lg:sticky lg:top-6 lg:max-h-[calc(100vh-3rem)] lg:w-56 lg:flex-none lg:self-start lg:overflow-y-auto">
           <FolderTree
             selected={selectedFolder}
             onSelect={setSelectedFolder}

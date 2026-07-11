@@ -89,7 +89,7 @@ export function HighlightsPanel({
         </button>
       </header>
 
-      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+      <div className="scroll-slim flex-1 overflow-y-auto px-4 py-3 space-y-3">
         {highlights.length === 0 && (
           <p className="text-sm text-zinc-600">
             Select text in the book to start highlighting.
