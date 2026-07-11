@@ -208,7 +208,7 @@ function FolderBrowser({
       </div>
 
       {/* Listing */}
-      <div className="max-h-72 overflow-y-auto rounded-md border border-zinc-900">
+      <div className="scroll-slim max-h-72 overflow-y-auto rounded-md border border-zinc-900">
         {denied ? (
           <div className="space-y-2 px-3 py-3">
             <p className="text-sm text-red-400">
