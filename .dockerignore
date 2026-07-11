@@ -15,6 +15,9 @@ build
 
 # ── Local SQLite + covers (volume provides these at runtime) ──
 data
+**/data
+**/*.db
+**/*.db-journal
 *.db
 *.db-journal
 
@@ -46,3 +49,13 @@ tsconfig.tsbuildinfo
 
 # ── Privacy patterns are per-clone, not for the image ──
 .privacy-patterns
+
+# ── Test / docs (builder never needs them; keeps context lean) ──
+tests
+e2e
+test-library
+docs
+.planning
+deploy
+launch.sh
+ink-prototype.html
