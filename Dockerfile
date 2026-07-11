@@ -15,6 +15,16 @@ ENV DATABASE_URL="file:/app/data/homelab-reader.db"
 RUN npm install --no-audit --no-fund --fetch-retries=5 --fetch-retry-maxtimeout=180000
 RUN npx prisma generate
 
+# ── Prisma CLI (runtime `migrate deploy`) ─────────────────────
+# Minimal tree with ONLY the prisma CLI + its transitive deps. The runner
+# copies this — never the deps stage's full node_modules, which carries the
+# whole dev+test toolchain (~1.1 GB: typescript, playwright-core, vitest,
+# eslint, tailwind) as dead surface in the image that holds the library of
+# record. Version pinned to the lockfile's resolved prisma.
+FROM base AS prisma-cli
+WORKDIR /cli
+RUN npm init -y >/dev/null 2>&1 && npm install --no-audit --no-fund prisma@6.19.3
+
 # ── Build ─────────────────────────────────────────────────────
 FROM base AS builder
 WORKDIR /app
@@ -45,8 +55,9 @@ COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma ./node_modul
 
 # Self-contained prisma CLI tree for `migrate deploy` at first boot.
 # next/standalone trims node_modules; the CLI needs its full transitive
-# tree (effect, c12, etc.), so we copy from the deps stage.
-COPY --from=deps --chown=nextjs:nodejs /app/node_modules /app/prisma-cli/node_modules
+# tree (effect, c12, etc.) — copied from the dedicated minimal stage,
+# never from deps (that would ship the entire dev+test toolchain).
+COPY --from=prisma-cli --chown=nextjs:nodejs /cli/node_modules /app/prisma-cli/node_modules
 
 # Mutable data dir for the SQLite DB. Schema-relative path resolution
 # (file:../data/homelab-reader.db from /app/prisma/) lands here.
