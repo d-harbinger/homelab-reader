@@ -29,7 +29,9 @@ running instance before relying on it):
   web UI at `/settings/tokens` — shown in plaintext exactly once, hashed at rest
   (SHA-256), labelled, listable, and revocable. Constant-time compared server-side.
 - **Progress attribution.** `POST /api/opds/progress` (token-authenticated)
-  records reading position against the token owner's account.
+  records reading position against the token owner's account, and
+  `GET /api/opds/progress?bookId=...` reads it back for that account — so
+  position can round-trip over the OPDS path.
 - **Book bytes.** `GET /api/books/[id]/file` now supports HTTP **Range** —
   `206 Partial Content` + `Content-Range`, `Accept-Ranges: bytes`, RFC 7233
   suffix ranges — i.e. resumable / partial downloads.
@@ -50,8 +52,9 @@ From the contract's client responsibilities:
    `/recent`); list titles, authors, covers.
 6. **Acquire + read** — download a book via `/api/books/[id]/file`, using Range
    requests for resumable downloads on flaky mobile networks; open in Readium.
-7. **Progress sync** — report and read position via `/api/opds/progress` so the
-   same position follows the reader across devices.
+7. **Progress sync** — report position with `POST /api/opds/progress` and read
+   it back with `GET /api/opds/progress?bookId=...` so the same position follows
+   the reader across devices.
 
 ## Suggested GSD seed for android-reader
 
@@ -65,7 +68,8 @@ Candidate phases (coarse):
 2. **Catalog browse** — fetch + parse the OPDS feeds, render the library
    (titles, covers).
 3. **Acquire & read** — Range-aware download from `/file`, hand off to Readium.
-4. **Progress sync** — report/read position via `/api/opds/progress`.
+4. **Progress sync** — report position (`POST /api/opds/progress`) and read it
+   back (`GET /api/opds/progress?bookId=...`).
 
 ## Open / negotiable (carried from the contract)
 

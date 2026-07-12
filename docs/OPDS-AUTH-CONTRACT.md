@@ -21,7 +21,8 @@ request. Doesn't reuse the login password; revocable without changing it.
 - **Token format.** Opaque, URL-safe, ≥32 bytes of entropy (base64url, no padding).
   A secret — never logged, shown in plaintext only once at mint time.
 - **Protected endpoints.** All OPDS routes: `/api/opds`, `/api/opds/recent`,
-  `/api/opds/all`, and any future OPDS path.
+  `/api/opds/all`, the progress path `POST /api/opds/progress` (write) and
+  `GET /api/opds/progress?bookId=...` (read), and any future OPDS path.
 - **Success.** `200` + the OPDS feed, exactly as today.
 - **Failure.** `401 Unauthorized` with `WWW-Authenticate: Basic realm="homelab-reader OPDS"`
   so standard OPDS clients prompt for credentials.

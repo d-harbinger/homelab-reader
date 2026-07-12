@@ -69,3 +69,51 @@ export async function POST(req: Request) {
     updatedAt: row.updatedAt,
   });
 }
+
+// GET /api/opds/progress?bookId=... — OPDS-context reading-progress read.
+//
+// The read half of the OPDS progress path (android-reader pulls the last
+// position saved for its account). It authenticates with the per-user OPDS
+// token — NOT the cookie session — and reads only the token owner's Progress
+// row, so a token can never see another account's position.
+//
+// Response mirrors the web reader's GET /api/progress exactly: an existing row
+// returns { percent, anchor, updatedAt }; no row returns { percent: 0,
+// anchor: null }. Like the session route, this does NOT 404 an unknown book —
+// a missing book simply has no progress row and yields the no-row shape.
+export async function GET(req: Request) {
+  // Authenticate with the OPDS token first; no valid token -> 401 challenge.
+  const user = await authenticateOpds(req);
+  if (!user) return opdsChallenge();
+
+  const url = new URL(req.url);
+  const bookId = url.searchParams.get("bookId");
+  if (!bookId) {
+    return NextResponse.json({ error: "missing bookId" }, { status: 400 });
+  }
+
+  // Read attribution: user.id is the OPDS token owner resolved by the guard.
+  // A token reads only its owner's Progress row.
+  const row = await prisma.progress.findUnique({
+    where: { bookId_userId: { bookId, userId: user.id } },
+  });
+
+  if (!row) {
+    return NextResponse.json({ percent: 0, anchor: null });
+  }
+
+  let anchor: unknown = null;
+  if (row.anchor) {
+    try {
+      anchor = JSON.parse(row.anchor);
+    } catch {
+      // ignore — anchor was malformed somehow; treat as start
+    }
+  }
+
+  return NextResponse.json({
+    percent: row.percent,
+    anchor,
+    updatedAt: row.updatedAt,
+  });
+}
