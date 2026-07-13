@@ -2,6 +2,11 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { parseJson } from "@/lib/parse-json";
 import { isHighlightColor } from "@/lib/highlight-colors";
+import {
+  isTextQuoteAnchor,
+  parseTextQuoteAnchor,
+  type AnnotationEnvelope,
+} from "@/lib/annotations/envelope";
 
 // Shared highlight-handler bodies (S2). The validation, ownership, and response
 // shapes live here ONCE and are called by both auth front doors:
@@ -14,14 +19,19 @@ import { isHighlightColor } from "@/lib/highlight-colors";
 
 interface HighlightPayload {
   bookId?: string;
-  anchor?: { type: string; cfi?: string; page?: number; rects?: unknown };
+  anchor?: unknown;
   text?: string;
   color?: string;
 }
 
 // Create a highlight on a book, attributed to userId.
-// Body: { bookId, anchor: { type: "epub-cfi-range", cfi } | { type: "pdf-rect", page, rects },
-//         text, color }
+// Body: { bookId, anchor, text, color } where anchor is one of:
+//   { type: "epub-cfi-range", cfi, prefix?, suffix?, progression? }  (web reader)
+//   { type: "pdf-rect", page, rects }                                (web reader, PDF)
+//   { type: "text-quote", quote, prefix?, suffix?, chapterHref?, progression? }
+//       — an anchor synced from another device, validated against the envelope
+//         bounds here (Phase C P1). Other shapes pass through unvalidated as
+//         before; only the text-quote envelope is a wire contract we own.
 export async function createHighlight(
   userId: string,
   req: Request,
@@ -43,6 +53,18 @@ export async function createHighlight(
     return NextResponse.json({ error: "invalid color" }, { status: 400 });
   }
 
+  // A text-quote anchor is a wire contract we own — validate and normalize it
+  // (clamp progression, drop empty optional keys). Every other anchor shape is
+  // stored verbatim, exactly as before.
+  let anchorToStore: unknown = anchor;
+  if (isTextQuoteAnchor(anchor)) {
+    const parsedAnchor = parseTextQuoteAnchor(anchor);
+    if (!parsedAnchor.ok) {
+      return NextResponse.json({ error: parsedAnchor.error }, { status: 400 });
+    }
+    anchorToStore = parsedAnchor.envelope;
+  }
+
   const book = await prisma.book.findUnique({ where: { id: bookId } });
   if (!book) return NextResponse.json({ error: "unknown book" }, { status: 404 });
 
@@ -52,7 +74,7 @@ export async function createHighlight(
     data: {
       bookId,
       userId,
-      anchor: JSON.stringify(anchor),
+      anchor: JSON.stringify(anchorToStore),
       text: text.slice(0, 8000),
       color: safeColor,
     },
@@ -94,14 +116,22 @@ export async function listHighlights(
   });
 }
 
-// Change a highlight's color. A non-existent id and another user's id collapse
-// to the same 404 so existence is never leaked across users.
+// Change a highlight's color and/or perform the one-time text-quote → CFI
+// anchor upgrade. A non-existent id and another user's id collapse to the same
+// 404 so existence is never leaked across users.
+//
+// The optional `anchor` field is the Phase C P1 upgrade: once the web reader
+// resolves a synced text-quote anchor to an EPUB CFI, it PATCHes
+// { anchor: { type: "epub-cfi-range", cfi } } so resolution happens once. The
+// upgrade is allowed ONLY when the stored anchor is still a text-quote envelope;
+// the resolved CFI is merged OVER the preserved quote/prefix/suffix/progression.
+// Any anchor PATCH against a non-text-quote anchor is a 400.
 export async function patchHighlight(
   userId: string,
   id: string,
   req: Request,
 ): Promise<Response> {
-  const parsed = await parseJson<{ color?: string }>(req);
+  const parsed = await parseJson<{ color?: string; anchor?: unknown }>(req);
   if (!parsed.ok) return parsed.res;
 
   const existing = await prisma.highlight.findUnique({ where: { id } });
@@ -113,11 +143,69 @@ export async function patchHighlight(
     ? parsed.body.color
     : existing.color;
 
+  // Anchor upgrade path (only present when the client is resolving a text-quote
+  // anchor). Absent → the color-only behavior below is unchanged.
+  if (parsed.body.anchor !== undefined) {
+    const stored = safeParseAnchor(existing.anchor);
+    const storedEnvelope = parseTextQuoteAnchor(stored);
+    if (!storedEnvelope.ok) {
+      return NextResponse.json(
+        { error: "anchor upgrade allowed only for text-quote anchors" },
+        { status: 400 },
+      );
+    }
+    const cfi = readUpgradeCfi(parsed.body.anchor);
+    if (cfi === null) {
+      return NextResponse.json(
+        { error: "anchor upgrade requires { type: 'epub-cfi-range', cfi }" },
+        { status: 400 },
+      );
+    }
+    const upgraded = mergeCfiOverEnvelope(cfi, storedEnvelope.envelope);
+    const row = await prisma.highlight.update({
+      where: { id },
+      data: { color, anchor: JSON.stringify(upgraded) },
+    });
+    return NextResponse.json({
+      id: row.id,
+      color: row.color,
+      anchor: JSON.parse(row.anchor),
+    });
+  }
+
   const row = await prisma.highlight.update({
     where: { id },
     data: { color },
   });
   return NextResponse.json({ id: row.id, color: row.color });
+}
+
+// The resolved-CFI upgrade anchor shape: { type: "epub-cfi-range", cfi }.
+// Returns the cfi when the shape is valid, or null to signal a 400.
+function readUpgradeCfi(a: unknown): string | null {
+  if (typeof a !== "object" || a === null) return null;
+  const { type, cfi } = a as { type?: unknown; cfi?: unknown };
+  if (type !== "epub-cfi-range") return null;
+  if (typeof cfi !== "string" || cfi.length === 0) return null;
+  return cfi;
+}
+
+// Merge the resolved CFI over the text-quote envelope's preserved fields. The
+// result is the extended epub-cfi-range shape the web reader already writes
+// (quote context retained so the anchor could be re-resolved if the CFI drifts).
+function mergeCfiOverEnvelope(
+  cfi: string,
+  envelope: AnnotationEnvelope,
+): Record<string, unknown> {
+  const upgraded: Record<string, unknown> = {
+    type: "epub-cfi-range",
+    cfi,
+    quote: envelope.quote,
+  };
+  if (envelope.prefix !== undefined) upgraded.prefix = envelope.prefix;
+  if (envelope.suffix !== undefined) upgraded.suffix = envelope.suffix;
+  if (envelope.progression !== undefined) upgraded.progression = envelope.progression;
+  return upgraded;
 }
 
 // Remove a highlight. Ownership mismatch and non-existence both yield 404.
