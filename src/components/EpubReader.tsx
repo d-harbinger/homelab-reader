@@ -12,6 +12,7 @@ import {
   HIGHLIGHT_COLORS,
   type HighlightColor,
 } from "@/lib/highlight-colors";
+import { extractQuoteContext } from "@/lib/annotations/quote-context";
 import {
   HighlightsPanel,
   type PanelHighlight,
@@ -82,12 +83,25 @@ interface StoredHighlight {
   anchor: { type: string; cfi?: string };
 }
 
+// Additive text-quote context captured at highlight creation, stored alongside
+// the CFI inside the anchor JSON. It lets a highlight be re-found on another
+// device by its surrounding text + reading position, not the CFI alone (Phase C
+// text-quote sync). All fields optional — the CFI is still the primary anchor.
+interface QuoteAnchorContext {
+  prefix?: string;
+  suffix?: string;
+  progression?: number;
+}
+
 interface SelectionState {
   cfiRange: string;
   text: string;
   // Outer-page coordinates for the floating popover.
   x: number;
   y: number;
+  // Captured when the selection is made (the DOM Range is in scope then), so
+  // the popover-confirm path can persist it without re-walking the DOM.
+  context?: QuoteAnchorContext;
 }
 
 interface OpenHighlightMenu {
@@ -230,8 +244,28 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
   // Persist a highlight (CFI range + text + color) and paint it. Shared by the
   // popover path (saveHighlight) and highlighter mode.
   const createHighlight = useCallback(
-    async (cfiRange: string, text: string, color: HighlightColor) => {
-      const anchor = { type: "epub-cfi-range", cfi: cfiRange };
+    async (
+      cfiRange: string,
+      text: string,
+      color: HighlightColor,
+      context?: QuoteAnchorContext,
+    ) => {
+      // Additive: the CFI is the primary anchor; prefix/suffix/progression are
+      // captured when available so the highlight can also be re-anchored by
+      // text on another device. Keys are omitted (not written empty) when the
+      // context couldn't be derived.
+      const anchor: {
+        type: string;
+        cfi: string;
+        prefix?: string;
+        suffix?: string;
+        progression?: number;
+      } = { type: "epub-cfi-range", cfi: cfiRange };
+      if (context?.prefix) anchor.prefix = context.prefix;
+      if (context?.suffix) anchor.suffix = context.suffix;
+      if (typeof context?.progression === "number") {
+        anchor.progression = context.progression;
+      }
       try {
         const r = await fetch("/api/highlights", {
           method: "POST",
@@ -380,6 +414,50 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
       };
       rendition.on("relocated", onRelocated);
 
+      // Derive the additive text-quote context (prefix/suffix + progression)
+      // for a selection. The DOM Range is recovered from the CFI (the same
+      // contents.range(...) the re-anchor path uses); the surrounding text is
+      // pulled via standard Range boundaries and the ~32-char trimming is the
+      // pure, unit-tested helper. Progression comes from the book's locations
+      // index, which is generated asynchronously — it is simply omitted until
+      // ready. Whole thing is best-effort: the CFI anchor never depends on it.
+      const deriveQuoteContext = (
+        cfiRange: string,
+        contents: ContentsLike,
+      ): QuoteAnchorContext => {
+        const result: QuoteAnchorContext = {};
+        try {
+          const doc = contents.document;
+          const range = contents.range(cfiRange);
+          const body = doc.body;
+          const beforeRange = doc.createRange();
+          beforeRange.selectNodeContents(body);
+          beforeRange.setEnd(range.startContainer, range.startOffset);
+          const afterRange = doc.createRange();
+          afterRange.selectNodeContents(body);
+          afterRange.setStart(range.endContainer, range.endOffset);
+          const ctx = extractQuoteContext(
+            beforeRange.toString(),
+            afterRange.toString(),
+          );
+          if (ctx.prefix) result.prefix = ctx.prefix;
+          if (ctx.suffix) result.suffix = ctx.suffix;
+        } catch {
+          /* boundary text unavailable — CFI anchor stands alone */
+        }
+        try {
+          const pct = bookRef.current?.locations.percentageFromCfi(cfiRange);
+          // epub.js returns -1 before locations.generate() resolves; only a
+          // real 0..1 fraction is meaningful.
+          if (typeof pct === "number" && isFinite(pct) && pct >= 0 && pct <= 1) {
+            result.progression = pct;
+          }
+        } catch {
+          /* locations not ready — omit progression */
+        }
+        return result;
+      };
+
       // Text selection → show popover with color picker.
       const showPopoverFor = (
         cfiRange: string,
@@ -388,6 +466,10 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
         const sel = contents.window.getSelection();
         const text = sel?.toString() ?? "";
         if (!text.trim()) return;
+
+        // Capture the surrounding-text context now, while the selection's DOM
+        // Range is still live and resolvable.
+        const context = deriveQuoteContext(cfiRange, contents);
 
         // Highlighter mode: apply the chosen color straight away, no popover.
         // Dedupe the near-simultaneous 'selected' + mouseup double-fire on the
@@ -398,7 +480,12 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
           setTimeout(() => {
             if (lastAppliedCfiRef.current === cfiRange) lastAppliedCfiRef.current = null;
           }, 800);
-          createHighlightRef.current(cfiRange, text, highlighterColorRef.current);
+          createHighlightRef.current(
+            cfiRange,
+            text,
+            highlighterColorRef.current,
+            context,
+          );
           try {
             sel?.removeAllRanges();
           } catch {
@@ -422,7 +509,7 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
           /* fall through */
         }
 
-        setSelection({ cfiRange, text, x, y });
+        setSelection({ cfiRange, text, x, y, context });
         setOpenMenu(null);
       };
 
@@ -531,7 +618,12 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
 
   async function saveHighlight(color: HighlightColor) {
     if (!selection) return;
-    await createHighlight(selection.cfiRange, selection.text, color);
+    await createHighlight(
+      selection.cfiRange,
+      selection.text,
+      color,
+      selection.context,
+    );
     setSelection(null);
     try {
       renditionRef.current
