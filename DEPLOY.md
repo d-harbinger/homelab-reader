@@ -105,25 +105,40 @@ it.
 
 | Variable | Default (as committed today) | Purpose |
 |---|---|---|
-| `HOMELAB_HOST_BIND` | `0.0.0.0` | Host interface the container publishes on. `0.0.0.0` is LAN-accessible; `127.0.0.1` restricts to the machine itself (for a reverse proxy in front). |
+| `HOMELAB_HOST_BIND` | `127.0.0.1` | Host interface the container publishes on. `127.0.0.1` (the committed default) restricts access to the machine itself; set `0.0.0.0` to make it reachable from other devices on the local network (the usual homelab case — e.g. feeding android-reader over OPDS). See the breaking-change note below. |
 | `HOMELAB_PORT` | `5456` | Host port. Follows the sibling scheme (chimera 5454, chef-calc-pro 5455, homelab-reader 5456). |
 | `BOOKS_HOST_PATH` | `./books` | Host directory holding the library; bind-mounted read-only at `/app/books`. |
 | `AUTH_SECRET` | *(auto-generated)* | NextAuth secret. If unset, the entrypoint generates one and persists it to the data volume on first run. Set explicitly with `openssl rand -base64 32` to control it. |
 
 The published port line in `docker-compose.yml` is
-`"${HOMELAB_HOST_BIND:-0.0.0.0}:${HOMELAB_PORT:-5456}:3000"`. The bind address
+`"${HOMELAB_HOST_BIND:-127.0.0.1}:${HOMELAB_PORT:-5456}:3000"`. The bind address
 is the real firewall here — a Docker published port bypasses the host firewall,
 so the interface it binds to is what limits who can reach the app.
 
-> **Committed default slated to flip to loopback.** The workspace ship-boundary
-> doctrine makes `127.0.0.1` the committed default, with LAN exposure a
-> server-side `.env` opt-in (`HOMELAB_HOST_BIND=0.0.0.0`) rather than a baked-in
-> default. homelab-reader currently ships `0.0.0.0` for backward compatibility.
-> The flip is tracked as owner-gated item **F4** in
-> `claude-settings/workspace/proposals/2026-07-12-deploy-consistency-audit.md`
-> and is coordinated with the next server redeploy so the app does not silently
-> go dark. This document describes the compose file as it stands today; it does
-> not change it.
+> ## ⚠️ Breaking default change — the committed bind is now loopback
+>
+> **What changed:** the committed default for `HOMELAB_HOST_BIND` flipped from
+> `0.0.0.0` (all interfaces, reachable across the local network) to `127.0.0.1`
+> (loopback — the machine itself only). This aligns homelab-reader with the
+> workspace ship-boundary doctrine: ship closed, open on purpose.
+>
+> **Who this affects:** any existing deployment that reaches the app from
+> another device — a browser on a laptop, android-reader pulling over OPDS.
+> After a redeploy that picks up this change, the app will answer only on the
+> server itself and every other device will see the connection refused.
+>
+> **What to do — set the LAN opt-in before redeploying.** On the server, add
+> this one line to the `.env` next to `docker-compose.yml`, then redeploy:
+>
+> ```sh
+> echo 'HOMELAB_HOST_BIND=0.0.0.0' >> .env
+> docker compose up -d --build
+> ```
+>
+> This restores network reachability. Confirm with the LAN-reachability check in
+> the redeploy invariant above (`curl` from a device that matters). A
+> first-time deployment following the runbook already copies `.env.example`,
+> which documents this variable, so new installs simply set it during setup.
 
 ### `DATABASE_URL` and SQLite under concurrent use
 
