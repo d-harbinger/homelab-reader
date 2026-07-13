@@ -56,10 +56,12 @@
 #
 # ── Network binding ───────────────────────────────────────────
 #
-#   Defaults to 0.0.0.0:5456 — LAN-accessible. Override the host port and
-#   interface via .env: HOMELAB_PORT (default 5456) and HOMELAB_HOST_BIND
-#   (default 0.0.0.0). For localhost-only (e.g. behind a reverse proxy), set
-#   HOMELAB_HOST_BIND=127.0.0.1. The container always listens on 3000 inside.
+#   Defaults to 127.0.0.1:5456 — reachable only from the machine itself. This
+#   is the safe default; the container is not exposed to the network until it
+#   is opted in. To serve other devices on the local network (the usual homelab
+#   case — e.g. feeding android-reader over OPDS), set HOMELAB_HOST_BIND=0.0.0.0
+#   in .env. Override the host port with HOMELAB_PORT (default 5456). The
+#   container always listens on 3000 inside.
 #
 # ── Where your data lives ─────────────────────────────────────
 #
@@ -87,7 +89,7 @@ services:
       # Host bind + port are overridable via .env (the container always listens
       # on 3000 internally). Default host port is 5456, following the sibling
       # service scheme: chimera 5454, chef-calc-pro 5455, homelab-reader 5456.
-      - "${HOMELAB_HOST_BIND:-0.0.0.0}:${HOMELAB_PORT:-5456}:3000"
+      - "${HOMELAB_HOST_BIND:-127.0.0.1}:${HOMELAB_PORT:-5456}:3000"
     volumes:
       # The SQLite DB + covers + auth-secret. Persistent named volume.
       - homelab-reader-data:/app/data
