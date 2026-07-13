@@ -14,6 +14,13 @@ import {
 } from "@/lib/highlight-colors";
 import { extractQuoteContext } from "@/lib/annotations/quote-context";
 import {
+  sectionMatchesAnchor,
+  buildUpgradePayload,
+  jumpTarget,
+  createResolutionTracker,
+} from "@/lib/annotations/resolve-textquote";
+import { toRange } from "dom-anchor-text-quote";
+import {
   HighlightsPanel,
   type PanelHighlight,
   type PanelNote,
@@ -33,6 +40,9 @@ interface ContentsLike {
   window: Window;
   range(cfi: string): Range;
   cfiFromRange?(range: Range): string;
+  // Index of the spine section this Contents renders — maps back to
+  // book.spine.items[sectionIndex] to recover the section href.
+  sectionIndex?: number;
 }
 interface RenditionLike {
   display(target?: string | undefined): Promise<unknown>;
@@ -72,6 +82,7 @@ interface BookLike {
   locations: {
     generate(charsPerLocation: number): Promise<unknown>;
     percentageFromCfi(cfi: string): number;
+    cfiFromPercentage(percentage: number): string;
     length(): number;
   };
 }
@@ -80,7 +91,19 @@ interface StoredHighlight {
   id: string;
   color: HighlightColor;
   text: string;
-  anchor: { type: string; cfi?: string };
+  // The stored anchor. A web-created highlight is an epub-cfi-range (has cfi).
+  // A highlight synced from another device arrives as a text-quote anchor
+  // (quote + optional prefix/suffix/chapterHref/progression, no cfi yet); the
+  // reader resolves it to a CFI on view. See resolve-textquote.ts.
+  anchor: {
+    type: string;
+    cfi?: string;
+    quote?: string;
+    prefix?: string;
+    suffix?: string;
+    chapterHref?: string;
+    progression?: number;
+  };
 }
 
 // Additive text-quote context captured at highlight creation, stored alongside
@@ -116,6 +139,45 @@ function stepFont(current: number, delta: number): number {
   const idx = FONT_STEPS.indexOf(current);
   const target = Math.max(0, Math.min(FONT_STEPS.length - 1, idx + delta));
   return FONT_STEPS[target] ?? 100;
+}
+
+// First / last descendant text node under `node` (inclusive of `node` itself).
+function edgeTextNode(node: Node, last: boolean): Text | null {
+  if (node.nodeType === Node.TEXT_NODE) return node as Text;
+  const doc = node.ownerDocument;
+  if (!doc) return null;
+  const walker = doc.createTreeWalker(node, NodeFilter.SHOW_TEXT);
+  let found: Text | null = null;
+  let n = walker.nextNode();
+  while (n) {
+    found = n as Text;
+    if (!last) break;
+    n = walker.nextNode();
+  }
+  return found;
+}
+
+// Move any range boundary that sits on an element into the adjacent text node.
+// dom-anchor-text-quote returns a boundary on the containing element when a
+// quote begins or ends exactly at a child edge; the CFI epub.js derives from
+// such a boundary does not re-resolve when the highlight mark is painted (it
+// reads getClientRects on a null range). Descending both edges to text nodes
+// yields a CFI that round-trips. Returns the original range if it can't descend.
+function descendRangeToText(range: Range): Range {
+  const r = range.cloneRange();
+  if (r.startContainer.nodeType === Node.ELEMENT_NODE) {
+    const el = r.startContainer as Element;
+    const child = el.childNodes[r.startOffset] ?? el.childNodes[el.childNodes.length - 1];
+    const t = child ? edgeTextNode(child, false) : null;
+    if (t) r.setStart(t, 0);
+  }
+  if (r.endContainer.nodeType === Node.ELEMENT_NODE) {
+    const el = r.endContainer as Element;
+    const child = el.childNodes[r.endOffset - 1] ?? el.childNodes[0];
+    const t = child ? edgeTextNode(child, true) : null;
+    if (t) r.setEnd(t, t.data.length);
+  }
+  return r;
 }
 
 export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
@@ -549,15 +611,111 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
         doc.addEventListener("touchend", handler);
       };
 
+      // Text-quote resolution (Phase C P2). A highlight synced from another
+      // device carries a text-quote anchor (surrounding text + reading position)
+      // but no CFI — a CFI only means something inside THIS rendition. When a
+      // section renders, fuzzy-match the quote in its DOM, turn the found range
+      // into a CFI, paint the mark, and PATCH the one-time anchor upgrade so the
+      // work never repeats. Unresolved highlights stay listed in the panel and
+      // jump by reading percentage instead (see jumpToHighlight). Resolution is
+      // on-view only (no whole-spine loop at open) and attempted at most once per
+      // highlight per reader session — the tracker is rebuilt with the rendition.
+      const resolutionTracker = createResolutionTracker();
+      const resolveTextQuoteInSection = (
+        section: SpineItemLike,
+        contents: ContentsLike,
+      ) => {
+        const root = contents.document.body;
+        if (!root) return;
+        for (const h of highlightsRef.current.values()) {
+          const a = h.anchor;
+          // Only unresolved text-quote anchors need resolving.
+          if (a.type !== "text-quote" || a.cfi || !a.quote) continue;
+          // Skip sections this highlight doesn't belong to BEFORE spending its
+          // single attempt, so the attempt lands in the matching chapter.
+          if (
+            !sectionMatchesAnchor(
+              { chapterHref: a.chapterHref, progression: a.progression },
+              { href: section.href },
+            )
+          ) {
+            continue;
+          }
+          if (!resolutionTracker.shouldAttempt(h.id)) continue;
+
+          let cfi: string | undefined;
+          try {
+            const range = toRange(root, {
+              exact: a.quote,
+              prefix: a.prefix,
+              suffix: a.suffix,
+            });
+            if (!range) continue;
+            // dom-anchor can return a boundary on an element (e.g. a quote that
+            // starts at the very beginning of a paragraph lands on BODY offset
+            // 0). epub.js derives a phantom CFI from such a boundary that will
+            // not re-resolve when the mark is painted, so descend both edges
+            // into their text nodes first.
+            cfi = contents.cfiFromRange?.(descendRangeToText(range)) ?? undefined;
+          } catch {
+            // A malformed quote or a CFI failure degrades to the percent-jump.
+            continue;
+          }
+          if (!cfi) continue;
+
+          // Upgrade the in-memory anchor so it paints and jumps by CFI now.
+          const upgraded: StoredHighlight = {
+            ...h,
+            anchor: { ...a, type: "epub-cfi-range", cfi },
+          };
+          highlightsRef.current.set(h.id, upgraded);
+          setHighlights((prev) =>
+            prev.map((x) => (x.id === h.id ? (upgraded as PanelHighlight) : x)),
+          );
+          repaintHighlight(upgraded);
+
+          // Persist the one-time upgrade (P1 endpoint). Best-effort: if it
+          // fails, the DB anchor stays text-quote and resolves again next
+          // session — this session's mark still stands.
+          const payload = buildUpgradePayload(cfi);
+          if (payload) {
+            fetch(`/api/highlights/${h.id}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload),
+            }).catch(() => {
+              /* transient */
+            });
+          }
+        }
+      };
+
       // On every (re-)render: hook any new section documents for the
-      // selection fallback, and repaint known highlights. epubjs keeps
-      // annotations across page turns within a spine item but can lose
-      // them crossing chapters, so repaint defensively.
-      const onRendered = () => {
+      // selection fallback, repaint known highlights, and resolve any
+      // text-quote highlights that belong to the section just rendered.
+      // epubjs keeps annotations across page turns within a spine item but can
+      // lose them crossing chapters, so repaint defensively.
+      const onRendered = (...args: unknown[]) => {
+        const section = args[0] as SpineItemLike | undefined;
+        const view = args[1] as { contents?: ContentsLike } | undefined;
         for (const c of rendition.getContents()) hookSelection(c);
         for (const h of highlightsRef.current.values()) repaintHighlight(h);
+        if (section) {
+          const contents = view?.contents ?? rendition.getContents()[0];
+          if (contents) resolveTextQuoteInSection(section, contents);
+        }
       };
       rendition.on("rendered", onRendered);
+
+      // The "rendered" event for the section shown at open fired during the
+      // rendition.display() above, BEFORE this listener was attached, so run one
+      // resolution pass over whatever is already on screen.
+      for (const c of rendition.getContents()) {
+        const idx = c.sectionIndex;
+        const section =
+          typeof idx === "number" ? book.spine?.items?.[idx] : undefined;
+        if (section) resolveTextQuoteInSection(section, c);
+      }
 
       const onKey = (e: KeyboardEvent) => {
         if (mode !== "paginated") return;
@@ -721,8 +879,24 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
   }
 
   function jumpToHighlight(h: PanelHighlight) {
-    if (h.anchor.cfi) {
-      renditionRef.current?.display(h.anchor.cfi);
+    const rendition = renditionRef.current;
+    if (!rendition) return;
+    // A resolved highlight jumps to its exact CFI. An unresolved text-quote
+    // highlight degrades to its reading percentage, mapped through the book's
+    // locations index. With neither, the jump is a no-op and the entry simply
+    // stays listed in the panel.
+    const target = jumpTarget(h.anchor);
+    if (target.kind === "cfi") {
+      rendition.display(target.cfi);
+    } else if (target.kind === "percent") {
+      try {
+        const cfi = bookRef.current?.locations.cfiFromPercentage(
+          target.progression,
+        );
+        if (cfi) rendition.display(cfi);
+      } catch {
+        /* locations not ready — leave the entry listed, do nothing */
+      }
     }
   }
 

@@ -206,6 +206,11 @@ model Highlight {
   //   { type: "epub-cfi-range", cfi, prefix?, suffix?, progression? }
   //       — EPUB: a single range CFI, plus optional text-quote context
   //         (surrounding text + 0..1 reading position) for cross-device sync
+  //   { type: "text-quote", quote, prefix?, suffix?, chapterHref?, progression? }
+  //       — a highlight synced from another device (the android reader) that the
+  //         web reader has not yet resolved to a CFI; upgraded in place to
+  //         epub-cfi-range on first view (Phase C). Comment-only: no migration,
+  //         the column is already a free-form JSON string.
   //   { type: "pdf-rect", page, rects: [...] }
   //       — PDF: page number and normalized rectangles
   anchor    String

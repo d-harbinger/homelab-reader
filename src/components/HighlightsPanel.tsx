@@ -14,8 +14,10 @@ export interface PanelHighlight {
   color: HighlightColor;
   text: string;
   // cfi for EPUB anchors, page for PDF anchors — both optional so the one
-  // reader shape covers both formats.
-  anchor: { type: string; cfi?: string; page?: number };
+  // reader shape covers both formats. progression (0..1 reading position) rides
+  // along on synced text-quote anchors that haven't resolved to a CFI yet, so an
+  // unresolved highlight can still jump by percentage (Phase C P2).
+  anchor: { type: string; cfi?: string; page?: number; progression?: number };
 }
 
 export interface PanelNote {
