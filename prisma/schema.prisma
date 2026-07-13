@@ -202,8 +202,12 @@ model Highlight {
   id        String   @id @default(cuid())
   bookId    String
   userId    String
-  // JSON: { type: "epub-cfi-range", cfiStart, cfiEnd }
-  //   or  { type: "pdf-rect", page, rects: [...] }
+  // JSON anchor, one of the runtime shapes the reader writes:
+  //   { type: "epub-cfi-range", cfi, prefix?, suffix?, progression? }
+  //       — EPUB: a single range CFI, plus optional text-quote context
+  //         (surrounding text + 0..1 reading position) for cross-device sync
+  //   { type: "pdf-rect", page, rects: [...] }
+  //       — PDF: page number and normalized rectangles
   anchor    String
   text      String
   color     String   @default("yellow")
