@@ -46,7 +46,14 @@ test("core flow: setup, login, library, readers, annotations, OPDS, enrich", asy
     await page.fill("#confirm", ADMIN.password);
     await page.getByRole("button", { name: /create admin/i }).click();
 
-    // The server action creates the admin, signs in, and redirects to "/".
+    // The server action creates the admin, signs in, and lands on
+    // first-run step 2: the privacy (online lookups) choice. Decline it
+    // so the suite runs fully offline, then the library loads.
+    await page.waitForURL("**/setup/privacy");
+    await expect(
+      page.getByText(/what may this reader send to the internet/i),
+    ).toBeVisible();
+    await page.getByRole("button", { name: /keep everything offline/i }).click();
     await page.waitForURL("**/");
     await expect(page.getByText(EPUB_TITLE)).toBeVisible();
   });

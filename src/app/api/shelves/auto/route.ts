@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { withAdmin } from "@/lib/route-helpers";
 import { searchOpenLibrary } from "@/lib/metadata/openlibrary";
 import { decideShelf } from "@/lib/library/auto-shelve";
+import { onlineLookupsEnabled } from "@/lib/app-settings";
 
 // POST /api/shelves/auto — one polite batch of the long-term Unsorted
 // fix: look up unshelved books on OpenLibrary by their extracted
@@ -29,6 +30,14 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const skippedThisRun = new Set<string>();
 
 export const POST = withAdmin(async () => {
+  // Consent gate: this endpoint exists to contact OpenLibrary, and the
+  // deployment may not have opted into online lookups.
+  if (!(await onlineLookupsEnabled())) {
+    return NextResponse.json(
+      { error: "Online lookups are disabled for this install (Settings → Privacy)." },
+      { status: 403 },
+    );
+  }
   const batch = await prisma.book.findMany({
     where: {
       genre: null,

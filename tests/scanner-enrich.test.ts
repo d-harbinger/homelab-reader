@@ -178,6 +178,29 @@ describe("BookSuggestion migration round-trip (Slice 1 SQL validity)", () => {
 });
 
 describe("scanFile enrich hook (Slice 3)", () => {
+  // Enrichment is consent-gated (default OFF — the setup-time privacy
+  // choice); these tests exercise the enabled path, so opt the test DB in.
+  beforeEach(async () => {
+    await h.prisma.appSetting.upsert({
+      where: { key: "onlineLookups" },
+      update: { value: "on" },
+      create: { key: "onlineLookups", value: "on" },
+    });
+  });
+
+  it("consent gate: with online lookups OFF (the default), no lookup fires and no rows appear", async () => {
+    await h.prisma.appSetting.delete({ where: { key: "onlineLookups" } });
+    vi.mocked(extractEpub).mockResolvedValue(THIN_META as never);
+    const spy = olFetch([CLEAN_DOC]);
+    vi.stubGlobal("fetch", spy);
+
+    await scanFile(stage("Clean Code.epub"));
+
+    expect(spy).not.toHaveBeenCalled();
+    expect(await h.prisma.bookSuggestion.count()).toBe(0);
+    expect(await h.prisma.book.count()).toBe(1); // the import itself still lands
+  });
+
   it("THIN new book + injected fetch → BookSuggestion rows created and mapped", async () => {
     vi.mocked(extractEpub).mockResolvedValue(THIN_META as never);
     vi.stubGlobal("fetch", olFetch([CLEAN_DOC]));
