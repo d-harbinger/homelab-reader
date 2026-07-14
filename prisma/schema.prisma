@@ -86,6 +86,12 @@ model Book {
   // PDF-specific:  pdfjs page count
   pageCount     Int?
 
+  // Bookstore-style shelf, assigned on import by the subject normalizer
+  // (lib/library/genre-taxonomy) and editable per book. Null = Unsorted.
+  // Distinct from the folder-derived sections: this is the metadata view
+  // of the library; folders remain the disk-truth view.
+  genre         String?
+
   addedAt       DateTime  @default(now())
   scannedAt     DateTime  @default(now())
 

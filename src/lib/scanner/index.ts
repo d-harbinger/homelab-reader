@@ -6,6 +6,7 @@ import { extractEpub } from "./epub";
 import { extractPdf } from "./pdf";
 import { writeCover } from "./covers";
 import { enrichBook, isThin } from "@/lib/metadata/enrich";
+import { classifyGenre } from "@/lib/library/genre-taxonomy";
 import { clearFailedImport, recordFailedImport } from "./failed-imports";
 
 export type BookFormat = "epub" | "pdf";
@@ -77,6 +78,9 @@ export async function scanFile(filePath: string): Promise<void> {
         description: extracted.description ?? byPath.description,
         isbn: extracted.isbn ?? byPath.isbn,
         pageCount: extracted.pageCount ?? byPath.pageCount,
+        // Fill-only: a shelf the owner set (or a previous classification)
+        // is never overwritten by a re-extract.
+        genre: byPath.genre ?? classifyGenre(extracted.subjects),
         scannedAt: new Date(),
       },
     });
@@ -127,6 +131,10 @@ export async function scanFile(filePath: string): Promise<void> {
       description: extracted.description,
       isbn: extracted.isbn,
       pageCount: extracted.pageCount,
+      // Bookstore shelf from the embedded subjects (lib/library/
+      // genre-taxonomy). Null = Unsorted; the OpenLibrary enrichment
+      // accept path and the rescan backfill get later chances to fill it.
+      genre: classifyGenre(extracted.subjects),
       authors: {
         connectOrCreate: extracted.authors.map((name) => ({
           where: { name },

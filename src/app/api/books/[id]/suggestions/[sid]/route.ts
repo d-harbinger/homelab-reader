@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { parseJson, withAdmin } from "@/lib/route-helpers";
 import { applyAcceptance } from "@/lib/metadata/enrich";
+import { classifyGenre } from "@/lib/library/genre-taxonomy";
 import type { MetadataSuggestion } from "@/lib/metadata/openlibrary";
 
 // The nested dynamic context: /api/books/[id]/suggestions/[sid].
@@ -86,6 +87,14 @@ export const POST = withAdmin<SuggestionContext>(async (_admin, req, { params })
         create: { name },
       })),
     };
+  }
+
+  // A still-unshelved book gets a shelf from the accepted subjects —
+  // fill-only, same contract as the scanner and the rescan backfill:
+  // an owner-set genre is never overwritten by an acceptance.
+  if (!book.genre) {
+    const genre = classifyGenre(suggestion.subjects);
+    if (genre) bookUpdate.genre = genre;
   }
 
   // Transactional: write the Book, accept this suggestion, reject the siblings.
