@@ -31,7 +31,7 @@ import {
   type PanelHighlight,
   type PanelNote,
 } from "./HighlightsPanel";
-import { ColorPickerPopover, HighlightMenu, NoteEditorPopover } from "./HighlightPopover";
+import { HighlightMenu, NoteEditorPopover } from "./HighlightPopover";
 import { InkLayer } from "./InkLayer";
 import { InkToolbar } from "./InkToolbar";
 import {
@@ -535,16 +535,34 @@ export function PdfReader({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ bookId, anchor, text: selection.text, color }),
       });
-      if (!r.ok) return;
+      if (!r.ok) return null;
       const row = (await r.json()) as PdfHighlight;
       highlightsRef.current.set(row.id, row);
       setHighlights((prev) => [...prev, row]);
+      return row;
     } catch {
       /* fail silently — user can retry */
+      return null;
     } finally {
       setSelection(null);
       window.getSelection()?.removeAllRanges();
     }
+  }
+
+  // Highlight-and-note in ONE gesture: create the highlight (current
+  // highlighter color) from the live selection, then open the note
+  // editor on it immediately — no re-click required.
+  async function saveHighlightAndNote() {
+    if (!selection) return;
+    const { x, y } = selection;
+    const row = await saveHighlight("yellow");
+    if (!row) return;
+    setNoteDraft({ h: row, noteId: null, body: "", x, y });
+  }
+
+  function discardSelection() {
+    setSelection(null);
+    window.getSelection()?.removeAllRanges();
   }
 
   async function changeColor(id: string, color: HighlightColor) {
@@ -879,10 +897,12 @@ export function PdfReader({
       </div>
 
       {selection && (
-        <ColorPickerPopover
+        <HighlightMenu
           x={selection.x}
           y={selection.y}
           onPick={(c) => saveHighlight(c)}
+          onAddNote={saveHighlightAndNote}
+          onDelete={discardSelection}
         />
       )}
 
@@ -890,7 +910,9 @@ export function PdfReader({
         <HighlightMenu
           x={openMenu.x}
           y={openMenu.y}
+          activeColor={openMenu.color}
           hasNote={notes.some((n) => n.highlightId === openMenu.id)}
+          onPick={(c) => changeColor(openMenu.id, c)}
           onAddNote={openNoteEditor}
           onDelete={() => deleteHighlight(openMenu.id)}
         />

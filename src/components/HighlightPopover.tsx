@@ -48,19 +48,28 @@ export function ColorPickerPopover({
   );
 }
 
-// Deliberately just note + delete: color is chosen once, at creation
-// (ColorPickerPopover). A recolor row here used to make the two popovers
-// read as awkward near-duplicates — owner-ruled 2026-07-14 to drop it.
+// THE highlight menu — the same one every time (owner-ruled 2026-07-14):
+// color swatches + note + delete, shown both on a fresh selection and on
+// re-clicking an existing highlight. On a fresh selection, picking a
+// color creates the highlight, the note button creates it AND opens the
+// note editor in one gesture, and the trash discards the selection. On
+// an existing highlight the swatches recolor, note edits, trash deletes.
+// `activeColor` is set only for existing highlights (ring on the current
+// color); a fresh selection has no active color yet.
 export function HighlightMenu({
   x,
   y,
+  activeColor,
   hasNote,
+  onPick,
   onAddNote,
   onDelete,
 }: {
   x: number;
   y: number;
+  activeColor?: HighlightColor;
   hasNote?: boolean;
+  onPick: (c: HighlightColor) => void;
   onAddNote: () => void;
   onDelete: () => void;
 }) {
@@ -68,11 +77,23 @@ export function HighlightMenu({
     <div
       className="fixed z-50 flex items-center gap-1 rounded-lg border border-zinc-800 bg-zinc-950/95 p-1.5 shadow-2xl shadow-black/60 backdrop-blur"
       style={{
-        left: Math.max(8, x - 40),
+        left: Math.max(8, x - 100),
         top: Math.max(8, y - 48),
       }}
       onClick={(e) => e.stopPropagation()}
     >
+      {HIGHLIGHT_ORDER.map((c) => (
+        <button
+          key={c}
+          aria-label={HIGHLIGHT_COLORS[c].label}
+          onClick={() => onPick(c)}
+          className={`h-7 w-7 rounded-full ring-2 transition-transform hover:scale-110 ${
+            c === activeColor ? "ring-zinc-100" : "ring-zinc-700"
+          }`}
+          style={{ background: HIGHLIGHT_COLORS[c].swatch }}
+        />
+      ))}
+      <span className="mx-1 h-5 w-px bg-zinc-800" aria-hidden />
       <button
         aria-label={hasNote ? "Edit note" : "Add note"}
         title={hasNote ? "Edit note" : "Add note"}
