@@ -841,7 +841,10 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
     writeSetting("epub.mode", mode);
   }, [mode]);
 
-  // Dismiss popovers on outside click.
+  // Dismiss popovers on outside click. Clicks inside the book land in
+  // the section IFRAMES and never bubble to the outer document, so the
+  // one-shot listener must attach to every section document as well —
+  // otherwise clicking the page next to an open menu leaves it stuck.
   useEffect(() => {
     if (!selection && !openMenu && !ctxMenu) return;
     const onDocClick = () => {
@@ -849,14 +852,21 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
       setOpenMenu(null);
       setCtxMenu(null);
     };
+    const docs: Document[] = [document];
+    try {
+      renditionRef.current?.getContents().forEach((c) => docs.push(c.document));
+    } catch {
+      /* rendition mid-teardown — outer document still dismisses */
+    }
     // Microtask to skip the click that opened the popover.
     const t = setTimeout(
-      () => document.addEventListener("click", onDocClick, { once: true }),
+      () =>
+        docs.forEach((d) => d.addEventListener("click", onDocClick, { once: true })),
       0,
     );
     return () => {
       clearTimeout(t);
-      document.removeEventListener("click", onDocClick);
+      docs.forEach((d) => d.removeEventListener("click", onDocClick));
     };
   }, [selection, openMenu, ctxMenu]);
 
