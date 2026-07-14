@@ -67,6 +67,14 @@ test("PDF reader: right-click menu opens, turns the page, wheel flips too", asyn
   await expect(menu.getByRole("menuitem", { name: "Next page" })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Paginated" })).toBeVisible();
 
+  // A plain left-click on the page dismisses the menu (the stuck-menu
+  // bug from the owner's hand-test). Then reopen it for the rest of the
+  // test.
+  await page.mouse.click(cbox.x + cbox.width / 2, cbox.y + cbox.height / 3);
+  await expect(menu).toBeHidden();
+  await page.mouse.click(cbox.x + cbox.width / 2, cbox.y + cbox.height / 2, { button: "right" });
+  await expect(menu).toBeVisible();
+
   // The seeded fixture may be a single page; the menu must reflect
   // reality either way. Multi-page → the action turns the page and the
   // wheel flips; single page → Next is correctly disabled and the wheel
