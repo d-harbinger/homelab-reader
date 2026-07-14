@@ -5,29 +5,47 @@ import useSWR from "swr";
 import { AlertTriangle, X } from "lucide-react";
 import { fetcher } from "@/lib/fetcher";
 
+interface FailureHint {
+  meaning: string;
+  fix: string;
+  command?: string;
+}
+
 interface FailedImport {
   id: string;
   name: string;
   reason: string;
   format: string;
   failedAt: string;
+  hint: FailureHint;
 }
 
-// A calm, dismissible notice listing books that failed to import. Backed by the
-// session-gated /api/scan/failures endpoint, which returns each file's basename
-// (never its full path) plus the recorded reason.
+// A calm, dismissible notice listing books that failed to import — and,
+// per entry, what the failure actually means and the way out (the raw
+// parser reason stays visible for support, but the plain-language hint
+// leads). Backed by the session-gated /api/scan/failures endpoint,
+// which returns each file's basename (never its full path).
 //
-// Tone matches the rest of the library shell: zinc surface, amber accent for
-// the "needs a look" signal — informative, not alarming. Dismiss is local
-// state; if the failures persist they reappear on the next page load, so a
-// dismiss is "I've seen it," not "resolve it."
+// Two kinds of dismissal, deliberately distinct:
+//   × on the banner  = "I've seen it" (local, reappears next load)
+//   Ignore on a row  = admin: "stop telling everyone about this file"
+//     (persisted; the row resurfaces only if the file's contents change,
+//     because a changed file clears its failure record on re-scan).
 export function FailedImportsBanner() {
-  const { data } = useSWR<{ failures: FailedImport[] }>(
+  const { data, mutate } = useSWR<{ failures: FailedImport[] }>(
     "/api/scan/failures",
     fetcher,
     { refreshInterval: 15000 },
   );
+  const { data: me } = useSWR<{ user: { role: string } | null }>("/api/me", fetcher);
+  const isAdmin = me?.user?.role === "admin";
   const [dismissed, setDismissed] = useState(false);
+  const [open, setOpen] = useState<string | null>(null);
+
+  async function ignore(id: string) {
+    await fetch(`/api/scan/failures/${id}`, { method: "PATCH" }).catch(() => {});
+    await mutate();
+  }
 
   const failures = data?.failures ?? [];
   if (dismissed || failures.length === 0) return null;
@@ -48,14 +66,43 @@ export function FailedImportsBanner() {
               : `${failures.length} books couldn't be imported`}
           </p>
           <p className="text-xs text-zinc-500">
-            {"These files are in a watched folder but their contents couldn't be read. Re-export or replace them and they'll import automatically."}
+            Fixing or replacing a file re-imports it automatically — no rescan
+            needed. Click a file for what its error means and the way out.
           </p>
-          <ul className="space-y-1 pt-0.5">
+          <ul className="space-y-1.5 pt-0.5">
             {failures.map((f) => (
               <li key={f.id} className="text-xs text-zinc-400">
-                <span className="font-medium text-zinc-300">{f.name}</span>
-                <span className="text-zinc-600">{"  —  "}</span>
-                <span className="text-zinc-500">{f.reason}</span>
+                <div className="flex items-baseline justify-between gap-3">
+                  <button
+                    onClick={() => setOpen(open === f.id ? null : f.id)}
+                    className="min-w-0 truncate text-left font-medium text-zinc-300 underline-offset-2 hover:underline"
+                  >
+                    {f.name}
+                  </button>
+                  {isAdmin && (
+                    <button
+                      onClick={() => ignore(f.id)}
+                      title="Stop showing this file (it resurfaces only if the file changes)"
+                      className="flex-none text-zinc-600 transition-colors hover:text-zinc-300"
+                    >
+                      Ignore
+                    </button>
+                  )}
+                </div>
+                {open === f.id && (
+                  <div className="mt-1.5 space-y-1.5 rounded-md border border-zinc-800 bg-zinc-900/60 p-2.5">
+                    <p className="text-zinc-300">{f.hint.meaning}</p>
+                    <p className="text-zinc-500">{f.hint.fix}</p>
+                    {f.hint.command && (
+                      <code className="block overflow-x-auto rounded bg-zinc-950 px-2 py-1.5 font-mono text-[11px] text-zinc-300">
+                        {f.hint.command}
+                      </code>
+                    )}
+                    <p className="text-zinc-600">
+                      Importer said: <span className="text-zinc-500">{f.reason}</span>
+                    </p>
+                  </div>
+                )}
               </li>
             ))}
           </ul>
