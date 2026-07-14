@@ -67,7 +67,7 @@ export function FailedImportsBanner() {
           </p>
           <p className="text-xs text-zinc-500">
             Fixing or replacing a file re-imports it automatically — no rescan
-            needed. Click a file for what its error means and the way out.
+            needed. Click a file for what its error means and how to fix it.
           </p>
           <ul className="space-y-1.5 pt-0.5">
             {failures.map((f) => (

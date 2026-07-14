@@ -40,12 +40,11 @@ export default async function SetupPrivacyPage() {
           metadata of their own.
         </p>
         <p className="rounded-md border border-zinc-800 bg-zinc-900/60 p-3 text-xs text-zinc-400">
-          If enabled, each lookup sends that book&apos;s <b>title, author, and
-          ISBN</b> — and, like any internet request, this server&apos;s IP
-          address — to OpenLibrary. In plain terms: a third party could learn
-          what books are in this library. Nothing else is ever sent, lookups
-          only run when someone here triggers them, and nothing is sent at
-          all if this stays off.
+          If enabled, each lookup sends the book&apos;s <b>title, author, and
+          ISBN</b>, plus this server&apos;s IP address, to OpenLibrary — so
+          OpenLibrary can see which books are looked up. Nothing else is sent,
+          lookups run only when triggered from this app, and nothing is sent
+          at all while this is off.
         </p>
         <form action={choose} className="space-y-3">
           <button

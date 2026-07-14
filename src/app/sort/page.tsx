@@ -55,8 +55,8 @@ export default function SortPage() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const r = (await res.json()) as AutoResult;
       setAutoMsg(
-        `Looked up ${r.processed}: ${r.shelved} shelved, ${r.suggested} parked for review, ` +
-          `${r.skipped} no match. ${r.remaining > 0 ? `${r.remaining} left — run it again.` : "Nothing left to look up."}`,
+        `Looked up ${r.processed}: ${r.shelved} shelved, ${r.suggested} saved for review, ` +
+          `${r.skipped} no match. ${r.remaining > 0 ? `${r.remaining} remaining.` : "Done."}`,
       );
       await mutate();
     } catch (err) {
@@ -76,7 +76,7 @@ export default function SortPage() {
           <ArrowLeft size={14} />
           Library
         </Link>
-        <h1 className="text-lg font-semibold text-zinc-100">Sort the Unsorted pile</h1>
+        <h1 className="text-lg font-semibold text-zinc-100">Sort books</h1>
       </div>
 
       <p className="text-xs text-zinc-500">
@@ -88,9 +88,8 @@ export default function SortPage() {
 
       {isAdmin && !privacy?.onlineLookups && (
         <p className="text-xs text-zinc-500">
-          Online lookups are off for this install, so shelving here is fully
-          manual. To let the reader look unsorted books up on OpenLibrary
-          (with the tradeoff stated plainly), see{" "}
+          Online lookups are off, so shelving here is manual. To enable
+          OpenLibrary lookups for unsorted books, see{" "}
           <Link
             href="/settings/privacy"
             className="text-amber-400/90 underline-offset-2 hover:underline"
@@ -113,9 +112,9 @@ export default function SortPage() {
           </button>
           <p className="text-xs text-zinc-600">
             Looks each book up on OpenLibrary by title/author/ISBN. Confident
-            matches are shelved directly; uncertain ones are parked as normal
-            metadata suggestions on the book&apos;s page for review. One batch
-            per click, politely rate-limited.
+            matches are shelved directly; uncertain ones are saved as metadata
+            suggestions to review on the book&apos;s page. One batch per
+            click, rate-limited.
           </p>
           {autoMsg && <p className="text-xs text-zinc-400">{autoMsg}</p>}
         </div>

@@ -186,7 +186,7 @@ export default function Home() {
                 href="/sort"
                 className="text-xs text-amber-400/90 underline-offset-2 hover:underline"
               >
-                Sort the Unsorted pile →
+                Sort unsorted books →
               </Link>
             </div>
           )}
