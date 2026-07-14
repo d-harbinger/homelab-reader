@@ -106,3 +106,6 @@ graveyard-logs/
 ink-prototype.html
 ink-drawn-verify.png
 test-library/
+
+# Theme e2e reference shots (regenerated per run)
+e2e/screenshots/
