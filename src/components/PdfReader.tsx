@@ -444,10 +444,11 @@ export function PdfReader({
 
   // Dismiss popovers on outside click (microtask skips the opening click).
   useEffect(() => {
-    if (!selection && !openMenu) return;
+    if (!selection && !openMenu && !ctxMenu) return;
     const onDocClick = () => {
       setSelection(null);
       setOpenMenu(null);
+      setCtxMenu(null);
     };
     const t = setTimeout(
       () => document.addEventListener("click", onDocClick, { once: true }),
