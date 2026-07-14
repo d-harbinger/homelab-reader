@@ -1,10 +1,19 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import useSWR from "swr";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Sparkles } from "lucide-react";
 import { fetcher } from "@/lib/fetcher";
 import { GenreShelf } from "@/components/GenreShelf";
+
+interface AutoResult {
+  processed: number;
+  shelved: number;
+  suggested: number;
+  skipped: number;
+  remaining: number;
+}
 
 // The bulk-sorting bench: every book still on the Unsorted pile, one
 // row each, with the same shelf picker the detail page carries — so a
@@ -20,13 +29,38 @@ interface SortRow {
 }
 
 export default function SortPage() {
-  const { data, isLoading } = useSWR<{ books: SortRow[] }>(
+  const { data, isLoading, mutate } = useSWR<{ books: SortRow[] }>(
     "/api/shelves/unsorted",
     fetcher,
   );
   const { data: me } = useSWR<{ user: { role: string } | null }>("/api/me", fetcher);
   const isAdmin = me?.user?.role === "admin";
   const books = data?.books ?? [];
+
+  const [autoBusy, setAutoBusy] = useState(false);
+  const [autoMsg, setAutoMsg] = useState("");
+
+  // One polite OpenLibrary batch per click; the response says whether
+  // another click is worth it. Deliberately not an auto-loop — the
+  // admin stays in control of how much lookup traffic a session sends.
+  async function runAutoBatch() {
+    setAutoBusy(true);
+    setAutoMsg("");
+    try {
+      const res = await fetch("/api/shelves/auto", { method: "POST" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const r = (await res.json()) as AutoResult;
+      setAutoMsg(
+        `Looked up ${r.processed}: ${r.shelved} shelved, ${r.suggested} parked for review, ` +
+          `${r.skipped} no match. ${r.remaining > 0 ? `${r.remaining} left — run it again.` : "Nothing left to look up."}`,
+      );
+      await mutate();
+    } catch (err) {
+      setAutoMsg(`Lookup failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setAutoBusy(false);
+    }
+  }
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-10 space-y-6">
@@ -47,6 +81,26 @@ export default function SortPage() {
         unsorted. Pick a shelf per row; the choice saves immediately and is
         never overwritten by rescans. The Shelves view reflects it right away.
       </p>
+
+      {isAdmin && (
+        <div className="space-y-2">
+          <button
+            onClick={runAutoBatch}
+            disabled={autoBusy || books.length === 0}
+            className="inline-flex items-center gap-2 rounded-md bg-amber-500 px-3 py-1.5 text-xs font-medium text-zinc-950 transition-colors hover:bg-amber-400 disabled:opacity-50"
+          >
+            <Sparkles size={14} />
+            {autoBusy ? "Looking books up…" : "Look shelves up online (batch of 20)"}
+          </button>
+          <p className="text-xs text-zinc-600">
+            Looks each book up on OpenLibrary by title/author/ISBN. Confident
+            matches are shelved directly; uncertain ones are parked as normal
+            metadata suggestions on the book&apos;s page for review. One batch
+            per click, politely rate-limited.
+          </p>
+          {autoMsg && <p className="text-xs text-zinc-400">{autoMsg}</p>}
+        </div>
+      )}
 
       {isLoading && <p className="text-sm text-zinc-600">Loading…</p>}
       {!isLoading && books.length === 0 && (
