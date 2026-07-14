@@ -14,6 +14,7 @@ import {
   ZoomOut,
 } from "lucide-react";
 import { ReaderContextMenu } from "./ReaderContextMenu";
+import { ThemeToggle } from "./ThemeToggle";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
@@ -717,6 +718,7 @@ export function PdfReader({
           >
             <Pencil size={14} />
           </button>
+          <ThemeToggle />
           <button
             onClick={() => setPanelOpen((v) => !v)}
             aria-label="Highlights and notes"
@@ -785,7 +787,7 @@ export function PdfReader({
                 <div
                   data-page={page}
                   ref={registerPage(page)}
-                  className={`relative shadow-2xl shadow-black/60 ${drawMode ? "select-none" : ""}`}
+                  className={`book-paper relative shadow-2xl shadow-black/60 ${drawMode ? "select-none" : ""}`}
                 >
                   <Page
                     pageNumber={page}
@@ -826,7 +828,7 @@ export function PdfReader({
                       key={p}
                       data-page={p}
                       ref={registerPage(p)}
-                      className={`relative ${active ? "shadow-2xl shadow-black/60" : ""} ${drawMode ? "select-none" : ""}`}
+                      className={`book-paper relative ${active ? "shadow-2xl shadow-black/60" : ""} ${drawMode ? "select-none" : ""}`}
                     >
                       {active ? (
                         <>
@@ -1036,14 +1038,15 @@ function HighlightLayer({
               e.stopPropagation();
               onOpen(h, e);
             }}
-            className="pointer-events-auto absolute cursor-pointer"
+            // pdf-hl: globals.css flips the blend to "screen" in dark mode —
+            // multiply over inverted (dark) paper would vanish.
+            className="pdf-hl pointer-events-auto absolute cursor-pointer"
             style={{
               left: `${r.x * 100}%`,
               top: `${r.y * 100}%`,
               width: `${r.w * 100}%`,
               height: `${r.h * 100}%`,
               background: HIGHLIGHT_COLORS[h.color].fill,
-              mixBlendMode: "multiply",
             }}
           />
         )),

@@ -180,6 +180,17 @@ export default function Home() {
             <Section title="Recently added" books={recentlyAdded} />
           )}
 
+          {shelfSections.some((s) => s.genre === "Unsorted") && (
+            <div className="flex items-center justify-end">
+              <Link
+                href="/sort"
+                className="text-xs text-amber-400/90 underline-offset-2 hover:underline"
+              >
+                Sort the Unsorted pile →
+              </Link>
+            </div>
+          )}
+
           {shelfSections.map((s) => (
             <Section
               key={s.genre}
@@ -224,6 +235,14 @@ export default function Home() {
         </aside>
 
         <div className="min-w-0 flex-1 space-y-12">
+          {!folderActive && (
+            <Section
+              title="Continue reading"
+              books={continueReading}
+              hideWhenEmpty
+            />
+          )}
+
           {!folderActive && genreSections.length > 0 && (
             <div className="space-y-12">
               <div className="flex items-center justify-between">
