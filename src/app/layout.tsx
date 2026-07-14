@@ -17,6 +17,16 @@ export default function RootLayout({
   return (
     <html lang="en" className="bg-zinc-950">
       <body className="min-h-screen bg-zinc-950 text-zinc-100 antialiased">
+        {/* Apply the stored theme before anything paints — a blocking
+            inline script at the top of body prevents the dark→light
+            flash. Light mode is a zinc-scale variable remap in
+            globals.css keyed off data-theme on <html>. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              '(function(){try{if(localStorage.getItem("hlr-theme")==="light")document.documentElement.dataset.theme="light"}catch(e){}})()',
+          }}
+        />
         {children}
       </body>
     </html>
