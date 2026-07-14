@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { withAdmin } from "@/lib/route-helpers";
 import { walkAndScan } from "@/lib/scanner";
+import { backfillGenres } from "@/lib/library/genre-backfill";
 import { markFullScan, watcherStatus } from "@/lib/scanner/watcher";
 import { enabledLocationPaths, listScanLocations, touchScanLocation } from "@/lib/scanner/locations";
 
@@ -21,11 +22,22 @@ export const POST = withAdmin(async () => {
       await touchScanLocation(loc.id);
     }
     markFullScan();
+    // Shelve anything still Unsorted whose subjects (stored as tags)
+    // now classify — fills NULL genres only, never owner-set shelves.
+    // Best-effort by contract, like enrichment: a failed backfill must
+    // never fail the scan that just succeeded.
+    let genresAssigned = 0;
+    try {
+      genresAssigned = await backfillGenres();
+    } catch (err) {
+      console.error("[scan] genre backfill failed:", err);
+    }
     return NextResponse.json({
       ok: true,
       libraries: enabled.map((l) => l.path),
       scanned,
       errors,
+      genresAssigned,
       durationMs: Date.now() - startedAt,
     });
   } catch (err) {

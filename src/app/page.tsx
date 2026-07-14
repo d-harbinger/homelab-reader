@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import useSWR, { mutate } from "swr";
 import Link from "next/link";
 import { LibraryHeader } from "@/components/LibraryHeader";
@@ -28,21 +28,47 @@ interface ContinueRow {
   percent: number;
 }
 
-interface TagSection {
-  tag: string;
-  books: BookCardData[];
-}
-
 interface GenreSection {
   genre: string; // raw folder key (stable React key)
   label: string; // display name (rename override, else the key)
   books: BookCardData[];
 }
 
+interface ShelfSection {
+  genre: string; // taxonomy shelf name (or a custom one / "Unsorted")
+  label: string;
+  count: number;
+  books: BookCardData[];
+}
+
+// The two library views. Shelves = the bookstore: metadata-assigned
+// genres (lib/library/genre-taxonomy) with Continue/Recently rows.
+// Folders = disk truth: the folder rail + the filterable grid. The
+// choice persists per browser.
+type LibraryView = "shelves" | "folders";
+const VIEW_KEY = "hlr-library-view";
+
 export default function Home() {
   // The selected folder rail path ("" = all books / no filter). When set, the
   // library query carries it through to the server-side folder filter.
   const [selectedFolder, setSelectedFolder] = useState("");
+
+  const [view, setView] = useState<LibraryView>("shelves");
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(VIEW_KEY) === "folders") setView("folders");
+    } catch {
+      /* storage unavailable — default view stands */
+    }
+  }, []);
+  function switchView(next: LibraryView) {
+    setView(next);
+    try {
+      localStorage.setItem(VIEW_KEY, next);
+    } catch {
+      /* storage unavailable */
+    }
+  }
 
   const { data: status, mutate: refreshStatus } = useSWR<ScanStatus>(
     "/api/scan/status",
@@ -65,13 +91,13 @@ export default function Home() {
     fetcher,
     { refreshInterval: 10000 },
   );
-  const { data: tagsResp } = useSWR<{ sections: TagSection[] }>(
-    "/api/tags/sections",
+  const { data: genresResp } = useSWR<{ sections: GenreSection[] }>(
+    "/api/genres/sections",
     fetcher,
     { refreshInterval: 30000 },
   );
-  const { data: genresResp } = useSWR<{ sections: GenreSection[] }>(
-    "/api/genres/sections",
+  const { data: shelvesResp } = useSWR<{ sections: ShelfSection[] }>(
+    "/api/shelves/sections",
     fetcher,
     { refreshInterval: 30000 },
   );
@@ -90,8 +116,11 @@ export default function Home() {
   const books = booksResp?.books ?? [];
   const continueReading = continueResp?.books ?? [];
   const recentlyAdded = recentResp?.books ?? [];
-  const tagSections = tagsResp?.sections ?? [];
   const genreSections = genresResp?.sections ?? [];
+  // Note: the raw-subject tag rows (/api/tags/sections) no longer render
+  // on the home page — the normalized bookstore shelves supersede them.
+  // The tag data itself stays; it feeds the classifier and the backfill.
+  const shelfSections = shelvesResp?.sections ?? [];
 
   // Don't echo Recently Added if the library is small enough that it'd
   // duplicate the entire Library grid below — keeps tiny libraries from
@@ -115,6 +144,74 @@ export default function Home() {
 
       <FailedImportsBanner />
 
+      {/* Shelves = the bookstore view (metadata genres); Folders = disk
+          truth (the folder rail + filterable grid). One choice, remembered. */}
+      <div
+        role="tablist"
+        aria-label="Library view"
+        className="inline-flex rounded-md border border-zinc-800 p-0.5 text-xs"
+      >
+        {(["shelves", "folders"] as const).map((v) => (
+          <button
+            key={v}
+            role="tab"
+            aria-selected={view === v}
+            onClick={() => switchView(v)}
+            className={`rounded px-3 py-1.5 font-medium capitalize transition-colors ${
+              view === v
+                ? "bg-zinc-900 text-zinc-100"
+                : "text-zinc-500 hover:text-zinc-200"
+            }`}
+          >
+            {v}
+          </button>
+        ))}
+      </div>
+
+      {view === "shelves" && (
+        <div className="space-y-12">
+          <Section
+            title="Continue reading"
+            books={continueReading}
+            hideWhenEmpty
+          />
+
+          {showRecent && (
+            <Section title="Recently added" books={recentlyAdded} />
+          )}
+
+          {shelfSections.map((s) => (
+            <Section
+              key={s.genre}
+              title={s.count > s.books.length ? `${s.label} · ${s.count}` : s.label}
+              books={s.books}
+            />
+          ))}
+
+          {shelfSections.length === 0 && (
+            <p className="text-sm text-zinc-600">
+              {books.length > 0 ? (
+                "No shelves yet — run a rescan to classify the library."
+              ) : (status?.watchedPaths?.length ?? 0) === 0 ? (
+                <>
+                  No library folders yet. An admin can add one in{" "}
+                  <Link
+                    href="/settings/libraries"
+                    className="text-amber-400/90 underline-offset-2 hover:underline"
+                  >
+                    Settings → Libraries
+                  </Link>
+                  .
+                </>
+              ) : (
+                "No books found yet — drop EPUBs or PDFs into a library folder and they'll appear here."
+              )}
+            </p>
+          )}
+        </div>
+      )}
+
+      {view === "folders" && (
       <div className="flex flex-col gap-8 lg:flex-row">
         {/* self-start stops the default flex stretch so the rail is shorter
             than the scroll area and sticky has room to travel; its own
@@ -127,41 +224,34 @@ export default function Home() {
         </aside>
 
         <div className="min-w-0 flex-1 space-y-12">
-          {!folderActive && (
-            <>
-              <Section
-                title="Continue reading"
-                books={continueReading}
-                hideWhenEmpty
-              />
-
-              {showRecent && (
-                <Section title="Recently added" books={recentlyAdded} />
-              )}
-
-              {genreSections.length > 0 && (
-                <div className="space-y-12">
-                  <div className="flex items-center justify-between">
-                    <h2 className="text-xs font-medium uppercase tracking-wider text-zinc-500">
-                      Genres
-                    </h2>
-                    <Link
-                      href="/settings/genres"
-                      className="text-xs text-zinc-500 transition-colors hover:text-zinc-200"
-                    >
-                      Manage genres
-                    </Link>
-                  </div>
-                  {genreSections.map((s) => (
-                    <Section key={s.genre} title={s.label} books={s.books} />
-                  ))}
-                </div>
-              )}
-
-              {tagSections.map((s) => (
-                <Section key={s.tag} title={s.tag} books={s.books} />
+          {!folderActive && genreSections.length > 0 && (
+            <div className="space-y-12">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xs font-medium uppercase tracking-wider text-zinc-500">
+                  Folder genres
+                </h2>
+                <span className="flex items-center gap-4">
+                  {/* Server-generated mv script projecting the assigned
+                      shelves onto the folder layout; review + run host-side,
+                      then rescan (hash re-link keeps annotations). */}
+                  <a
+                    href="/api/library/organize-plan"
+                    className="text-xs text-zinc-500 transition-colors hover:text-zinc-200"
+                  >
+                    Organize script
+                  </a>
+                  <Link
+                    href="/settings/genres"
+                    className="text-xs text-zinc-500 transition-colors hover:text-zinc-200"
+                  >
+                    Manage genres
+                  </Link>
+                </span>
+              </div>
+              {genreSections.map((s) => (
+                <Section key={s.genre} title={s.label} books={s.books} />
               ))}
-            </>
+            </div>
           )}
 
           <Section title={libraryTitle} books={books} layout="grid" />
@@ -188,6 +278,7 @@ export default function Home() {
           )}
         </div>
       </div>
+      )}
     </main>
   );
 }

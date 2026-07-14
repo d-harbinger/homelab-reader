@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { BookAnnotations } from "@/components/BookAnnotations";
 import { CiteButton } from "@/components/CiteButton";
+import { GenreShelf } from "@/components/GenreShelf";
 import { SuggestionsPanel } from "@/components/SuggestionsPanel";
 
 function formatBytes(n: number | null | undefined): string | null {
@@ -133,6 +134,11 @@ export default async function BookDetail({
               </p>
             </div>
           )}
+
+          <div className="flex items-center gap-3 border-t border-zinc-900 pt-6">
+            <h2 className="text-xs uppercase tracking-wider text-zinc-500">Shelf</h2>
+            <GenreShelf bookId={book.id} genre={book.genre} editable={me?.role === "admin"} />
+          </div>
 
           {book.tags.length > 0 && (
             <div className="flex flex-wrap gap-2 border-t border-zinc-900 pt-6">

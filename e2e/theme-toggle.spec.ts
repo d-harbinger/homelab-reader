@@ -27,13 +27,24 @@ async function bodyLightness(page: import("@playwright/test").Page): Promise<num
 }
 
 test("theme toggle: light remap applies, persists across reload, reverts", async ({ page }) => {
-  // Fresh scratch DB per run → create the admin first (same flow the
-  // core-flow spec gates in detail).
+  // Create the first admin, or log in when another spec in the same run
+  // already did — same order-tolerant bootstrap the textquote spec uses.
   await page.goto("/setup");
-  await page.fill("#username", ADMIN.username);
-  await page.fill("#password", ADMIN.password);
-  await page.fill("#confirm", ADMIN.password);
-  await page.getByRole("button", { name: /create admin/i }).click();
+  const setupOffered = await page
+    .getByRole("heading", { name: /welcome to homelab-reader/i })
+    .isVisible()
+    .catch(() => false);
+  if (setupOffered) {
+    await page.fill("#username", ADMIN.username);
+    await page.fill("#password", ADMIN.password);
+    await page.fill("#confirm", ADMIN.password);
+    await page.getByRole("button", { name: /create admin/i }).click();
+  } else {
+    await page.goto("/login");
+    await page.fill("#username", ADMIN.username);
+    await page.fill("#password", ADMIN.password);
+    await page.getByRole("button", { name: /^sign in$/i }).click();
+  }
   await page.waitForURL("**/");
 
   // Dark is the default: no data-theme attribute, near-black chrome.
