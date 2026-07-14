@@ -58,6 +58,15 @@ lan_addresses() {
 configure() {
   echo "homelab-reader — first-time setup"
   echo
+  echo "This launcher asks two questions, saves the answers to a small settings"
+  echo "file (.env), and starts the reader. The answers can be changed at any"
+  echo "time by running ./launch.sh again and pressing r — nothing here is"
+  echo "permanent, and nothing here can delete the library or the notes."
+  echo
+  echo "Question 1 is where the book files live (the reader only ever READS"
+  echo "that folder). Question 2 is who should be able to open the reader:"
+  echo "just this machine, or other devices on the home network."
+  echo
   # The one question that has no sane default: where the books live.
   local books current
   current=$(get_env BOOKS_HOST_PATH)
@@ -72,6 +81,12 @@ configure() {
   set_env BOOKS_HOST_PATH "$books"
   echo
   echo "Which network should the reader answer on?"
+  echo
+  echo "A box can be connected to more than one network at once (wired, wifi…)"
+  echo "and each connection has its own address. Devices reach the reader on"
+  echo "the address chosen here. With a single connection, the specific address"
+  echo "and 'all interfaces' behave identically — the specific one is simply"
+  echo "tidier. 'This machine only' keeps everything private to the box."
   echo
   local i=1; local -a addrs=()
   while IFS= read -r line; do
