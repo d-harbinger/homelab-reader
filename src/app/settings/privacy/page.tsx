@@ -10,10 +10,12 @@ import { fetcher } from "@/lib/fetcher";
 // send to the internet, stated in the same plain language the setup
 // step uses. Admin-only writes; everyone can read the state.
 export default function PrivacySettingsPage() {
-  const { data, mutate } = useSWR<{ onlineLookups: boolean; decided: boolean }>(
-    "/api/settings/privacy",
-    fetcher,
-  );
+  const { data, mutate } = useSWR<{
+    onlineLookups: boolean;
+    decided: boolean;
+    lookedUpBooks: number;
+    purgeableRows: number;
+  }>("/api/settings/privacy", fetcher);
   const { data: me } = useSWR<{ user: { role: string } | null }>("/api/me", fetcher);
   const isAdmin = me?.user?.role === "admin";
   const [busy, setBusy] = useState(false);
@@ -38,6 +40,23 @@ export default function PrivacySettingsPage() {
   }
 
   const on = data?.onlineLookups ?? false;
+  const [purgeMsg, setPurgeMsg] = useState("");
+
+  async function purge() {
+    setBusy(true);
+    setPurgeMsg("");
+    try {
+      const res = await fetch("/api/settings/privacy", { method: "DELETE" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const r = (await res.json()) as { purged: number };
+      setPurgeMsg(`Removed ${r.purged} stored lookup result${r.purged === 1 ? "" : "s"}.`);
+      await mutate();
+    } catch (err) {
+      setPurgeMsg(`Purge failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <main className="mx-auto max-w-2xl px-6 py-10 space-y-6">
@@ -82,6 +101,40 @@ export default function PrivacySettingsPage() {
           <p className="text-xs text-zinc-600">An admin can change this.</p>
         )}
         {error && <p className="text-xs text-red-400">{error}</p>}
+      </section>
+
+      <section className="space-y-3 rounded-md border border-zinc-800 p-4">
+        <h2 className="text-sm font-medium text-zinc-100">The receipt</h2>
+        <p className="text-xs text-zinc-400">
+          {data ? (
+            data.lookedUpBooks === 0 ? (
+              "No book in this library has OpenLibrary-derived data."
+            ) : (
+              <>
+                <b className="text-zinc-200">{data.lookedUpBooks}</b>{" "}
+                book{data.lookedUpBooks === 1 ? " has" : "s have"} stored
+                OpenLibrary lookup results ({data.purgeableRows} never acted
+                on). This is what past lookups brought back — the outbound
+                queries themselves can&apos;t be unsent, but the residue can be
+                removed. Accepted suggestions stay: accepting one was an
+                explicit choice, and its data was deliberately written onto the
+                book.
+              </>
+            )
+          ) : (
+            "Loading…"
+          )}
+        </p>
+        {isAdmin && (data?.purgeableRows ?? 0) > 0 && (
+          <button
+            onClick={purge}
+            disabled={busy}
+            className="rounded-md border border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-200 transition-colors hover:bg-zinc-900 disabled:opacity-50"
+          >
+            {busy ? "Removing…" : `Remove ${data!.purgeableRows} unacted lookup results`}
+          </button>
+        )}
+        {purgeMsg && <p className="text-xs text-zinc-400">{purgeMsg}</p>}
       </section>
     </main>
   );
