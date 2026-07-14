@@ -235,3 +235,31 @@ does not roll migrations back. If a bad deploy applied a new migration, roll the
 code back and — if the older code cannot read the newer schema — restore the
 data volume from the pre-deploy backup (above) before starting. Taking a volume
 backup before any redeploy that includes a migration is the cheap insurance.
+
+## What talks to the internet (privacy contract)
+
+By default: **nothing.** A fresh install serves the library, reader,
+notes, and shelves entirely from the box; no request ever leaves it.
+
+There is exactly one optional outbound integration, and it is off until
+a human turns it on:
+
+- **OpenLibrary lookups** — fills in missing covers, authors, and
+  shelves by querying `openlibrary.org` (a free service run by the
+  nonprofit Internet Archive). When enabled, each lookup sends the
+  book's **title, author, and ISBN** — plus, as with any internet
+  request, the server's IP address. In plain terms: a third party could
+  learn what books are in the library. Lookups fire only on two
+  triggers, both visible in the UI: importing a book with thin embedded
+  metadata, and the Sort page's "look shelves up online" button
+  (batched and rate-limited out of respect for a community service).
+
+The choice is asked once, in plain language, as the second step of
+first-run setup, and can be changed at any time under **Settings →
+Privacy** (admin only). The consent is stored in the database
+(`AppSetting.onlineLookups`), so it survives updates and restarts and
+travels with the data volume. When off, the lookup endpoints refuse to
+run and the import-time enrichment is skipped — not hidden, disabled.
+
+Any future feature that sends anything anywhere gets the same
+treatment: named in this section, off by default, consented in the UI.

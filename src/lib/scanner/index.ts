@@ -7,6 +7,7 @@ import { extractPdf } from "./pdf";
 import { writeCover } from "./covers";
 import { enrichBook, isThin } from "@/lib/metadata/enrich";
 import { classifyGenre } from "@/lib/library/genre-taxonomy";
+import { onlineLookupsEnabled } from "@/lib/app-settings";
 import { clearFailedImport, recordFailedImport } from "./failed-imports";
 
 export type BookFormat = "epub" | "pdf";
@@ -189,6 +190,10 @@ async function enrichNewBook(
   authorNames: string[],
 ): Promise<void> {
   try {
+    // Consent gate: enrichment talks to OpenLibrary, and this install
+    // may not have opted into online lookups (default off — the
+    // setup-time privacy choice, changeable in Settings → Privacy).
+    if (!(await onlineLookupsEnabled())) return;
     const thin = isThin({
       title: book.title,
       filePath,

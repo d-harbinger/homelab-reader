@@ -282,3 +282,11 @@ model FailedImport {
   error     String
   createdAt DateTime @default(now())
 }
+
+// Small key/value store for app-wide choices that belong to the DEPLOYMENT,
+// not to a user — the first one is the online-lookups consent (see
+// lib/app-settings). Strings only; helpers own the typing.
+model AppSetting {
+  key   String @id
+  value String
+}

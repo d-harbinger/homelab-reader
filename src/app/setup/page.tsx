@@ -49,7 +49,10 @@ export default async function SetupPage({
     }
 
     try {
-      await signIn("credentials", { username, password, redirectTo: "/" });
+      // Step 2 of first-run: the privacy choice (what may talk to the
+      // internet) — asked once, in plain language, before the library
+      // ever loads.
+      await signIn("credentials", { username, password, redirectTo: "/setup/privacy" });
     } catch (e) {
       if (e instanceof NextAuthError) redirect("/login");
       throw e;

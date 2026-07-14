@@ -34,6 +34,10 @@ export default function SortPage() {
     fetcher,
   );
   const { data: me } = useSWR<{ user: { role: string } | null }>("/api/me", fetcher);
+  const { data: privacy } = useSWR<{ onlineLookups: boolean }>(
+    "/api/settings/privacy",
+    fetcher,
+  );
   const isAdmin = me?.user?.role === "admin";
   const books = data?.books ?? [];
 
@@ -82,7 +86,22 @@ export default function SortPage() {
         never overwritten by rescans. The Shelves view reflects it right away.
       </p>
 
-      {isAdmin && (
+      {isAdmin && !privacy?.onlineLookups && (
+        <p className="text-xs text-zinc-500">
+          Online lookups are off for this install, so shelving here is fully
+          manual. To let the reader look unsorted books up on OpenLibrary
+          (with the tradeoff stated plainly), see{" "}
+          <Link
+            href="/settings/privacy"
+            className="text-amber-400/90 underline-offset-2 hover:underline"
+          >
+            Settings → Privacy
+          </Link>
+          .
+        </p>
+      )}
+
+      {isAdmin && privacy?.onlineLookups && (
         <div className="space-y-2">
           <button
             onClick={runAutoBatch}

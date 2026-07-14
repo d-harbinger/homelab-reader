@@ -45,6 +45,10 @@ test("text-quote highlight resolves to a CFI, paints, and upgrades in the DB", a
       await page.fill("#password", ADMIN.password);
       await page.fill("#confirm", ADMIN.password);
       await page.getByRole("button", { name: /create admin/i }).click();
+      // First-run step 2 (privacy choice): decline online lookups so the
+      // suite runs fully offline.
+      await page.waitForURL("**/setup/privacy");
+      await page.getByRole("button", { name: /keep everything offline/i }).click();
       await page.waitForURL("**/");
     } else {
       await page.goto("/login");
