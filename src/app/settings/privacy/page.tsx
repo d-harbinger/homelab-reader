@@ -49,7 +49,7 @@ export default function PrivacySettingsPage() {
       const res = await fetch("/api/settings/privacy", { method: "DELETE" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const r = (await res.json()) as { purged: number };
-      setPurgeMsg(`Removed ${r.purged} stored lookup result${r.purged === 1 ? "" : "s"}.`);
+      setPurgeMsg(`Removed ${r.purged} result${r.purged === 1 ? "" : "s"}.`);
       await mutate();
     } catch (err) {
       setPurgeMsg(`Purge failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -79,15 +79,13 @@ export default function PrivacySettingsPage() {
           </span>
         </h2>
         <p className="text-xs text-zinc-400">
-          When allowed, the reader can look books up on OpenLibrary.org (a free
-          service by the nonprofit Internet Archive) to fill in missing covers,
-          authors, and shelves. Each lookup sends that book&apos;s title,
-          author, and ISBN — and this server&apos;s IP address — to OpenLibrary;
-          a third party could learn what books are in this library. Lookups run
-          only when someone triggers them (importing a book with thin metadata,
-          or the Sort page&apos;s lookup button). When off, this install sends
-          nothing anywhere. Everything else — reading, notes, highlights,
-          shelves — is always fully local either way.
+          Fills in missing covers, authors, and shelves using OpenLibrary.org
+          (run by the Internet Archive). Each lookup sends the book&apos;s
+          title, author, and ISBN, plus this server&apos;s IP address — so
+          OpenLibrary can see which books are looked up. Lookups run only when
+          triggered: importing a book with thin metadata, or the lookup button
+          on the Sort page. When off, the app makes no outbound requests.
+          Reading, notes, highlights, and shelves are always stored locally.
         </p>
         {isAdmin ? (
           <button
@@ -104,21 +102,18 @@ export default function PrivacySettingsPage() {
       </section>
 
       <section className="space-y-3 rounded-md border border-zinc-800 p-4">
-        <h2 className="text-sm font-medium text-zinc-100">The receipt</h2>
+        <h2 className="text-sm font-medium text-zinc-100">Stored lookup data</h2>
         <p className="text-xs text-zinc-400">
           {data ? (
             data.lookedUpBooks === 0 ? (
-              "No book in this library has OpenLibrary-derived data."
+              "No lookup results are stored."
             ) : (
               <>
                 <b className="text-zinc-200">{data.lookedUpBooks}</b>{" "}
-                book{data.lookedUpBooks === 1 ? " has" : "s have"} stored
-                OpenLibrary lookup results ({data.purgeableRows} never acted
-                on). This is what past lookups brought back — the outbound
-                queries themselves can&apos;t be unsent, but the residue can be
-                removed. Accepted suggestions stay: accepting one was an
-                explicit choice, and its data was deliberately written onto the
-                book.
+                book{data.lookedUpBooks === 1 ? " has" : "s have"} lookup
+                results stored locally; {data.purgeableRows} of those results
+                were never applied. Applied results are part of a book&apos;s
+                metadata and are managed on its page.
               </>
             )
           ) : (
@@ -131,7 +126,7 @@ export default function PrivacySettingsPage() {
             disabled={busy}
             className="rounded-md border border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-200 transition-colors hover:bg-zinc-900 disabled:opacity-50"
           >
-            {busy ? "Removing…" : `Remove ${data!.purgeableRows} unacted lookup results`}
+            {busy ? "Removing…" : `Remove ${data!.purgeableRows} unapplied results`}
           </button>
         )}
         {purgeMsg && <p className="text-xs text-zinc-400">{purgeMsg}</p>}

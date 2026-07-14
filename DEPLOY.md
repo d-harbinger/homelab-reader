@@ -248,8 +248,8 @@ a human turns it on:
   shelves by querying `openlibrary.org` (a free service run by the
   nonprofit Internet Archive). When enabled, each lookup sends the
   book's **title, author, and ISBN** — plus, as with any internet
-  request, the server's IP address. In plain terms: a third party could
-  learn what books are in the library. Lookups fire only on two
+  request, the server's IP address — so OpenLibrary can see which books
+  are looked up. Lookups fire only on two
   triggers, both visible in the UI: importing a book with thin embedded
   metadata, and the Sort page's "look shelves up online" button
   (batched and rate-limited out of respect for a community service).
