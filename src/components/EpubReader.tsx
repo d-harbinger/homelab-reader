@@ -1152,9 +1152,7 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
         <HighlightMenu
           x={openMenu.x}
           y={openMenu.y}
-          activeColor={openMenu.color}
           hasNote={notes.some((n) => n.highlightId === openMenu.id)}
-          onPick={(c) => changeColor(openMenu.id, c)}
           onAddNote={openNoteEditor}
           onDelete={() => deleteHighlight(openMenu.id)}
         />
