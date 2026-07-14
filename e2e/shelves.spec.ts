@@ -37,7 +37,7 @@ test("shelves: genre PATCH shelves a book; views switch; organize plan projects 
   // Shelves is the default view; the seeded book (no subjects) sits on
   // the Unsorted pile and the folder rail is not rendered.
   await expect(page.getByRole("tab", { name: "shelves" })).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByText("Unsorted")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Unsorted" })).toBeVisible();
   await expect(page.getByText(EPUB_TITLE)).toBeVisible();
 
   // Shelve it via the allowlisted PATCH (the GenreShelf picker's wire call).

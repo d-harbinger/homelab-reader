@@ -14,6 +14,7 @@ import {
   ZoomOut,
 } from "lucide-react";
 import { ReaderContextMenu } from "./ReaderContextMenu";
+import { ThemeToggle } from "./ThemeToggle";
 import {
   ReaderToolbar,
   readSetting,
@@ -1145,6 +1146,7 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
               <Highlighter size={14} />
             </button>
           </div>
+          <ThemeToggle />
           <button
             onClick={() => setPanelOpen((v) => !v)}
             aria-label="Highlights and notes"
