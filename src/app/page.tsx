@@ -245,28 +245,11 @@ export default function Home() {
 
           {!folderActive && genreSections.length > 0 && (
             <div className="space-y-12">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xs font-medium uppercase tracking-wider text-zinc-500">
-                  Folder genres
-                </h2>
-                <span className="flex items-center gap-4">
-                  {/* Server-generated mv script projecting the assigned
-                      shelves onto the folder layout; review + run host-side,
-                      then rescan (hash re-link keeps annotations). */}
-                  <a
-                    href="/api/library/organize-plan"
-                    className="text-xs text-zinc-500 transition-colors hover:text-zinc-200"
-                  >
-                    Organize script
-                  </a>
-                  <Link
-                    href="/settings/genres"
-                    className="text-xs text-zinc-500 transition-colors hover:text-zinc-200"
-                  >
-                    Manage genres
-                  </Link>
-                </span>
-              </div>
+              {/* The organize-script and genre-prefs entries moved to the
+                  settings hub (owner ruling: this header isn't their place). */}
+              <h2 className="text-xs font-medium uppercase tracking-wider text-zinc-500">
+                Folder genres
+              </h2>
               {genreSections.map((s) => (
                 <Section key={s.genre} title={s.label} books={s.books} />
               ))}

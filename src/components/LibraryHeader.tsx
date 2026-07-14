@@ -3,10 +3,8 @@
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import useSWR from "swr";
-import { BookOpen, Copy, FolderTree, KeyRound, LogOut, Search, ShieldCheck, Users } from "lucide-react";
+import { BookOpen, LogOut, Search, Settings } from "lucide-react";
 import { doSignOut } from "@/app/actions";
-import { fetcher } from "@/lib/fetcher";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
 interface HeaderProps {
@@ -24,11 +22,8 @@ export function LibraryHeader({
 }: HeaderProps) {
   const router = useRouter();
   const [term, setTerm] = useState("");
-  const { data: me } = useSWR<{ user: { role: string } | null }>(
-    "/api/me",
-    fetcher,
-  );
-  const isAdmin = me?.user?.role === "admin";
+  // (Role-gating moved with the icons into the settings hub, which
+  // renders role-appropriate entries server-side.)
 
   function submitSearch(e: FormEvent) {
     e.preventDefault();
@@ -86,49 +81,15 @@ export function LibraryHeader({
         >
           Rescan
         </button>
-        {isAdmin && (
-          <>
-            <Link
-              href="/settings/libraries"
-              aria-label="Manage libraries"
-              title="Libraries"
-              className="rounded-md p-1.5 text-zinc-500 transition-colors hover:bg-zinc-900 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60"
-            >
-              <FolderTree size={15} />
-            </Link>
-            <Link
-              href="/settings/users"
-              aria-label="Manage users"
-              title="Users"
-              className="rounded-md p-1.5 text-zinc-500 transition-colors hover:bg-zinc-900 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60"
-            >
-              <Users size={15} />
-            </Link>
-          </>
-        )}
+        {/* Everything that used to be a row of per-page icons lives in
+            the settings hub now — one door, each entry explained inside. */}
         <Link
-          href="/duplicates"
-          aria-label="Duplicate report"
-          title="Duplicates"
+          href="/settings"
+          aria-label="Settings"
+          title="Settings"
           className="rounded-md p-1.5 text-zinc-500 transition-colors hover:bg-zinc-900 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60"
         >
-          <Copy size={15} />
-        </Link>
-        <Link
-          href="/settings/tokens"
-          aria-label="OPDS tokens"
-          title="OPDS tokens"
-          className="rounded-md p-1.5 text-zinc-500 transition-colors hover:bg-zinc-900 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60"
-        >
-          <KeyRound size={15} />
-        </Link>
-        <Link
-          href="/settings/privacy"
-          aria-label="Privacy"
-          title="Privacy — what may talk to the internet"
-          className="rounded-md p-1.5 text-zinc-500 transition-colors hover:bg-zinc-900 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60"
-        >
-          <ShieldCheck size={15} />
+          <Settings size={15} />
         </Link>
         <ThemeToggle />
         <form action={doSignOut}>
