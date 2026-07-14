@@ -280,6 +280,10 @@ model FailedImport {
   filePath  String   @unique
   format    String   // "epub" | "pdf"
   error     String
+  // Owner said "stop telling me about this file": hidden from the banner
+  // until the file's contents change (a re-scan of a changed file clears
+  // the row entirely, so a fixed file resurfaces as a normal import).
+  dismissed Boolean  @default(false)
   createdAt DateTime @default(now())
 }
 

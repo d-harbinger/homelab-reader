@@ -4,7 +4,7 @@ import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import useSWR from "swr";
-import { BookOpen, Copy, FolderTree, KeyRound, LogOut, Search, Users } from "lucide-react";
+import { BookOpen, Copy, FolderTree, KeyRound, LogOut, Search, ShieldCheck, Users } from "lucide-react";
 import { doSignOut } from "@/app/actions";
 import { fetcher } from "@/lib/fetcher";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -121,6 +121,14 @@ export function LibraryHeader({
           className="rounded-md p-1.5 text-zinc-500 transition-colors hover:bg-zinc-900 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60"
         >
           <KeyRound size={15} />
+        </Link>
+        <Link
+          href="/settings/privacy"
+          aria-label="Privacy"
+          title="Privacy — what may talk to the internet"
+          className="rounded-md p-1.5 text-zinc-500 transition-colors hover:bg-zinc-900 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60"
+        >
+          <ShieldCheck size={15} />
         </Link>
         <ThemeToggle />
         <form action={doSignOut}>
