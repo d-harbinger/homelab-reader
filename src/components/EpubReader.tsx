@@ -36,7 +36,7 @@ import {
   type PanelHighlight,
   type PanelNote,
 } from "./HighlightsPanel";
-import { ColorPickerPopover, HighlightMenu, NoteEditorPopover } from "./HighlightPopover";
+import { HighlightMenu, NoteEditorPopover } from "./HighlightPopover";
 
 interface Props {
   bookId: string;
@@ -348,13 +348,15 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ bookId, anchor, text, color }),
         });
-        if (!r.ok) return;
+        if (!r.ok) return null;
         const row = (await r.json()) as StoredHighlight;
         highlightsRef.current.set(row.id, row);
         setHighlights((prev) => [...prev, row as PanelHighlight]);
         repaintHighlight(row);
+        return row;
       } catch {
         /* fail silently — user can retry */
+        return null;
       }
     },
     [bookId, repaintHighlight],
@@ -416,23 +418,46 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
       });
       renditionRef.current = rendition;
 
+      // Two book themes, following the app's light/dark toggle. THIS is
+      // why EPUB pages were dark regardless of the UI theme (and of the
+      // OS / extensions): the reader injects its own styles into the
+      // section iframes, and only a dark set existed. PDF pages render
+      // the document's own (usually white) paper, hence the difference.
+      // Theme the iframe's <html> too, not just <body>: in scroll mode
+      // the iframe runs taller than the text, and a <body>-only
+      // background lets the default <html> show through below the last
+      // line.
+      const bookFont =
+        '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, system-ui, sans-serif';
       rendition.themes.register("homelab-dark", {
-        // Theme the iframe's <html> too, not just <body>. In scroll mode the
-        // iframe runs taller than the text, and a <body>-only background lets
-        // the default-white <html> show through below the last line.
         html: { background: "#09090b" },
         body: {
           color: "#e4e4e7",
           background: "#09090b",
           "min-height": "100%",
-          "font-family":
-            '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, system-ui, sans-serif',
+          "font-family": bookFont,
           "line-height": "1.6",
         },
         a: { color: "#fbbf24" },
         "h1, h2, h3, h4, h5, h6": { color: "#fafafa" },
       });
-      rendition.themes.select("homelab-dark");
+      rendition.themes.register("homelab-light", {
+        html: { background: "#fafafa" },
+        body: {
+          color: "#18181b",
+          background: "#fafafa",
+          "min-height": "100%",
+          "font-family": bookFont,
+          "line-height": "1.6",
+        },
+        a: { color: "#b45309" },
+        "h1, h2, h3, h4, h5, h6": { color: "#09090b" },
+      });
+      rendition.themes.select(
+        document.documentElement.dataset.theme === "light"
+          ? "homelab-light"
+          : "homelab-dark",
+      );
       rendition.themes.fontSize(`${fontPercent}%`);
 
       // Where to open. With saved progress, honor the CFI. With NO progress,
@@ -837,6 +862,24 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
     writeSetting("epub.font", fontPercent);
   }, [fontPercent]);
 
+  // The book follows the app theme LIVE: the header toggle stamps
+  // data-theme on <html> (ThemeToggle); watching that attribute
+  // re-selects the matching book theme without a reload.
+  useEffect(() => {
+    const apply = () =>
+      renditionRef.current?.themes.select(
+        document.documentElement.dataset.theme === "light"
+          ? "homelab-light"
+          : "homelab-dark",
+      );
+    const mo = new MutationObserver(apply);
+    mo.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+    });
+    return () => mo.disconnect();
+  }, []);
+
   useEffect(() => {
     writeSetting("epub.mode", mode);
   }, [mode]);
@@ -878,6 +921,41 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
       color,
       selection.context,
     );
+    setSelection(null);
+    try {
+      renditionRef.current
+        ?.getContents()
+        .forEach((c) => c.window.getSelection()?.removeAllRanges());
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // Highlight-and-note in ONE gesture: create the highlight (current
+  // highlighter color) from the live selection, then open the note
+  // editor on it immediately — no re-click required.
+  async function saveHighlightAndNote() {
+    if (!selection) return;
+    const { x, y } = selection;
+    const row = await createHighlight(
+      selection.cfiRange,
+      selection.text,
+      highlighterColor,
+      selection.context,
+    );
+    setSelection(null);
+    try {
+      renditionRef.current
+        ?.getContents()
+        .forEach((c) => c.window.getSelection()?.removeAllRanges());
+    } catch {
+      /* ignore */
+    }
+    if (!row) return;
+    setNoteDraft({ h: row as PanelHighlight, noteId: null, body: "", x, y });
+  }
+
+  function discardSelection() {
     setSelection(null);
     try {
       renditionRef.current
@@ -1141,10 +1219,12 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
       </div>
 
       {selection && (
-        <ColorPickerPopover
+        <HighlightMenu
           x={selection.x}
           y={selection.y}
           onPick={(c) => saveHighlight(c)}
+          onAddNote={saveHighlightAndNote}
+          onDelete={discardSelection}
         />
       )}
 
@@ -1152,7 +1232,9 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
         <HighlightMenu
           x={openMenu.x}
           y={openMenu.y}
+          activeColor={openMenu.color}
           hasNote={notes.some((n) => n.highlightId === openMenu.id)}
+          onPick={(c) => changeColor(openMenu.id, c)}
           onAddNote={openNoteEditor}
           onDelete={() => deleteHighlight(openMenu.id)}
         />
