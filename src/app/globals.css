@@ -42,7 +42,7 @@ pre {
    on hover; the track stays transparent. Apply with the .scroll-slim class. */
 .scroll-slim {
   scrollbar-width: thin; /* Firefox */
-  scrollbar-color: #3f3f46 transparent; /* thumb, track (Firefox) */
+  scrollbar-color: var(--color-zinc-700) transparent; /* thumb, track (Firefox) */
 }
 .scroll-slim::-webkit-scrollbar {
   width: 8px;
@@ -52,9 +52,46 @@ pre {
   background: transparent;
 }
 .scroll-slim::-webkit-scrollbar-thumb {
-  background-color: #3f3f46; /* zinc-700 */
+  background-color: var(--color-zinc-700);
   border-radius: 9999px;
 }
 .scroll-slim::-webkit-scrollbar-thumb:hover {
-  background-color: #52525b; /* zinc-600 */
+  background-color: var(--color-zinc-600);
+}
+
+/* ─── Light theme ────────────────────────────────────────────
+   The UI is written against the dark zinc scale (zinc-950 chrome,
+   zinc-100 text) with amber accents — no absolute white/black
+   utilities anywhere. Light mode therefore needs no per-component
+   classes: Tailwind v4 utilities read their colors from these
+   variables, so remapping the zinc scale to its mirror image (950↔50,
+   900↔100, …, 500 pivots) inverts the whole app while preserving
+   every contrast relationship. Opacity-modified utilities
+   (bg-zinc-900/60 etc.) compose via color-mix on the same variables,
+   so they follow automatically — as do the scrollbar rules above.
+
+   Amber: the 500 anchor works on both themes; the lighter steps
+   (400–100) are dark-background tints, so they remap to their darker
+   mirrors for contrast on light backgrounds.
+
+   Applied via data-theme on <html>: set before first paint by the
+   layout.tsx boot script, toggled by components/ThemeToggle.tsx,
+   persisted under the localStorage key "hlr-theme". */
+:root[data-theme="light"] {
+  --color-zinc-950: #fafafa; /* zinc-50 */
+  --color-zinc-900: #f4f4f5; /* zinc-100 */
+  --color-zinc-800: #e4e4e7; /* zinc-200 */
+  --color-zinc-700: #d4d4d8; /* zinc-300 */
+  --color-zinc-600: #a1a1aa; /* zinc-400 */
+  /* zinc-500 pivots unchanged */
+  --color-zinc-400: #52525b; /* zinc-600 */
+  --color-zinc-300: #3f3f46; /* zinc-700 */
+  --color-zinc-200: #27272a; /* zinc-800 */
+  --color-zinc-100: #18181b; /* zinc-900 */
+  --color-zinc-50: #09090b; /* zinc-950 */
+
+  --color-amber-400: #b45309; /* amber-700 */
+  --color-amber-300: #92400e; /* amber-800 */
+  --color-amber-200: #78350f; /* amber-900 */
+  --color-amber-100: #451a03; /* amber-950 */
 }

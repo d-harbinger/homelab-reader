@@ -7,6 +7,7 @@ import useSWR from "swr";
 import { BookOpen, Copy, FolderTree, KeyRound, LogOut, Search, Users } from "lucide-react";
 import { doSignOut } from "@/app/actions";
 import { fetcher } from "@/lib/fetcher";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 interface HeaderProps {
   watchedPaths: string[];
@@ -121,6 +122,7 @@ export function LibraryHeader({
         >
           <KeyRound size={15} />
         </Link>
+        <ThemeToggle />
         <form action={doSignOut}>
           <button
             type="submit"
