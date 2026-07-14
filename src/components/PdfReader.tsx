@@ -2,7 +2,18 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
-import { ArrowLeft, ChevronLeft, ChevronRight, Notebook, Pencil } from "lucide-react";
+import {
+  ArrowLeft,
+  BookOpen,
+  ChevronLeft,
+  ChevronRight,
+  Notebook,
+  Pencil,
+  ScrollText,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react";
+import { ReaderContextMenu } from "./ReaderContextMenu";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
@@ -127,6 +138,9 @@ export function PdfReader({
   const [panelOpen, setPanelOpen] = useState(false);
   const [selection, setSelection] = useState<PdfSelection | null>(null);
   const [openMenu, setOpenMenu] = useState<OpenHighlightMenu | null>(null);
+  // Right-click menu on plain page surface (highlights and selections
+  // route to their own popovers instead — see onContextMenu).
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
   // The inline note editor floated at a highlight (opened from its menu).
   const [noteDraft, setNoteDraft] = useState<{
     h: PanelHighlight;
@@ -443,7 +457,60 @@ export function PdfReader({
       clearTimeout(t);
       document.removeEventListener("click", onDocClick);
     };
-  }, [selection, openMenu]);
+  }, [selection, openMenu, ctxMenu]);
+
+  // Wheel turns the page in paginated mode. Scroll mode keeps native
+  // wheel scrolling; and when a zoomed page overflows the container in
+  // paginated mode, the wheel scrolls that page and only turns once the
+  // relevant edge is reached. Accumulate + throttle so a trackpad
+  // doesn't multi-flip on one gesture. Native listener (passive:false)
+  // because React's onWheel can't preventDefault.
+  useEffect(() => {
+    if (mode !== "paginated") return;
+    const el = containerRef.current;
+    if (!el) return;
+    let accum = 0;
+    let lastFlip = 0;
+    const onWheel = (e: WheelEvent) => {
+      if (drawMode) return; // the ink overlay owns the surface
+      const canScroll = el.scrollHeight > el.clientHeight + 1;
+      if (canScroll) {
+        const atTop = el.scrollTop <= 0;
+        const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
+        if (!(e.deltaY > 0 ? atBottom : atTop)) return; // let it scroll
+      }
+      e.preventDefault();
+      const now = Date.now();
+      if (now - lastFlip < 400) return;
+      accum += e.deltaY;
+      if (Math.abs(accum) < 40) return;
+      const forward = accum > 0;
+      accum = 0;
+      lastFlip = now;
+      setPage((p) =>
+        forward ? Math.min(p + 1, numPages || p + 1) : Math.max(p - 1, 1),
+      );
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [mode, numPages, drawMode]);
+
+  // Right-click on the reading surface. Highlight rects handle their own
+  // contextmenu (HighlightLayer) and stop propagation before this runs;
+  // a live selection re-opens the color picker; plain page gets the
+  // reader menu. Coordinates are already viewport-absolute (no iframe).
+  const onContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const sel = window.getSelection();
+    if (sel && !sel.isCollapsed && sel.toString().trim()) {
+      setCtxMenu(null);
+      onMouseUp();
+      return;
+    }
+    setSelection(null);
+    setOpenMenu(null);
+    setCtxMenu({ x: e.clientX, y: e.clientY });
+  };
 
   const onDocLoad = useCallback(({ numPages: n }: { numPages: number }) => {
     setNumPages(n);
@@ -681,6 +748,7 @@ export function PdfReader({
         ref={containerRef}
         className="scroll-slim relative flex-1 overflow-auto"
         onMouseUp={onMouseUp}
+        onContextMenu={onContextMenu}
       >
         <Document
           file={fileUrl}
@@ -842,6 +910,68 @@ export function PdfReader({
         />
       )}
 
+      {ctxMenu && (
+        <ReaderContextMenu
+          x={ctxMenu.x}
+          y={ctxMenu.y}
+          onClose={() => setCtxMenu(null)}
+          items={[
+            {
+              label: "Previous page",
+              icon: <ChevronLeft size={14} />,
+              onSelect: goPrev,
+              disabled: mode !== "paginated" || page <= 1,
+            },
+            {
+              label: "Next page",
+              icon: <ChevronRight size={14} />,
+              onSelect: goNext,
+              disabled: mode !== "paginated" || (numPages > 0 && page >= numPages),
+            },
+            "divider",
+            {
+              label: "Paginated",
+              icon: <BookOpen size={14} />,
+              active: mode === "paginated",
+              onSelect: () => setMode("paginated"),
+            },
+            {
+              label: "Scrolled",
+              icon: <ScrollText size={14} />,
+              active: mode === "scrolled",
+              onSelect: () => setMode("scrolled"),
+            },
+            "divider",
+            {
+              label: "Zoom out",
+              icon: <ZoomOut size={14} />,
+              onSelect: () => setZoom((z) => stepZoom(z, -1)),
+            },
+            {
+              label: "Zoom in",
+              icon: <ZoomIn size={14} />,
+              onSelect: () => setZoom((z) => stepZoom(z, 1)),
+            },
+            "divider",
+            {
+              label: drawMode ? "Stop drawing" : "Draw on the page",
+              icon: <Pencil size={14} />,
+              active: drawMode,
+              onSelect: () => {
+                setDrawMode((v) => !v);
+                setErasing(false);
+              },
+            },
+            {
+              label: "Highlights & notes",
+              icon: <Notebook size={14} />,
+              active: panelOpen,
+              onSelect: () => setPanelOpen((v) => !v),
+            },
+          ]}
+        />
+      )}
+
       <HighlightsPanel
         open={panelOpen}
         onClose={() => setPanelOpen(false)}
@@ -875,6 +1005,13 @@ function HighlightLayer({
           <div
             key={`${h.id}-${i}`}
             onClick={(e) => {
+              e.stopPropagation();
+              onOpen(h, e);
+            }}
+            onContextMenu={(e) => {
+              // Right-click on a highlight = the same menu as a click,
+              // never the browser menu or the plain-page reader menu.
+              e.preventDefault();
               e.stopPropagation();
               onOpen(h, e);
             }}

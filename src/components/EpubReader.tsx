@@ -2,7 +2,18 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
-import { ArrowLeft, ChevronLeft, ChevronRight, Highlighter, Notebook } from "lucide-react";
+import {
+  ArrowLeft,
+  BookOpen,
+  ChevronLeft,
+  ChevronRight,
+  Highlighter,
+  Notebook,
+  ScrollText,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react";
+import { ReaderContextMenu } from "./ReaderContextMenu";
 import {
   ReaderToolbar,
   readSetting,
@@ -201,6 +212,9 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
   );
   const [selection, setSelection] = useState<SelectionState | null>(null);
   const [openMenu, setOpenMenu] = useState<OpenHighlightMenu | null>(null);
+  // Right-click menu on plain page surface (highlights and selections
+  // route to their own popovers instead — see the contextmenu hook).
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
   // Inline note editor floated at a highlight (opened from its menu).
   const [noteDraft, setNoteDraft] = useState<{
     h: PanelHighlight;
@@ -594,6 +608,9 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
       // each exactly once (deduped via the WeakSet) so listeners don't
       // pile up when a section is revisited or in continuous mode.
       const hookedDocs = new WeakSet<Document>();
+      // Shared wheel accumulator across all hooked section documents so
+      // continuous-mode iframes don't each keep their own throttle.
+      const wheelState = { accum: 0, lastFlip: 0 };
       const hookSelection = (contents: ContentsLike) => {
         const doc = contents.document;
         if (hookedDocs.has(doc)) return;
@@ -609,6 +626,70 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
         };
         doc.addEventListener("mouseup", handler);
         doc.addEventListener("touchend", handler);
+
+        // Right-click inside the book. Native browser menu is suppressed
+        // over the reading surface; what opens depends on the target:
+        // an existing highlight (epub.js marks carry their data as
+        // data-* attributes, so data-id resolves the record) → its
+        // HighlightMenu; a live text selection → the color picker;
+        // plain text → the reader menu. Coordinates are iframe-local and
+        // translate by the frame's offset, same as the click callback.
+        doc.addEventListener("contextmenu", (e: MouseEvent) => {
+          e.preventDefault();
+          const target = e.target as Element | null;
+          const iframe = target?.ownerDocument?.defaultView?.frameElement as
+            | HTMLIFrameElement
+            | null;
+          const ifr = iframe?.getBoundingClientRect();
+          const x = (ifr?.left ?? 0) + e.clientX;
+          const y = (ifr?.top ?? 0) + e.clientY;
+
+          const mark = target?.closest?.("g[data-id]") as SVGGElement | null;
+          const hid = mark?.dataset.id;
+          if (hid && highlightsRef.current.has(hid)) {
+            const h = highlightsRef.current.get(hid)!;
+            setCtxMenu(null);
+            setSelection(null);
+            setOpenMenu({ id: h.id, color: h.color, x, y });
+            return;
+          }
+
+          const sel = contents.window.getSelection();
+          if (sel && sel.rangeCount > 0 && !sel.getRangeAt(0).collapsed && sel.toString().trim()) {
+            const cfi = contents.cfiFromRange?.(sel.getRangeAt(0));
+            if (cfi) {
+              setCtxMenu(null);
+              showPopoverFor(cfi, contents);
+              return;
+            }
+          }
+
+          setSelection(null);
+          setOpenMenu(null);
+          setCtxMenu({ x, y });
+        });
+
+        // Wheel turns the page in paginated mode (scrolled mode keeps
+        // native scrolling). Accumulate small deltas so a trackpad
+        // doesn't flip on a twitch, and throttle so one notch of
+        // momentum is one turn.
+        doc.addEventListener(
+          "wheel",
+          (e: WheelEvent) => {
+            if (mode !== "paginated") return;
+            e.preventDefault();
+            const now = Date.now();
+            if (now - wheelState.lastFlip < 400) return;
+            wheelState.accum += e.deltaY;
+            if (Math.abs(wheelState.accum) < 40) return;
+            const forward = wheelState.accum > 0;
+            wheelState.accum = 0;
+            wheelState.lastFlip = now;
+            if (forward) rendition.next();
+            else rendition.prev();
+          },
+          { passive: false },
+        );
       };
 
       // Text-quote resolution (Phase C P2). A highlight synced from another
@@ -709,7 +790,11 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
 
       // The "rendered" event for the section shown at open fired during the
       // rendition.display() above, BEFORE this listener was attached, so run one
-      // resolution pass over whatever is already on screen.
+      // resolution pass over whatever is already on screen — and hook those
+      // documents too: without this, the FIRST section never gets the
+      // mouseup fallback, the contextmenu listener, or the wheel handler
+      // until a re-render (the 'selected' event masked the selection gap).
+      for (const c of rendition.getContents()) hookSelection(c);
       for (const c of rendition.getContents()) {
         const idx = c.sectionIndex;
         const section =
@@ -758,10 +843,11 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
 
   // Dismiss popovers on outside click.
   useEffect(() => {
-    if (!selection && !openMenu) return;
+    if (!selection && !openMenu && !ctxMenu) return;
     const onDocClick = () => {
       setSelection(null);
       setOpenMenu(null);
+      setCtxMenu(null);
     };
     // Microtask to skip the click that opened the popover.
     const t = setTimeout(
@@ -772,7 +858,7 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
       clearTimeout(t);
       document.removeEventListener("click", onDocClick);
     };
-  }, [selection, openMenu]);
+  }, [selection, openMenu, ctxMenu]);
 
   async function saveHighlight(color: HighlightColor) {
     if (!selection) return;
@@ -994,7 +1080,19 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
         </div>
       </header>
 
-      <div className="relative flex-1 overflow-hidden">
+      <div
+        className="relative flex-1 overflow-hidden"
+        // The reading surface outside the section iframes (margins, gaps).
+        // Same right-click policy as inside the book: app menu, not the
+        // browser's. Marks and selections live inside the iframes, so
+        // only the reader menu is reachable from out here.
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setSelection(null);
+          setOpenMenu(null);
+          setCtxMenu({ x: e.clientX, y: e.clientY });
+        }}
+      >
         <div ref={viewerRef} className="h-full w-full" />
 
         {loadError && (
@@ -1062,6 +1160,65 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
             setNoteDraft(null);
           }}
           onCancel={() => setNoteDraft(null)}
+        />
+      )}
+
+      {ctxMenu && (
+        <ReaderContextMenu
+          x={ctxMenu.x}
+          y={ctxMenu.y}
+          onClose={() => setCtxMenu(null)}
+          items={[
+            {
+              label: "Previous page",
+              icon: <ChevronLeft size={14} />,
+              onSelect: () => renditionRef.current?.prev(),
+              disabled: mode !== "paginated",
+            },
+            {
+              label: "Next page",
+              icon: <ChevronRight size={14} />,
+              onSelect: () => renditionRef.current?.next(),
+              disabled: mode !== "paginated",
+            },
+            "divider",
+            {
+              label: "Paginated",
+              icon: <BookOpen size={14} />,
+              active: mode === "paginated",
+              onSelect: () => setMode("paginated"),
+            },
+            {
+              label: "Scrolled",
+              icon: <ScrollText size={14} />,
+              active: mode === "scrolled",
+              onSelect: () => setMode("scrolled"),
+            },
+            "divider",
+            {
+              label: "Text smaller",
+              icon: <ZoomOut size={14} />,
+              onSelect: () => setFontPercent((p) => stepFont(p, -1)),
+            },
+            {
+              label: "Text larger",
+              icon: <ZoomIn size={14} />,
+              onSelect: () => setFontPercent((p) => stepFont(p, 1)),
+            },
+            "divider",
+            {
+              label: highlighterMode ? "Highlighter off" : "Highlighter",
+              icon: <Highlighter size={14} />,
+              active: highlighterMode,
+              onSelect: () => setHighlighterMode((v) => !v),
+            },
+            {
+              label: "Highlights & notes",
+              icon: <Notebook size={14} />,
+              active: panelOpen,
+              onSelect: () => setPanelOpen((v) => !v),
+            },
+          ]}
         />
       )}
 
