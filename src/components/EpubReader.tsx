@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
+import useSWR from "swr";
 import {
   ArrowLeft,
   BookOpen,
@@ -22,8 +23,11 @@ import {
 } from "./ReaderToolbar";
 import {
   HIGHLIGHT_COLORS,
+  type ColorKeyMap,
   type HighlightColor,
 } from "@/lib/highlight-colors";
+import { fetcher } from "@/lib/fetcher";
+import { isEditableTarget, isUndoShortcut } from "@/lib/reader-shortcuts";
 import { extractQuoteContext } from "@/lib/annotations/quote-context";
 import {
   sectionMatchesAnchor,
@@ -60,6 +64,10 @@ interface RenditionLike {
   display(target?: string | undefined): Promise<unknown>;
   next(): Promise<unknown>;
   prev(): Promise<unknown>;
+  // No-arg form re-measures the container and reflows — epub.js itself only
+  // watches WINDOW resize, so container-size changes (the highlights panel
+  // pushing the reading column narrower) must call this explicitly.
+  resize?(): void;
   destroy(): void;
   on(event: string, fn: (...args: unknown[]) => void): void;
   off(event: string, fn: (...args: unknown[]) => void): void;
@@ -231,6 +239,23 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
   const [highlights, setHighlights] = useState<PanelHighlight[]>([]);
   const [notes, setNotes] = useState<PanelNote[]>([]);
 
+  // The book's color key (color → meaning), shown as swatch tooltips and the
+  // panel legend. Edited on the book detail page, read-only in here.
+  const { data: keyData } = useSWR<{ key: ColorKeyMap }>(
+    `/api/highlight-key?bookId=${encodeURIComponent(bookId)}`,
+    fetcher,
+  );
+  const colorKey = keyData?.key;
+
+  // Session-local undo stack: ids of highlights created in this reader
+  // session, newest last. Ctrl+Z pops the top and deletes that highlight —
+  // popover picks, highlighter-mode swipes, and highlight-and-note all land
+  // here. Earlier sessions' highlights are deliberately not reachable.
+  // The ref mirror lets the key handlers (created once inside the render
+  // effect) call the live undo function, same pattern as createHighlightRef.
+  const undoStackRef = useRef<string[]>([]);
+  const undoLastHighlightRef = useRef<() => void>(() => {});
+
   // Highlighter mode: the reflowable-text answer to the PDF freehand
   // highlighter. With it on, selecting text applies the chosen color straight
   // away (no color popover) — swipe across the words and they're marked. It's
@@ -352,6 +377,7 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
         if (!r.ok) return null;
         const row = (await r.json()) as StoredHighlight;
         highlightsRef.current.set(row.id, row);
+        undoStackRef.current.push(row.id);
         setHighlights((prev) => [...prev, row as PanelHighlight]);
         repaintHighlight(row);
         return row;
@@ -378,6 +404,12 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
 
   useEffect(() => {
     let cancelled = false;
+    // Teardown hooks registered by the async setup below. The async IIFE
+    // cannot return a cleanup to React (its return value is discarded), so
+    // listeners/observers it attaches push their removal here and the OUTER
+    // cleanup runs them. (The window keydown listener used to be returned
+    // from the IIFE and therefore leaked on every mode switch.)
+    const cleanups: Array<() => void> = [];
     const viewer = viewerRef.current;
     if (!viewer) return;
 
@@ -489,6 +521,9 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
         });
 
       await loadHighlights();
+      // Unmounted while highlights loaded → the outer cleanup already ran
+      // (with an empty cleanups list); attaching listeners now would leak.
+      if (cancelled) return;
 
       const onRelocated = (...args: unknown[]) => {
         const location = args[0] as
@@ -829,6 +864,16 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
       }
 
       const onKey = (e: KeyboardEvent) => {
+        // Undo works in both flow modes and regardless of where focus sits —
+        // window keydowns cover the outer page, the rendition relay covers
+        // keydowns inside the section iframes. Text-editing targets keep the
+        // browser's own undo.
+        if (isUndoShortcut(e)) {
+          if (isEditableTarget(e.target)) return;
+          e.preventDefault();
+          undoLastHighlightRef.current();
+          return;
+        }
         if (mode !== "paginated") return;
         if (e.key === "ArrowRight" || e.key === " " || e.key === "PageDown") {
           rendition.next();
@@ -840,14 +885,33 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
       rendition.on("keydown", (...args: unknown[]) =>
         onKey(args[0] as KeyboardEvent),
       );
+      cleanups.push(() => window.removeEventListener("keydown", onKey));
 
-      return () => {
-        window.removeEventListener("keydown", onKey);
-      };
+      // The highlights panel opening/closing resizes the reading column.
+      // epub.js re-measures only on WINDOW resize, so watch the container and
+      // reflow the rendition when its box changes (rAF-coalesced: the observer
+      // can fire in bursts while the panel mounts).
+      let resizeRaf = 0;
+      const ro = new ResizeObserver(() => {
+        cancelAnimationFrame(resizeRaf);
+        resizeRaf = requestAnimationFrame(() => {
+          try {
+            rendition.resize?.();
+          } catch {
+            /* rendition mid-teardown */
+          }
+        });
+      });
+      ro.observe(viewer);
+      cleanups.push(() => {
+        cancelAnimationFrame(resizeRaf);
+        ro.disconnect();
+      });
     })();
 
     return () => {
       cancelled = true;
+      for (const fn of cleanups) fn();
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       renditionRef.current?.destroy?.();
       bookRef.current?.destroy?.();
@@ -986,11 +1050,14 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
     }
   }
 
-  async function deleteHighlight(id: string) {
+  const deleteHighlight = useCallback(async (id: string) => {
     const h = highlightsRef.current.get(id);
     try {
       await fetch(`/api/highlights/${id}`, { method: "DELETE" });
       highlightsRef.current.delete(id);
+      // A hand-deleted highlight leaves the undo stack too, so Ctrl+Z never
+      // re-deletes something already gone.
+      undoStackRef.current = undoStackRef.current.filter((x) => x !== id);
       setHighlights((prev) => prev.filter((x) => x.id !== id));
       if (h?.anchor.cfi) {
         try {
@@ -1002,7 +1069,20 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
     } finally {
       setOpenMenu(null);
     }
-  }
+  }, []);
+
+  // Ctrl+Z: delete the most recent highlight created this session. Skips past
+  // stack entries that no longer exist (already deleted by hand) instead of
+  // dying on them.
+  const undoLastHighlight = useCallback(() => {
+    const stack = undoStackRef.current;
+    let id = stack.pop();
+    while (id && !highlightsRef.current.has(id)) id = stack.pop();
+    if (id) deleteHighlight(id);
+  }, [deleteHighlight]);
+  useEffect(() => {
+    undoLastHighlightRef.current = undoLastHighlight;
+  }, [undoLastHighlight]);
 
   async function saveNote(
     h: PanelHighlight,
@@ -1117,7 +1197,16 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
                 {(Object.keys(HIGHLIGHT_COLORS) as HighlightColor[]).map((c) => (
                   <button
                     key={c}
-                    aria-label={HIGHLIGHT_COLORS[c].label}
+                    aria-label={
+                      colorKey?.[c]
+                        ? `${HIGHLIGHT_COLORS[c].label} — ${colorKey[c]}`
+                        : HIGHLIGHT_COLORS[c].label
+                    }
+                    title={
+                      colorKey?.[c]
+                        ? `${HIGHLIGHT_COLORS[c].label} — ${colorKey[c]}`
+                        : HIGHLIGHT_COLORS[c].label
+                    }
                     aria-pressed={highlighterColor === c}
                     onClick={() => setHighlighterColor(c)}
                     className={`h-4 w-4 rounded-full ring-1 ring-white/15 transition-transform hover:scale-110 ${
@@ -1170,47 +1259,66 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
         </div>
       </header>
 
-      <div
-        className="relative flex-1 overflow-hidden"
-        // The reading surface outside the section iframes (margins, gaps).
-        // Same right-click policy as inside the book: app menu, not the
-        // browser's. Marks and selections live inside the iframes, so
-        // only the reader menu is reachable from out here.
-        onContextMenu={(e) => {
-          e.preventDefault();
-          setSelection(null);
-          setOpenMenu(null);
-          setCtxMenu({ x: e.clientX, y: e.clientY });
-        }}
-      >
-        <div ref={viewerRef} className="h-full w-full" />
+      {/* Reading row: surface and highlights panel side by side, so the open
+          panel pushes the book text aside instead of covering it. The panel
+          falls back to overlaying at phone widths (see HighlightsPanel); the
+          relative wrapper is its positioning box for that case. */}
+      <div className="relative flex min-h-0 flex-1">
+        <div
+          className="relative flex-1 overflow-hidden"
+          // The reading surface outside the section iframes (margins, gaps).
+          // Same right-click policy as inside the book: app menu, not the
+          // browser's. Marks and selections live inside the iframes, so
+          // only the reader menu is reachable from out here.
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setSelection(null);
+            setOpenMenu(null);
+            setCtxMenu({ x: e.clientX, y: e.clientY });
+          }}
+        >
+          <div ref={viewerRef} className="h-full w-full" />
 
-        {loadError && (
-          <div className="absolute inset-0 z-20 flex items-center justify-center bg-zinc-950/80">
-            <p className="max-w-sm rounded-md border border-red-900/50 bg-zinc-900 px-4 py-3 text-center text-sm text-red-300">
-              {loadError}
-            </p>
-          </div>
-        )}
+          {loadError && (
+            <div className="absolute inset-0 z-20 flex items-center justify-center bg-zinc-950/80">
+              <p className="max-w-sm rounded-md border border-red-900/50 bg-zinc-900 px-4 py-3 text-center text-sm text-red-300">
+                {loadError}
+              </p>
+            </div>
+          )}
 
-        {mode === "paginated" && (
-          <>
-            <button
-              aria-label="Previous page"
-              onClick={() => renditionRef.current?.prev()}
-              className="absolute left-0 top-0 z-10 flex h-full w-20 items-center justify-start pl-3 text-zinc-700 opacity-0 transition-opacity hover:bg-gradient-to-r hover:from-zinc-900/50 hover:opacity-100"
-            >
-              <ChevronLeft size={28} />
-            </button>
-            <button
-              aria-label="Next page"
-              onClick={() => renditionRef.current?.next()}
-              className="absolute right-0 top-0 z-10 flex h-full w-20 items-center justify-end pr-3 text-zinc-700 opacity-0 transition-opacity hover:bg-gradient-to-l hover:from-zinc-900/50 hover:opacity-100"
-            >
-              <ChevronRight size={28} />
-            </button>
-          </>
-        )}
+          {mode === "paginated" && (
+            <>
+              <button
+                aria-label="Previous page"
+                onClick={() => renditionRef.current?.prev()}
+                className="absolute left-0 top-0 z-10 flex h-full w-20 items-center justify-start pl-3 text-zinc-700 opacity-0 transition-opacity hover:bg-gradient-to-r hover:from-zinc-900/50 hover:opacity-100"
+              >
+                <ChevronLeft size={28} />
+              </button>
+              <button
+                aria-label="Next page"
+                onClick={() => renditionRef.current?.next()}
+                className="absolute right-0 top-0 z-10 flex h-full w-20 items-center justify-end pr-3 text-zinc-700 opacity-0 transition-opacity hover:bg-gradient-to-l hover:from-zinc-900/50 hover:opacity-100"
+              >
+                <ChevronRight size={28} />
+              </button>
+            </>
+          )}
+        </div>
+
+        <HighlightsPanel
+          open={panelOpen}
+          onClose={() => setPanelOpen(false)}
+          highlights={highlights}
+          notes={notes}
+          colorKey={colorKey}
+          onJump={jumpToHighlight}
+          onColorChange={changeColor}
+          onDelete={deleteHighlight}
+          onNoteSave={saveNote}
+          onNoteDelete={deleteNote}
+        />
       </div>
 
       <div className="h-0.5 w-full bg-zinc-900">
@@ -1224,6 +1332,7 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
         <HighlightMenu
           x={selection.x}
           y={selection.y}
+          colorKey={colorKey}
           onPick={(c) => saveHighlight(c)}
           onAddNote={saveHighlightAndNote}
           onDelete={discardSelection}
@@ -1236,6 +1345,7 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
           y={openMenu.y}
           activeColor={openMenu.color}
           hasNote={notes.some((n) => n.highlightId === openMenu.id)}
+          colorKey={colorKey}
           onPick={(c) => changeColor(openMenu.id, c)}
           onAddNote={openNoteEditor}
           onDelete={() => deleteHighlight(openMenu.id)}
@@ -1314,17 +1424,6 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
         />
       )}
 
-      <HighlightsPanel
-        open={panelOpen}
-        onClose={() => setPanelOpen(false)}
-        highlights={highlights}
-        notes={notes}
-        onJump={jumpToHighlight}
-        onColorChange={changeColor}
-        onDelete={deleteHighlight}
-        onNoteSave={saveNote}
-        onNoteDelete={deleteNote}
-      />
     </div>
   );
 }

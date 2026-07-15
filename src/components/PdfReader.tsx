@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
+import useSWR from "swr";
 import {
   ArrowLeft,
   BookOpen,
@@ -25,8 +26,11 @@ import {
 } from "./ReaderToolbar";
 import {
   HIGHLIGHT_COLORS,
+  type ColorKeyMap,
   type HighlightColor,
 } from "@/lib/highlight-colors";
+import { fetcher } from "@/lib/fetcher";
+import { isEditableTarget, isUndoShortcut } from "@/lib/reader-shortcuts";
 import {
   HighlightsPanel,
   type PanelHighlight,
@@ -137,6 +141,16 @@ export function PdfReader({
   const [highlights, setHighlights] = useState<PdfHighlight[]>([]);
   const [notes, setNotes] = useState<PanelNote[]>([]);
   const [panelOpen, setPanelOpen] = useState(false);
+  // Session-local undo stack: ids of highlights created in this reader
+  // session, newest last. Ctrl+Z pops the top and deletes that highlight.
+  const undoStackRef = useRef<string[]>([]);
+  // The book's color key (color → meaning), shown as swatch tooltips and the
+  // panel legend. Edited on the book detail page, read-only in here.
+  const { data: keyData } = useSWR<{ key: ColorKeyMap }>(
+    `/api/highlight-key?bookId=${encodeURIComponent(bookId)}`,
+    fetcher,
+  );
+  const colorKey = keyData?.key;
   const [selection, setSelection] = useState<PdfSelection | null>(null);
   const [openMenu, setOpenMenu] = useState<OpenHighlightMenu | null>(null);
   // Right-click menu on plain page surface (highlights and selections
@@ -539,6 +553,7 @@ export function PdfReader({
       if (!r.ok) return null;
       const row = (await r.json()) as PdfHighlight;
       highlightsRef.current.set(row.id, row);
+      undoStackRef.current.push(row.id);
       setHighlights((prev) => [...prev, row]);
       return row;
     } catch {
@@ -584,17 +599,42 @@ export function PdfReader({
     }
   }
 
-  async function deleteHighlight(id: string) {
+  const deleteHighlight = useCallback(async (id: string) => {
     try {
       await fetch(`/api/highlights/${id}`, { method: "DELETE" });
       highlightsRef.current.delete(id);
+      // A hand-deleted highlight leaves the undo stack too, so Ctrl+Z never
+      // re-deletes something already gone.
+      undoStackRef.current = undoStackRef.current.filter((x) => x !== id);
       setHighlights((prev) => prev.filter((x) => x.id !== id));
       // A note bound to this highlight is orphaned; drop it from the panel too.
       setNotes((prev) => prev.filter((n) => n.highlightId !== id));
     } finally {
       setOpenMenu(null);
     }
-  }
+  }, []);
+
+  // Ctrl+Z. While the Draw tool is active the gesture already means "undo the
+  // last ink stroke" (the toolbar's undo); outside draw mode it deletes the
+  // most recent highlight created this session, skipping past entries already
+  // deleted by hand. Text-editing targets keep the browser's own undo.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!isUndoShortcut(e)) return;
+      if (isEditableTarget(e.target)) return;
+      e.preventDefault();
+      if (drawMode) {
+        undoInk();
+        return;
+      }
+      const stack = undoStackRef.current;
+      let id = stack.pop();
+      while (id && !highlightsRef.current.has(id)) id = stack.pop();
+      if (id) deleteHighlight(id);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [drawMode, undoInk, deleteHighlight]);
 
   async function saveNote(
     h: PanelHighlight,
@@ -765,130 +805,150 @@ export function PdfReader({
         />
       )}
 
-      <div
-        ref={containerRef}
-        className="scroll-slim relative flex-1 overflow-auto"
-        onMouseUp={onMouseUp}
-        onContextMenu={onContextMenu}
-      >
-        <Document
-          file={fileUrl}
-          onLoadSuccess={onDocLoad}
-          loading={
-            <div className="p-8 text-sm text-zinc-600">Loading book…</div>
-          }
-          error={
-            <div className="p-8 text-sm text-amber-500">Failed to load PDF</div>
-          }
+      {/* Reading row: surface and highlights panel side by side, so the open
+          panel pushes the pages aside instead of covering them (the width
+          ResizeObserver re-fits the pages). The panel falls back to overlaying
+          at phone widths (see HighlightsPanel); the relative wrapper is its
+          positioning box for that case. */}
+      <div className="relative flex min-h-0 flex-1">
+        <div
+          ref={containerRef}
+          className="scroll-slim relative flex-1 overflow-auto"
+          onMouseUp={onMouseUp}
+          onContextMenu={onContextMenu}
         >
-          {mode === "paginated" ? (
-            <div className="flex min-h-full items-start justify-center py-6">
-              {width > 0 && (
-                <div
-                  data-page={page}
-                  ref={registerPage(page)}
-                  className={`book-paper relative shadow-2xl shadow-black/60 ${drawMode ? "select-none" : ""}`}
-                >
-                  <Page
-                    pageNumber={page}
-                    width={renderWidth}
-                    renderAnnotationLayer={false}
-                    renderTextLayer
-                  />
-                  <HighlightLayer
-                    highlights={highlightsForPage(page)}
-                    onOpen={openHighlightMenu}
-                  />
-                  <InkLayer
-                    strokes={inkForPage(page)}
-                    drawMode={drawMode}
-                    erasing={erasing}
-                    color={activeColor}
-                    width={activeWidth}
-                    opacity={activeOpacity}
-                    kind={tool}
-                    onCommit={(pts) => saveStroke(page, pts)}
-                    onErase={eraseStroke}
-                  />
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="flex flex-col items-center gap-4 py-6">
-              {width > 0 &&
-                numPages > 0 &&
-                Array.from({ length: numPages }, (_, i) => i + 1).map((p) => {
-                  // Only mount the real <Page> for pages within the window of
-                  // the current page; everything else is a sized spacer. The
-                  // wrapper (ref + data-page) always renders so scroll length
-                  // and the IntersectionObserver page-tracking stay intact.
-                  const active = Math.abs(p - page) <= SCROLL_WINDOW;
-                  return (
-                    <div
-                      key={p}
-                      data-page={p}
-                      ref={registerPage(p)}
-                      className={`book-paper relative ${active ? "shadow-2xl shadow-black/60" : ""} ${drawMode ? "select-none" : ""}`}
-                    >
-                      {active ? (
-                        <>
-                          <Page
-                            pageNumber={p}
-                            width={renderWidth}
-                            renderAnnotationLayer={false}
-                            renderTextLayer
-                          />
-                          <HighlightLayer
-                            highlights={highlightsForPage(p)}
-                            onOpen={openHighlightMenu}
-                          />
-                          <InkLayer
-                            strokes={inkForPage(p)}
-                            drawMode={drawMode}
-                            erasing={erasing}
-                            color={activeColor}
-                            width={activeWidth}
-                            opacity={activeOpacity}
-                            kind={tool}
-                            onCommit={(pts) => saveStroke(p, pts)}
-                            onErase={eraseStroke}
-                          />
-                        </>
-                      ) : (
-                        <div
-                          style={{ width: renderWidth, height: estPageHeight }}
-                          className="flex items-center justify-center bg-zinc-900/40 text-xs text-zinc-700"
-                        >
-                          {p}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-            </div>
-          )}
-        </Document>
+          <Document
+            file={fileUrl}
+            onLoadSuccess={onDocLoad}
+            loading={
+              <div className="p-8 text-sm text-zinc-600">Loading book…</div>
+            }
+            error={
+              <div className="p-8 text-sm text-amber-500">Failed to load PDF</div>
+            }
+          >
+            {mode === "paginated" ? (
+              <div className="flex min-h-full items-start justify-center py-6">
+                {width > 0 && (
+                  <div
+                    data-page={page}
+                    ref={registerPage(page)}
+                    className={`book-paper relative shadow-2xl shadow-black/60 ${drawMode ? "select-none" : ""}`}
+                  >
+                    <Page
+                      pageNumber={page}
+                      width={renderWidth}
+                      renderAnnotationLayer={false}
+                      renderTextLayer
+                    />
+                    <HighlightLayer
+                      highlights={highlightsForPage(page)}
+                      onOpen={openHighlightMenu}
+                    />
+                    <InkLayer
+                      strokes={inkForPage(page)}
+                      drawMode={drawMode}
+                      erasing={erasing}
+                      color={activeColor}
+                      width={activeWidth}
+                      opacity={activeOpacity}
+                      kind={tool}
+                      onCommit={(pts) => saveStroke(page, pts)}
+                      onErase={eraseStroke}
+                    />
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-4 py-6">
+                {width > 0 &&
+                  numPages > 0 &&
+                  Array.from({ length: numPages }, (_, i) => i + 1).map((p) => {
+                    // Only mount the real <Page> for pages within the window of
+                    // the current page; everything else is a sized spacer. The
+                    // wrapper (ref + data-page) always renders so scroll length
+                    // and the IntersectionObserver page-tracking stay intact.
+                    const active = Math.abs(p - page) <= SCROLL_WINDOW;
+                    return (
+                      <div
+                        key={p}
+                        data-page={p}
+                        ref={registerPage(p)}
+                        className={`book-paper relative ${active ? "shadow-2xl shadow-black/60" : ""} ${drawMode ? "select-none" : ""}`}
+                      >
+                        {active ? (
+                          <>
+                            <Page
+                              pageNumber={p}
+                              width={renderWidth}
+                              renderAnnotationLayer={false}
+                              renderTextLayer
+                            />
+                            <HighlightLayer
+                              highlights={highlightsForPage(p)}
+                              onOpen={openHighlightMenu}
+                            />
+                            <InkLayer
+                              strokes={inkForPage(p)}
+                              drawMode={drawMode}
+                              erasing={erasing}
+                              color={activeColor}
+                              width={activeWidth}
+                              opacity={activeOpacity}
+                              kind={tool}
+                              onCommit={(pts) => saveStroke(p, pts)}
+                              onErase={eraseStroke}
+                            />
+                          </>
+                        ) : (
+                          <div
+                            style={{ width: renderWidth, height: estPageHeight }}
+                            className="flex items-center justify-center bg-zinc-900/40 text-xs text-zinc-700"
+                          >
+                            {p}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
+          </Document>
 
-        {mode === "paginated" && (
-          <>
-            <button
-              aria-label="Previous page"
-              onClick={goPrev}
-              disabled={page <= 1}
-              className="absolute left-0 top-0 z-10 flex h-full w-24 items-center justify-start pl-4 text-zinc-700 opacity-0 transition-opacity hover:bg-gradient-to-r hover:from-zinc-900/50 hover:opacity-100 disabled:pointer-events-none disabled:opacity-0"
-            >
-              <ChevronLeft size={32} />
-            </button>
-            <button
-              aria-label="Next page"
-              onClick={goNext}
-              disabled={numPages > 0 && page >= numPages}
-              className="absolute right-0 top-0 z-10 flex h-full w-24 items-center justify-end pr-4 text-zinc-700 opacity-0 transition-opacity hover:bg-gradient-to-l hover:from-zinc-900/50 hover:opacity-100 disabled:pointer-events-none disabled:opacity-0"
-            >
-              <ChevronRight size={32} />
-            </button>
-          </>
-        )}
+          {mode === "paginated" && (
+            <>
+              <button
+                aria-label="Previous page"
+                onClick={goPrev}
+                disabled={page <= 1}
+                className="absolute left-0 top-0 z-10 flex h-full w-24 items-center justify-start pl-4 text-zinc-700 opacity-0 transition-opacity hover:bg-gradient-to-r hover:from-zinc-900/50 hover:opacity-100 disabled:pointer-events-none disabled:opacity-0"
+              >
+                <ChevronLeft size={32} />
+              </button>
+              <button
+                aria-label="Next page"
+                onClick={goNext}
+                disabled={numPages > 0 && page >= numPages}
+                className="absolute right-0 top-0 z-10 flex h-full w-24 items-center justify-end pr-4 text-zinc-700 opacity-0 transition-opacity hover:bg-gradient-to-l hover:from-zinc-900/50 hover:opacity-100 disabled:pointer-events-none disabled:opacity-0"
+              >
+                <ChevronRight size={32} />
+              </button>
+            </>
+          )}
+        </div>
+
+        <HighlightsPanel
+          open={panelOpen}
+          onClose={() => setPanelOpen(false)}
+          highlights={highlights}
+          notes={notes}
+          colorKey={colorKey}
+          onJump={jumpToHighlight}
+          onColorChange={changeColor}
+          onDelete={deleteHighlight}
+          onNoteSave={saveNote}
+          onNoteDelete={deleteNote}
+        />
       </div>
 
       <div className="h-0.5 w-full bg-zinc-900">
@@ -902,6 +962,7 @@ export function PdfReader({
         <HighlightMenu
           x={selection.x}
           y={selection.y}
+          colorKey={colorKey}
           onPick={(c) => saveHighlight(c)}
           onAddNote={saveHighlightAndNote}
           onDelete={discardSelection}
@@ -914,6 +975,7 @@ export function PdfReader({
           y={openMenu.y}
           activeColor={openMenu.color}
           hasNote={notes.some((n) => n.highlightId === openMenu.id)}
+          colorKey={colorKey}
           onPick={(c) => changeColor(openMenu.id, c)}
           onAddNote={openNoteEditor}
           onDelete={() => deleteHighlight(openMenu.id)}
@@ -995,17 +1057,6 @@ export function PdfReader({
         />
       )}
 
-      <HighlightsPanel
-        open={panelOpen}
-        onClose={() => setPanelOpen(false)}
-        highlights={highlights}
-        notes={notes}
-        onJump={jumpToHighlight}
-        onColorChange={changeColor}
-        onDelete={deleteHighlight}
-        onNoteSave={saveNote}
-        onNoteDelete={deleteNote}
-      />
     </div>
   );
 }

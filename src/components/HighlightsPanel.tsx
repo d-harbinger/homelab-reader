@@ -5,6 +5,7 @@ import { X, Trash2, MessageSquarePlus } from "lucide-react";
 import {
   HIGHLIGHT_COLORS,
   HIGHLIGHT_ORDER,
+  type ColorKeyMap,
   type HighlightColor,
 } from "@/lib/highlight-colors";
 import { notesByHighlight } from "@/lib/annotations";
@@ -34,6 +35,9 @@ interface Props {
   onClose: () => void;
   highlights: PanelHighlight[];
   notes: PanelNote[];
+  // The book's color key (color → meaning), rendered as a legend when any
+  // color is labeled. Editing the key lives on the book detail page.
+  colorKey?: ColorKeyMap;
   // Navigate the reader to this highlight's location.
   onJump: (highlight: PanelHighlight) => void;
   onColorChange: (id: string, color: HighlightColor) => void;
@@ -48,15 +52,21 @@ interface Props {
   onNoteDelete: (noteId: string) => void;
 }
 
-// Right-side slide-in panel. Lists all highlights for the book; each one
-// can have a note attached inline. Notes match the highlight by CFI so
-// the schema doesn't need a foreign key — a future Note.highlightId
-// column would tighten this but isn't required for the UI.
+// Right-side panel. Lists all highlights for the book; each one can have a
+// note attached inline. Notes match the highlight by CFI so the schema
+// doesn't need a foreign key — a future Note.highlightId column would
+// tighten this but isn't required for the UI.
+//
+// Layout contract: the readers render this as a flex SIBLING of the reading
+// surface (inside a `relative flex` row), so opening it pushes the book text
+// aside instead of covering it. On phone widths there is no room to push —
+// the max-sm classes fall back to overlaying inside that same relative row.
 export function HighlightsPanel({
   open,
   onClose,
   highlights,
   notes,
+  colorKey,
   onJump,
   onColorChange,
   onDelete,
@@ -67,9 +77,10 @@ export function HighlightsPanel({
   // Shared CFI-matching rule (see @/lib/annotations) — same rule the book-detail
   // annotations view uses, so the two surfaces can't drift apart.
   const notesForHighlight = notesByHighlight(highlights, notes);
+  const legend = HIGHLIGHT_ORDER.filter((c) => colorKey?.[c]);
   return (
     <aside
-      className="fixed right-0 top-0 z-40 flex h-full w-full max-w-[380px] flex-col border-l border-zinc-900 bg-zinc-950/95 backdrop-blur"
+      className="z-40 flex h-full w-[380px] shrink-0 flex-col border-l border-zinc-900 bg-zinc-950/95 backdrop-blur max-sm:absolute max-sm:inset-y-0 max-sm:right-0 max-sm:w-full max-sm:max-w-[380px]"
       onClick={(e) => e.stopPropagation()}
     >
       <header className="flex items-center justify-between gap-3 border-b border-zinc-900 px-4 py-3">
@@ -90,6 +101,24 @@ export function HighlightsPanel({
           <X size={16} />
         </button>
       </header>
+
+      {legend.length > 0 && (
+        <div className="flex flex-wrap gap-x-4 gap-y-1.5 border-b border-zinc-900 px-4 py-2.5">
+          {legend.map((c) => (
+            <span
+              key={c}
+              className="inline-flex items-center gap-1.5 text-xs text-zinc-400"
+            >
+              <span
+                aria-hidden
+                className="h-2.5 w-2.5 rounded-full"
+                style={{ background: HIGHLIGHT_COLORS[c].swatch }}
+              />
+              {colorKey?.[c]}
+            </span>
+          ))}
+        </div>
+      )}
 
       <div className="scroll-slim flex-1 overflow-y-auto px-4 py-3 space-y-3">
         {highlights.length === 0 && (

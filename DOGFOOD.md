@@ -26,6 +26,12 @@ reproductions and keep going — fixes are a separate session.
   needs: container + a mobile reader app on a device
 - [ ] **C6. Two accounts.** Explore two user accounts in parallel, each with its
   own progress and highlights, to find cross-user leakage. · 45m · needs: container
+- [ ] **C7. Study workflow.** Explore the color-key study loop on a textbook:
+  define the key on the book page (e.g. yellow = key terms, blue = organizations),
+  highlight in those colors with the side panel open (it should push the text
+  aside, not cover it), lean on Ctrl+Z to undo stray highlights, then export the
+  flashcard deck and import it into Anki — to find layout, undo, key-persistence,
+  and import-format bugs. · 60m · needs: container + Anki
 
 ## Bug log — capture-and-continue
 
