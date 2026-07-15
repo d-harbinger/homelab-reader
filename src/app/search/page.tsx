@@ -13,6 +13,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { ArrowLeft, Search, X } from "lucide-react";
 import { BookCard, type BookCardData } from "@/components/BookCard";
+import { HeaderControls } from "@/components/HeaderControls";
 import { fetcher } from "@/lib/fetcher";
 
 interface Facets {
@@ -81,7 +82,7 @@ function SearchView() {
 
   return (
     <main className="mx-auto max-w-7xl px-6 py-8 space-y-8">
-      <div className="flex items-center gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <Link
           href="/"
           className="inline-flex items-center gap-2 text-xs text-zinc-500 transition-colors hover:text-zinc-200"
@@ -89,6 +90,8 @@ function SearchView() {
           <ArrowLeft size={14} />
           Library
         </Link>
+        {/* This page IS the search box, so the cluster drops its own. */}
+        <HeaderControls search={false} />
       </div>
 
       {/* Search box */}

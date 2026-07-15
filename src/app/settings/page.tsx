@@ -11,6 +11,7 @@ import {
   Users,
 } from "lucide-react";
 import { getCurrentUser } from "@/lib/current-user";
+import { HeaderControls } from "@/components/HeaderControls";
 
 // The settings hub — one front door for everything that used to be a
 // pile of header icons and scattered in-page links. Every entry says
@@ -92,15 +93,19 @@ export default async function SettingsPage() {
 
   return (
     <main className="mx-auto max-w-2xl px-6 py-10 space-y-6">
-      <div className="flex items-center justify-between">
-        <Link
-          href="/"
-          className="inline-flex items-center gap-2 text-xs text-zinc-500 hover:text-zinc-200 transition-colors"
-        >
-          <ArrowLeft size={14} />
-          Library
-        </Link>
-        <h1 className="text-lg font-semibold text-zinc-100">Settings</h1>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <Link
+            href="/"
+            className="inline-flex items-center gap-2 text-xs text-zinc-500 hover:text-zinc-200 transition-colors"
+          >
+            <ArrowLeft size={14} />
+            Library
+          </Link>
+          <h1 className="text-lg font-semibold text-zinc-100">Settings</h1>
+        </div>
+        {/* This page IS the settings door, so the cluster drops its own. */}
+        <HeaderControls settings={false} />
       </div>
 
       <ul className="divide-y divide-zinc-900 rounded-md border border-zinc-800">

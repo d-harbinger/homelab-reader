@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/current-user";
 import { BookAnnotations } from "@/components/BookAnnotations";
 import { CiteButton } from "@/components/CiteButton";
+import { HeaderControls } from "@/components/HeaderControls";
 import { GenreShelf } from "@/components/GenreShelf";
 import { SuggestionsPanel } from "@/components/SuggestionsPanel";
 
@@ -36,13 +37,16 @@ export default async function BookDetail({
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-10 space-y-10">
-      <Link
-        href="/"
-        className="inline-flex items-center gap-2 text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
-      >
-        <ArrowLeft size={14} />
-        Library
-      </Link>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <Link
+          href="/"
+          className="inline-flex items-center gap-2 text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+        >
+          <ArrowLeft size={14} />
+          Library
+        </Link>
+        <HeaderControls />
+      </div>
 
       <div className="grid grid-cols-1 gap-10 md:grid-cols-[260px_1fr]">
         <div className="flex justify-center md:block">
