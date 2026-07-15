@@ -50,7 +50,7 @@ export interface ExportInput {
   notes: ExportNote[];
 }
 
-interface Locator {
+export interface Locator {
   /** "Page: 12" or "CFI: /6/2" — the human line emitted under an annotation. */
   label: string;
   /** Stable, comparable key for deterministic ordering. */
@@ -81,7 +81,8 @@ function cfiSortKey(cfi: string): string {
 // Derive the human locator line + a stable sort key from an anchor blob. Falls
 // back gracefully when fields are missing so a malformed anchor can't crash the
 // export — it just yields no locator line (sortKey keeps it deterministic).
-function deriveLocator(anchor: string): Locator | null {
+// Exported for the flashcard export, which orders cards the same way.
+export function deriveLocator(anchor: string): Locator | null {
   const a = parseAnchor(anchor);
 
   if (typeof a.page === "number") {
@@ -132,7 +133,8 @@ function buildFrontmatter(book: ExportBook): string {
 
 // Stable comparator: locator sort key first, then createdAt, then id — so
 // output is identical regardless of the order rows arrive from the DB.
-function byLocatorThenCreated(
+// Exported for the flashcard export, which shares the ordering rule.
+export function byLocatorThenCreated(
   a: { sortKey: string; createdAt: Date; id: string },
   b: { sortKey: string; createdAt: Date; id: string },
 ): number {

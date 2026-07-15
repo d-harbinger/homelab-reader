@@ -84,6 +84,8 @@ commit message.** The hook is a safety net, not the primary defense.
 - `GET /api/library/folders` — folder tree of the indexed library (admin-selected roots)
 - `GET /api/books?folder=` — books filtered to a root-relative folder path (and what sits under it)
 - `GET /api/books/[id]/annotations` — a book's highlights and notes as a Markdown export
+- `GET /api/books/[id]/flashcards` — a book's highlights as an Anki-importable deck, tagged by the color key
+- `GET|PUT /api/highlight-key?bookId=` — the per-user, per-book highlight color key (color → meaning)
 - `GET /api/books/[id]/citation` — citation metadata for a book
 - `src/app/books/`, `src/app/search/`, `src/app/settings/`, `src/app/setup/` — library list, search, settings, first-run admin setup, with the reader UI under the book detail page
 

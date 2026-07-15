@@ -103,6 +103,13 @@ export default async function BookDetail({
             >
               Export annotations
             </a>
+            <a
+              href={`/api/books/${book.id}/flashcards`}
+              title="Highlights as an Anki-importable deck, tagged by the color key"
+              className="rounded-md border border-zinc-800 px-5 py-2 text-sm text-zinc-300 transition-colors hover:border-zinc-700 hover:text-zinc-100"
+            >
+              Export flashcards
+            </a>
           </div>
 
           <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-xs sm:grid-cols-3">
