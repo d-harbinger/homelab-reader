@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { authenticateOpds, opdsChallenge } from "@/lib/opds-auth";
 import { parseJson } from "@/lib/parse-json";
+import { serializeAnchorBounded } from "@/lib/annotations/envelope";
 
 // POST /api/opds/progress — OPDS-context reading-progress write (OPDS-03).
 //
@@ -41,7 +42,11 @@ export async function POST(req: Request) {
   const book = await prisma.book.findUnique({ where: { id: bookId } });
   if (!book) return NextResponse.json({ error: "unknown book" }, { status: 404 });
 
-  const anchorJson = JSON.stringify(anchor);
+  const serialized = serializeAnchorBounded(anchor);
+  if (!serialized.ok) {
+    return NextResponse.json({ error: serialized.error }, { status: 400 });
+  }
+  const anchorJson = serialized.json;
   const clampedPercent =
     typeof percent === "number" && isFinite(percent)
       ? Math.max(0, Math.min(1, percent))

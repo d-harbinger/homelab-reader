@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { parseJson } from "@/lib/parse-json";
+import { serializeAnchorBounded } from "@/lib/annotations/envelope";
 
 // Shared note-handler bodies (S2). Same split as highlights.ts: one validation
 // and ownership surface, called by both the cookie-session routes under
@@ -50,11 +51,16 @@ export async function createNote(
     }
   }
 
+  const serialized = serializeAnchorBounded(anchor);
+  if (!serialized.ok) {
+    return NextResponse.json({ error: serialized.error }, { status: 400 });
+  }
+
   const row = await prisma.note.create({
     data: {
       bookId,
       userId,
-      anchor: JSON.stringify(anchor),
+      anchor: serialized.json,
       body: text.slice(0, 16000),
       context: context ? context.slice(0, 1000) : null,
       highlightId: highlightId ?? null,

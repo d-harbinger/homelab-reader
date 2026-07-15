@@ -34,9 +34,11 @@ import { describe, it, expect } from "vitest";
 import {
   isTextQuoteAnchor,
   parseTextQuoteAnchor,
+  serializeAnchorBounded,
   QUOTE_MAX_LENGTH,
   CONTEXT_MAX_LENGTH,
   CHAPTER_HREF_MAX_LENGTH,
+  ANCHOR_JSON_MAX_LENGTH,
 } from "@/lib/annotations/envelope";
 
 describe("isTextQuoteAnchor", () => {
@@ -53,6 +55,27 @@ describe("isTextQuoteAnchor", () => {
   });
   it("G4 returns false for an object with no type", () => {
     expect(isTextQuoteAnchor({ quote: "x" })).toBe(false);
+  });
+});
+
+describe("serializeAnchorBounded", () => {
+  it("S1 accepts a normal anchor and returns round-trippable JSON", () => {
+    const anchor = { type: "epub-cfi-range", cfi: "/6/2!/4/2" };
+    const r = serializeAnchorBounded(anchor);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(JSON.parse(r.json)).toEqual(anchor);
+  });
+  it("S2 accepts an anchor whose JSON is exactly the max length (boundary)", () => {
+    const overhead = JSON.stringify({ type: "pdf-rect", v: "" }).length;
+    const filler = "x".repeat(ANCHOR_JSON_MAX_LENGTH - overhead);
+    const anchor = { type: "pdf-rect", v: filler };
+    expect(JSON.stringify(anchor).length).toBe(ANCHOR_JSON_MAX_LENGTH);
+    expect(serializeAnchorBounded(anchor).ok).toBe(true);
+  });
+  it("S3 rejects an anchor whose JSON exceeds the max length", () => {
+    const r = serializeAnchorBounded({ type: "pdf-rect", v: "x".repeat(ANCHOR_JSON_MAX_LENGTH) });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/maximum size/);
   });
 });
 
