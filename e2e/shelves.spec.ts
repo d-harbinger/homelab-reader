@@ -42,7 +42,9 @@ test("shelves: genre PATCH shelves a book; views switch; organize plan projects 
   // the Unsorted pile and the folder rail is not rendered.
   await expect(page.getByRole("tab", { name: "shelves" })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("heading", { name: "Unsorted" })).toBeVisible();
-  await expect(page.getByText(EPUB_TITLE)).toBeVisible();
+  // .first(): a preceding spec's reader visit may have saved progress, which
+  // adds a "Continue reading" row that shows the same card twice.
+  await expect(page.getByText(EPUB_TITLE).first()).toBeVisible();
 
   // Shelve it via the allowlisted PATCH (the GenreShelf picker's wire call).
   const list = (await (await page.request.get("/api/books")).json()) as { books: BookRow[] };
@@ -61,7 +63,8 @@ test("shelves: genre PATCH shelves a book; views switch; organize plan projects 
   // round-trips.
   await page.getByRole("tab", { name: "folders" }).click();
   await expect(page.getByRole("tab", { name: "folders" })).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByText(EPUB_TITLE)).toBeVisible();
+  // .first() for the same reason as the Shelves check above.
+  await expect(page.getByText(EPUB_TITLE).first()).toBeVisible();
   await page.getByRole("tab", { name: "shelves" }).click();
   await expect(page.getByText("Science Fiction & Fantasy")).toBeVisible();
 

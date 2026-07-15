@@ -51,12 +51,12 @@ async function openEpubReader(page: Page) {
   await expect(page.getByText(/%$/)).toBeVisible({ timeout: 30_000 });
   const viewer = page.locator("iframe").first();
   await expect(viewer).toBeVisible();
-  return viewer;
+  return { viewer, id: book!.id };
 }
 
 test("opening the highlights panel pushes the book aside (and epub.js reflows)", async ({ page }) => {
   await signIn(page);
-  const viewer = await openEpubReader(page);
+  const { viewer } = await openEpubReader(page);
   const before = (await viewer.boundingBox())!;
 
   await page.getByRole("button", { name: "Highlights and notes" }).click();
@@ -80,36 +80,43 @@ test("opening the highlights panel pushes the book aside (and epub.js reflows)",
 
 test("Ctrl+Z undoes the highlight just made in highlighter mode", async ({ page }) => {
   await signIn(page);
-  await openEpubReader(page);
+  const { id } = await openEpubReader(page);
 
-  // Highlights persist across specs in a run, so count relative to the
-  // badge's starting value (absent badge = 0).
-  const notebookBtn = page.getByRole("button", { name: "Highlights and notes" });
-  const startBadge = await notebookBtn.textContent();
-  const start = Number(startBadge?.trim() || "0");
+  // Earlier specs in a run leave highlights on this book, and the header
+  // badge loads them asynchronously — so the baseline and every subsequent
+  // check count via the API, never by parsing badge text.
+  const count = async () => {
+    const res = await page.request.get(`/api/highlights?bookId=${id}`);
+    const { highlights } = (await res.json()) as { highlights: unknown[] };
+    return highlights.length;
+  };
+  const start = await count();
 
-  // Highlighter mode on: a drag selection applies the color immediately.
+  // Highlighter mode on: a selection applies the color immediately.
   await page.getByRole("button", { name: "Highlighter" }).click();
 
   // Select a word of the fixture's text line inside the section iframe by
   // double-click (word select) — a drag selection is flaky under synthesized
   // input, and the reader's mouseup hook fires either way. Under a cold run
-  // the selection hooks can attach a beat after first paint, so retry the
-  // gesture until the badge ticks up.
+  // the selection hooks can attach a beat after first paint, so retry —
+  // re-clicking only while nothing has been created yet.
   const line = page
     .frameLocator("iframe")
     .getByText(/chapter one body/i)
     .first();
   const box = (await line.boundingBox())!;
   await expect(async () => {
-    await page.mouse.dblclick(box.x + box.width / 2, box.y + box.height / 2);
-    await expect(notebookBtn).toContainText(String(start + 1), { timeout: 2000 });
+    if ((await count()) === start) {
+      await page.mouse.dblclick(box.x + box.width / 2, box.y + box.height / 2);
+    }
+    expect(await count()).toBe(start + 1);
   }).toPass({ timeout: 20_000 });
 
   // With a highlight present, the panel's arrangement toggle works: "By
   // color" groups under a header named for the color (no key defined in the
   // e2e library, so the palette name shows), "In book" returns to the flat
   // position-ordered list.
+  const notebookBtn = page.getByRole("button", { name: "Highlights and notes" });
   await notebookBtn.click();
   await expect(
     page.getByRole("heading", { name: /highlights & notes/i }),
@@ -120,22 +127,12 @@ test("Ctrl+Z undoes the highlight just made in highlighter mode", async ({ page 
   await expect(page.getByText("Yellow", { exact: true })).toBeHidden();
   await page.getByRole("button", { name: "Close panel" }).click();
 
-  // Ctrl+Z deletes it again — badge back to where it started (the badge
-  // element disappears entirely at zero).
+  // Ctrl+Z deletes it again — the count returns to the baseline…
   await page.keyboard.press("Control+z");
-  if (start > 0) {
-    await expect(notebookBtn).toContainText(String(start));
-  } else {
-    await expect(notebookBtn).not.toContainText("1");
-  }
+  await expect.poll(count).toBe(start);
 
-  // And the deletion is persisted, not cosmetic: reload and the badge still
-  // shows the starting count.
+  // …and the deletion is persisted, not cosmetic: still gone after a reload.
   await page.reload();
   await expect(page.getByText(/%$/)).toBeVisible({ timeout: 30_000 });
-  if (start > 0) {
-    await expect(notebookBtn).toContainText(String(start));
-  } else {
-    await expect(notebookBtn).not.toContainText("1");
-  }
+  expect(await count()).toBe(start);
 });
