@@ -7,6 +7,7 @@ import { BookOpen, Pencil, Plus, Trash2, X } from "lucide-react";
 import { HIGHLIGHT_COLORS, type HighlightColor } from "@/lib/highlight-colors";
 import { fetcher } from "@/lib/fetcher";
 import { notesByHighlight, orphanNotes } from "@/lib/annotations";
+import { HighlightColorKey } from "./HighlightColorKey";
 
 interface Anchor {
   type: string;
@@ -90,6 +91,8 @@ export function BookAnnotations({ bookId }: { bookId: string }) {
           Open in reader
         </Link>
       </div>
+
+      <HighlightColorKey bookId={bookId} />
 
       <NoteComposer onAdd={addFreeformNote} />
 

@@ -75,3 +75,9 @@ export const VALID_HIGHLIGHT_COLORS = new Set<string>(
 export function isHighlightColor(value: unknown): value is HighlightColor {
   return typeof value === "string" && VALID_HIGHLIGHT_COLORS.has(value);
 }
+
+// A book's highlight color key: the meaning a reader gave each color ("yellow
+// = key terms"). Only labeled colors appear. Defined here (not in the server
+// lib that persists it) so client components can import the type without
+// touching Prisma.
+export type ColorKeyMap = Partial<Record<HighlightColor, string>>;

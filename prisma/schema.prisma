@@ -45,6 +45,7 @@ model User {
   highlights   Highlight[]
   inkStrokes   InkStroke[]
   opdsTokens   OpdsToken[]
+  highlightKeys HighlightKeyEntry[]
 }
 
 // Per-user OPDS API token ("app password"). Hashed at rest: `tokenHash` is the
@@ -102,6 +103,7 @@ model Book {
   inkStrokes    InkStroke[]
   progress      Progress[]
   suggestions   BookSuggestion[]
+  highlightKeys HighlightKeyEntry[]
 
   @@index([title])
   @@index([format])
@@ -230,6 +232,27 @@ model Highlight {
   notes Note[]
 
   @@index([bookId])
+}
+
+// The meaning a reader assigns to one highlight color in one book — the legend
+// on a textbook's inside cover ("yellow = key terms, blue = organizations").
+// One row per (book, user, color); no row means the color is unlabeled. Labels
+// turn the color dimension of highlights into a structure the flashcard export
+// can group by. Per-user like Highlight: readers sharing a book keep their own
+// keys. `color` holds a palette name from lib/highlight-colors (validated at
+// the API boundary; SQLite has no enums).
+model HighlightKeyEntry {
+  id        String   @id @default(cuid())
+  bookId    String
+  userId    String
+  color     String
+  label     String
+  updatedAt DateTime @updatedAt
+
+  book Book @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([bookId, userId, color])
 }
 
 // A single freehand ink stroke drawn over a PDF page (the reader's Draw tool).

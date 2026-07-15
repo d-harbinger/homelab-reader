@@ -15,8 +15,11 @@ Working library server: admin-selected library folders (browse the server's
 filesystem) with folder watch, EPUB and PDF readers with reading progress,
 highlights and per-book notes, full-text search and filtering, multi-user
 accounts (first-run admin + admin-managed users, each with their own notes
-and progress), and a cover-forward web UI. The OPDS catalog endpoint exists;
-mobile-client authentication for it is the next milestone.
+and progress), and a cover-forward web UI. Each book can carry a highlight
+color key (a legend giving each color a meaning, e.g. yellow = key terms);
+annotations export as Markdown or as an Anki-importable flashcard deck
+grouped by that key. The OPDS catalog endpoint exists; mobile-client
+authentication for it is the next milestone.
 
 ## Stack
 
