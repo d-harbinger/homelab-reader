@@ -1,11 +1,7 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { BookOpen, LogOut, Search, Settings } from "lucide-react";
-import { doSignOut } from "@/app/actions";
-import { ThemeToggle } from "@/components/ThemeToggle";
+import { BookOpen } from "lucide-react";
+import { HeaderControls } from "@/components/HeaderControls";
 
 interface HeaderProps {
   watchedPaths: string[];
@@ -20,17 +16,8 @@ export function LibraryHeader({
   lastError,
   onRescan,
 }: HeaderProps) {
-  const router = useRouter();
-  const [term, setTerm] = useState("");
   // (Role-gating moved with the icons into the settings hub, which
   // renders role-appropriate entries server-side.)
-
-  function submitSearch(e: FormEvent) {
-    e.preventDefault();
-    const q = term.trim();
-    router.push(q ? `/search?q=${encodeURIComponent(q)}` : "/search");
-  }
-
   return (
     <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4 border-b border-zinc-900 pb-6">
       <div className="flex items-center gap-3">
@@ -61,48 +48,16 @@ export function LibraryHeader({
           )}
         </div>
       </div>
-      <div className="flex items-center gap-2">
-        <form onSubmit={submitSearch} className="relative">
-          <Search
-            size={15}
-            className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500"
-          />
-          <input
-            value={term}
-            onChange={(e) => setTerm(e.target.value)}
-            placeholder="Search…"
-            aria-label="Search the library"
-            className="w-44 rounded-md border border-zinc-800 bg-zinc-900/60 py-1.5 pl-8 pr-3 text-xs text-zinc-100 placeholder:text-zinc-600 transition-[width] focus:w-56 focus:border-amber-500/60 focus:outline-none focus:ring-1 focus:ring-amber-500/30"
-          />
-        </form>
+      {/* The shared controls cluster (search, settings, theme, sign out);
+          Rescan is the library's own action, slotted into its usual spot. */}
+      <HeaderControls>
         <button
           onClick={onRescan}
           className="rounded-md px-3 py-1.5 text-xs font-medium text-zinc-400 transition-colors hover:bg-zinc-900 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60"
         >
           Rescan
         </button>
-        {/* Everything that used to be a row of per-page icons lives in
-            the settings hub now — one door, each entry explained inside. */}
-        <Link
-          href="/settings"
-          aria-label="Settings"
-          title="Settings"
-          className="rounded-md p-1.5 text-zinc-500 transition-colors hover:bg-zinc-900 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60"
-        >
-          <Settings size={15} />
-        </Link>
-        <ThemeToggle />
-        <form action={doSignOut}>
-          <button
-            type="submit"
-            aria-label="Sign out"
-            title="Sign out"
-            className="rounded-md p-1.5 text-zinc-500 transition-colors hover:bg-zinc-900 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60"
-          >
-            <LogOut size={15} />
-          </button>
-        </form>
-      </div>
+      </HeaderControls>
     </header>
   );
 }

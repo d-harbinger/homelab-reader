@@ -14,6 +14,13 @@
   --font-mono:
     ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono",
     monospace;
+
+  /* Native widgets follow the theme. The styled face of a <select> is dark
+     already, but its POPUP list (plus pickers, autofill, and scrollbars
+     outside .scroll-slim) is painted by the browser from color-scheme —
+     without this declaration it defaulted to light, so the Shelf dropdown
+     on the book page opened as a white-grey menu over the dark chrome. */
+  color-scheme: dark;
 }
 
 html,
@@ -98,6 +105,8 @@ pre {
    layout.tsx boot script, toggled by components/ThemeToggle.tsx,
    persisted under the localStorage key "hlr-theme". */
 :root[data-theme="light"] {
+  color-scheme: light;
+
   --color-zinc-950: #fafafa; /* zinc-50 */
   --color-zinc-900: #f4f4f5; /* zinc-100 */
   --color-zinc-800: #e4e4e7; /* zinc-200 */
