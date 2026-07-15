@@ -5,6 +5,7 @@ import { StickyNote, Trash2 } from "lucide-react";
 import {
   HIGHLIGHT_COLORS,
   HIGHLIGHT_ORDER,
+  type ColorKeyMap,
   type HighlightColor,
 } from "@/lib/highlight-colors";
 
@@ -61,6 +62,7 @@ export function HighlightMenu({
   y,
   activeColor,
   hasNote,
+  colorKey,
   onPick,
   onAddNote,
   onDelete,
@@ -69,6 +71,9 @@ export function HighlightMenu({
   y: number;
   activeColor?: HighlightColor;
   hasNote?: boolean;
+  // The book's color key (color → meaning). A labeled color's swatch tooltip
+  // reads "Yellow — Key terms" so the legend is visible at the moment of choice.
+  colorKey?: ColorKeyMap;
   onPick: (c: HighlightColor) => void;
   onAddNote: () => void;
   onDelete: () => void;
@@ -85,7 +90,16 @@ export function HighlightMenu({
       {HIGHLIGHT_ORDER.map((c) => (
         <button
           key={c}
-          aria-label={HIGHLIGHT_COLORS[c].label}
+          aria-label={
+            colorKey?.[c]
+              ? `${HIGHLIGHT_COLORS[c].label} — ${colorKey[c]}`
+              : HIGHLIGHT_COLORS[c].label
+          }
+          title={
+            colorKey?.[c]
+              ? `${HIGHLIGHT_COLORS[c].label} — ${colorKey[c]}`
+              : HIGHLIGHT_COLORS[c].label
+          }
           onClick={() => onPick(c)}
           className={`h-7 w-7 rounded-full ring-2 transition-transform hover:scale-110 ${
             c === activeColor ? "ring-zinc-100" : "ring-zinc-700"
