@@ -108,3 +108,31 @@ export function parseTextQuoteAnchor(a: unknown): ParseEnvelopeResult {
 
   return { ok: true, envelope };
 }
+
+/**
+ * Maximum serialized length of a stored anchor JSON blob, in UTF-16 units.
+ * The text-quote envelope above is field-bounded; this is the backstop for
+ * EVERY OTHER anchor shape (epub-cfi-range, pdf-rect, …), so a device sync
+ * client can't write an unbounded blob into SQLite. Generous next to a real
+ * anchor (a CFI or a page-rect list sits well under this), tight next to a
+ * denial-of-service payload.
+ */
+export const ANCHOR_JSON_MAX_LENGTH = 8192;
+
+export type SerializeAnchorResult =
+  | { ok: true; json: string }
+  | { ok: false; error: string };
+
+/**
+ * Serialize an anchor to the JSON persisted in the DB, rejecting anything over
+ * ANCHOR_JSON_MAX_LENGTH. Every anchor write site uses this instead of a raw
+ * JSON.stringify so no shape — validated envelope or otherwise — is stored
+ * without a size bound. Pure: no Prisma, no next/server.
+ */
+export function serializeAnchorBounded(anchor: unknown): SerializeAnchorResult {
+  const json = JSON.stringify(anchor);
+  if (json.length > ANCHOR_JSON_MAX_LENGTH) {
+    return { ok: false, error: "anchor exceeds the maximum size" };
+  }
+  return { ok: true, json };
+}

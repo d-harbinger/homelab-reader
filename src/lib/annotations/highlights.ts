@@ -5,6 +5,7 @@ import { isHighlightColor } from "@/lib/highlight-colors";
 import {
   isTextQuoteAnchor,
   parseTextQuoteAnchor,
+  serializeAnchorBounded,
   type AnnotationEnvelope,
 } from "@/lib/annotations/envelope";
 
@@ -70,11 +71,19 @@ export async function createHighlight(
 
   const safeColor = color ?? "yellow";
 
+  // Bound the serialized anchor for every shape. The text-quote envelope is
+  // already field-bounded above; this catches pdf-rect / epub-cfi-range / any
+  // other shape so a device can't write an unbounded blob.
+  const serialized = serializeAnchorBounded(anchorToStore);
+  if (!serialized.ok) {
+    return NextResponse.json({ error: serialized.error }, { status: 400 });
+  }
+
   const row = await prisma.highlight.create({
     data: {
       bookId,
       userId,
-      anchor: JSON.stringify(anchorToStore),
+      anchor: serialized.json,
       text: text.slice(0, 8000),
       color: safeColor,
     },
@@ -162,9 +171,13 @@ export async function patchHighlight(
       );
     }
     const upgraded = mergeCfiOverEnvelope(cfi, storedEnvelope.envelope);
+    const serialized = serializeAnchorBounded(upgraded);
+    if (!serialized.ok) {
+      return NextResponse.json({ error: serialized.error }, { status: 400 });
+    }
     const row = await prisma.highlight.update({
       where: { id },
-      data: { color, anchor: JSON.stringify(upgraded) },
+      data: { color, anchor: serialized.json },
     });
     return NextResponse.json({
       id: row.id,

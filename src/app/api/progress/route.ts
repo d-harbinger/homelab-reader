@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { parseJson, withUser } from "@/lib/route-helpers";
+import { serializeAnchorBounded } from "@/lib/annotations/envelope";
 
 interface ProgressPayload {
   bookId?: string;
@@ -24,7 +25,11 @@ export const POST = withUser(async (user, req) => {
   const book = await prisma.book.findUnique({ where: { id: bookId } });
   if (!book) return NextResponse.json({ error: "unknown book" }, { status: 404 });
 
-  const anchorJson = JSON.stringify(anchor);
+  const serialized = serializeAnchorBounded(anchor);
+  if (!serialized.ok) {
+    return NextResponse.json({ error: serialized.error }, { status: 400 });
+  }
+  const anchorJson = serialized.json;
   const clampedPercent =
     typeof percent === "number" && isFinite(percent)
       ? Math.max(0, Math.min(1, percent))
