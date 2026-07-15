@@ -74,7 +74,9 @@ function parseAnchor(anchor: string): Record<string, unknown> {
 
 // Zero-pad numeric segments so CFI/path strings sort in document order rather
 // than lexically ("/6/2" before "/6/14"). Non-numeric chars pass through.
-function cfiSortKey(cfi: string): string {
+// Exported for the panel's position sort (lib/annotations.ts), which works on
+// parsed anchors rather than the stored JSON strings this module takes.
+export function cfiSortKey(cfi: string): string {
   return cfi.replace(/\d+/g, (n) => n.padStart(8, "0"));
 }
 
