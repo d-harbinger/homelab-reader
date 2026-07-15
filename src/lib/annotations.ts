@@ -22,6 +22,8 @@
 // CFI-only notes keep pairing via the fallback. That optionality is what makes
 // building the rule before the migration non-destructive.
 
+import { cfiSortKey } from "@/lib/notes/markdown-export";
+
 /** Minimal highlight shape this rule needs. */
 interface HasCfiAnchor {
   anchor: { cfi?: string };
@@ -89,4 +91,48 @@ export function orphanNotes<H extends HighlightLike, N extends NoteLike>(
 /** Guarded CFI equality: equal AND non-empty on both sides. */
 function matchesCfi(note: HasCfiAnchor, highlight: HasCfiAnchor): boolean {
   return Boolean(note.anchor.cfi) && note.anchor.cfi === highlight.anchor.cfi;
+}
+
+/** Anchor fields the position sort reads (parsed anchors; all optional). */
+interface PositionAnchor {
+  cfi?: string;
+  page?: number;
+  progression?: number;
+}
+
+/**
+ * Position-in-book sort key for a PARSED anchor — the client-side twin of
+ * markdown-export's deriveLocator, which takes the stored JSON string. Same
+ * idea: bucket prefix + fixed-width payload, so string comparison gives
+ * document order. EPUB CFIs sort first ("0:"), PDF pages next ("1:"), a
+ * synced text-quote highlight that only knows its 0..1 reading position sorts
+ * by that ("2:" — transient, it upgrades to a CFI on view), and anchors with
+ * no usable locator sink to the end ("9:") instead of throwing. Within one
+ * book only one of the first two buckets occurs, so the prefixes never
+ * actually interleave formats.
+ */
+export function anchorSortKey(anchor: PositionAnchor): string {
+  if (anchor.cfi) return `0:${cfiSortKey(anchor.cfi)}`;
+  if (typeof anchor.page === "number") {
+    return `1:${String(anchor.page).padStart(8, "0")}`;
+  }
+  if (typeof anchor.progression === "number") {
+    return `2:${String(Math.round(anchor.progression * 1e6)).padStart(8, "0")}`;
+  }
+  return "9:";
+}
+
+/**
+ * Order highlights by position in the book (id as the deterministic
+ * tiebreak). Returns a new array; the input is untouched.
+ */
+export function byBookPosition<H extends HighlightLike & { anchor: PositionAnchor }>(
+  highlights: H[],
+): H[] {
+  return [...highlights].sort((a, b) => {
+    const ka = anchorSortKey(a.anchor);
+    const kb = anchorSortKey(b.anchor);
+    if (ka !== kb) return ka < kb ? -1 : 1;
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  });
 }

@@ -106,6 +106,20 @@ test("Ctrl+Z undoes the highlight just made in highlighter mode", async ({ page 
     await expect(notebookBtn).toContainText(String(start + 1), { timeout: 2000 });
   }).toPass({ timeout: 20_000 });
 
+  // With a highlight present, the panel's arrangement toggle works: "By
+  // color" groups under a header named for the color (no key defined in the
+  // e2e library, so the palette name shows), "In book" returns to the flat
+  // position-ordered list.
+  await notebookBtn.click();
+  await expect(
+    page.getByRole("heading", { name: /highlights & notes/i }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "By color" }).click();
+  await expect(page.getByText("Yellow", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "In book" }).click();
+  await expect(page.getByText("Yellow", { exact: true })).toBeHidden();
+  await page.getByRole("button", { name: "Close panel" }).click();
+
   // Ctrl+Z deletes it again — badge back to where it started (the badge
   // element disappears entirely at zero).
   await page.keyboard.press("Control+z");

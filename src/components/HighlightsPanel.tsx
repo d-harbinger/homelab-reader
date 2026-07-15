@@ -8,7 +8,8 @@ import {
   type ColorKeyMap,
   type HighlightColor,
 } from "@/lib/highlight-colors";
-import { notesByHighlight } from "@/lib/annotations";
+import { byBookPosition, notesByHighlight } from "@/lib/annotations";
+import { readSetting, writeSetting } from "./ReaderToolbar";
 
 export interface PanelHighlight {
   id: string;
@@ -73,11 +74,36 @@ export function HighlightsPanel({
   onNoteSave,
   onNoteDelete,
 }: Props) {
+  // Two views of the same list: "In book" = position order (what Calibre and
+  // Kindle's Notebook do), "By color" = grouped under the color key's meanings
+  // — the panel-shaped view of the same structure the flashcard export emits.
+  // Persisted like the readers' other view settings.
+  const [sort, setSort] = useState<"book" | "color">(() =>
+    readSetting<string>("panel.sort", "book") === "color" ? "color" : "book",
+  );
   if (!open) return null;
   // Shared CFI-matching rule (see @/lib/annotations) — same rule the book-detail
   // annotations view uses, so the two surfaces can't drift apart.
   const notesForHighlight = notesByHighlight(highlights, notes);
   const legend = HIGHLIGHT_ORDER.filter((c) => colorKey?.[c]);
+  const ordered = byBookPosition(highlights);
+
+  const renderCard = (h: PanelHighlight) => {
+    const note = notesForHighlight.get(h.id) ?? null;
+    return (
+      <HighlightCard
+        key={h.id}
+        highlight={h}
+        note={note ?? null}
+        onJump={() => onJump(h)}
+        onColorChange={(c) => onColorChange(h.id, c)}
+        onDelete={() => onDelete(h.id)}
+        onNoteSave={(body, existingId) => onNoteSave(h, body, existingId)}
+        onNoteDelete={(id) => onNoteDelete(id)}
+      />
+    );
+  };
+
   return (
     <aside
       className="z-40 flex h-full w-[380px] shrink-0 flex-col border-l border-zinc-900 bg-zinc-950/95 backdrop-blur max-sm:absolute max-sm:inset-y-0 max-sm:right-0 max-sm:w-full max-sm:max-w-[380px]"
@@ -102,7 +128,40 @@ export function HighlightsPanel({
         </button>
       </header>
 
-      {legend.length > 0 && (
+      {highlights.length > 0 && (
+        <div
+          role="group"
+          aria-label="Arrange highlights"
+          className="flex items-center gap-1 border-b border-zinc-900 px-4 py-2"
+        >
+          {(
+            [
+              ["book", "In book"],
+              ["color", "By color"],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              aria-pressed={sort === value}
+              onClick={() => {
+                setSort(value);
+                writeSetting("panel.sort", value);
+              }}
+              className={`rounded px-2 py-0.5 text-xs transition-colors ${
+                sort === value
+                  ? "bg-zinc-800 text-zinc-100"
+                  : "text-zinc-500 hover:text-zinc-200"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* The legend rides with the flat view only — in the color view the
+          group headers already carry the meanings. */}
+      {legend.length > 0 && sort === "book" && (
         <div className="flex flex-wrap gap-x-4 gap-y-1.5 border-b border-zinc-900 px-4 py-2.5">
           {legend.map((c) => (
             <span
@@ -126,23 +185,28 @@ export function HighlightsPanel({
             Select text in the book to start highlighting.
           </p>
         )}
-        {highlights.map((h) => {
-          const note = notesForHighlight.get(h.id) ?? null;
-          return (
-            <HighlightCard
-              key={h.id}
-              highlight={h}
-              note={note ?? null}
-              onJump={() => onJump(h)}
-              onColorChange={(c) => onColorChange(h.id, c)}
-              onDelete={() => onDelete(h.id)}
-              onNoteSave={(body, existingId) =>
-                onNoteSave(h, body, existingId)
-              }
-              onNoteDelete={(id) => onNoteDelete(id)}
-            />
-          );
-        })}
+        {sort === "book"
+          ? ordered.map((h) => renderCard(h))
+          : HIGHLIGHT_ORDER.map((c) => {
+              const group = ordered.filter((h) => h.color === c);
+              if (group.length === 0) return null;
+              return (
+                <div key={c} className="space-y-3">
+                  <div className="flex items-center gap-2 pt-1">
+                    <span
+                      aria-hidden
+                      className="h-2.5 w-2.5 rounded-full"
+                      style={{ background: HIGHLIGHT_COLORS[c].swatch }}
+                    />
+                    <span className="text-xs font-medium text-zinc-400">
+                      {colorKey?.[c] ?? HIGHLIGHT_COLORS[c].label}
+                    </span>
+                    <span className="text-xs text-zinc-700">{group.length}</span>
+                  </div>
+                  {group.map((h) => renderCard(h))}
+                </div>
+              );
+            })}
       </div>
     </aside>
   );
