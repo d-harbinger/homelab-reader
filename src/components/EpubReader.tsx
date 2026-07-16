@@ -1479,8 +1479,18 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
           falls back to overlaying at phone widths (see HighlightsPanel); the
           relative wrapper is its positioning box for that case. */}
       <div className="relative flex min-h-0 flex-1">
+        {/* overscroll-contain stops a pan that reaches the end of the book from
+            chaining out to the document, which is what drags the browser's own
+            chrome down on a tablet — epub.js scrolls its own container inside
+            this box, and the chain out of it stops here. touch-none while
+            drawing belongs on this container rather than on the ink overlay: the
+            overlay only owns the surface while draw mode is on, and a palm or a
+            stray finger landing in the margin beside a section would otherwise
+            still pan the view out from under the stroke. */}
         <div
-          className="relative flex-1 overflow-hidden"
+          className={`relative flex-1 overflow-hidden overscroll-contain ${
+            drawMode ? "touch-none" : ""
+          }`}
           // The reading surface outside the section iframes (margins, gaps).
           // Same right-click policy as inside the book: app menu, not the
           // browser's. Marks and selections live inside the iframes, so

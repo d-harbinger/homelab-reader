@@ -811,9 +811,20 @@ export function PdfReader({
           at phone widths (see HighlightsPanel); the relative wrapper is its
           positioning box for that case. */}
       <div className="relative flex min-h-0 flex-1">
+        {/* Touch containment, and deliberately on the CONTAINER rather than on
+            the ink overlay. overscroll-contain stops a pan that runs off the end
+            of the pages from chaining out to the document — that chaining is
+            what drags the browser's own chrome down on a tablet. touch-none
+            while drawing covers the margin around the page too: the overlay is
+            only a hit-test target over the page box, and only while draw mode is
+            on (it is pointer-events: none otherwise, and a non-target's
+            touch-action is never consulted), so a palm or a stray finger landing
+            beside it would otherwise still pan the view mid-stroke. */}
         <div
           ref={containerRef}
-          className="scroll-slim relative flex-1 overflow-auto"
+          className={`scroll-slim relative flex-1 overflow-auto overscroll-contain ${
+            drawMode ? "touch-none" : ""
+          }`}
           onMouseUp={onMouseUp}
           onContextMenu={onContextMenu}
         >
