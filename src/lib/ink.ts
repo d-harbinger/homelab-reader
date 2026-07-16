@@ -13,7 +13,17 @@ export type InkKind = "pen" | "highlighter";
 
 export interface InkStroke {
   id: string;
-  page: number;
+  /**
+   * The PDF page this stroke sits on. Null on an EPUB stroke, which has no page
+   * to sit on and fastens to `anchor` instead — the wire carries `page: null`
+   * for those rows.
+   */
+  page: number | null;
+  /**
+   * Present only on EPUB strokes; the wire omits the key entirely for PDF ones,
+   * so a PDF payload stays byte-for-byte what it has always been.
+   */
+  anchor?: InkAnchor;
   color: string;
   width: number;
   /** 0..1 stroke opacity; 1 (solid) for strokes saved before the field existed. */
@@ -152,6 +162,88 @@ export function pickFragment(
     }
   }
   return nearest;
+}
+
+/** The box every fragment of one block sits inside, or null for no fragments. */
+export function unionRect(rects: InkRectLike[]): InkRectLike | null {
+  if (rects.length === 0) return null;
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const r of rects) {
+    if (r.x < minX) minX = r.x;
+    if (r.y < minY) minY = r.y;
+    if (r.x + r.width > maxX) maxX = r.x + r.width;
+    if (r.y + r.height > maxY) maxY = r.y + r.height;
+  }
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}
+
+/** Where one stroke lands on the overlay. All values are overlay-local px. */
+export interface InkPlacement {
+  /** The box the stroke's 0..1 fractions map onto — the anchoring block's box. */
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** True when the block straddles a column break, i.e. `clip*` is worth using. */
+  torn: boolean;
+  /** The fragment that owns the stroke; a torn block's paint is clipped to it. */
+  clipX: number;
+  clipY: number;
+  clipWidth: number;
+  clipHeight: number;
+  /** px per viewBox unit for the NIB — one scalar, never the box's aspect. */
+  strokeScale: number;
+}
+
+/**
+ * Place one stroke: given the on-screen fragments of the block it is fastened to
+ * (viewport coords) and the overlay's own origin, return the overlay-local
+ * geometry to paint it with, or null when there is no box to paint into.
+ *
+ * The fractions map onto the fragments' UNION box, which is the same space
+ * capture measured them in — so at an unchanged layout this is the exact inverse
+ * of capture and a stroke stays precisely where it was drawn, split block or
+ * not. `pickFragment` then names the fragment the stroke's origin lives in, and
+ * a torn block clips its paint to that fragment: after a reflow tears a block
+ * the union spans the column gap, and without the clip a stroke would smear
+ * across the gap into the wrong column (decision D2 — degrade un-stretched,
+ * never smear). An untorn block is not clipped at all, so a nib riding the
+ * block's edge keeps its full width.
+ *
+ * `strokeScale` comes from the FRAGMENT, not the union: a torn block's union
+ * spans two columns, and scaling the nib by it would draw every stroke on a
+ * split paragraph at double thickness.
+ */
+export function placeInkStroke(
+  rects: InkRectLike[],
+  originX: number,
+  originY: number,
+  surfaceLeft: number,
+  surfaceTop: number,
+): InkPlacement | null {
+  const idx = pickFragment(rects, originX, originY);
+  const union = unionRect(rects);
+  if (idx === null || !union) return null;
+  // A block that is hidden or not yet laid out measures zero: there is no space
+  // to map fractions onto, and scaling by it would collapse the stroke to a dot.
+  if (!(union.width > 0) || !(union.height > 0)) return null;
+
+  const frag = rects[idx];
+  return {
+    x: union.x - surfaceLeft,
+    y: union.y - surfaceTop,
+    width: union.width,
+    height: union.height,
+    torn: rects.length > 1,
+    clipX: frag.x - surfaceLeft,
+    clipY: frag.y - surfaceTop,
+    clipWidth: frag.width,
+    clipHeight: frag.height,
+    strokeScale: (frag.width > 0 ? frag.width : union.width) / INK_VB,
+  };
 }
 
 // Pens are OPAQUE and saturated so they read on a white page (unlike the

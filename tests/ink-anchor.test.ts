@@ -14,8 +14,22 @@
 //   pickFragment   — empty rects -> null · 1 rect -> 0 · 2 rects picked by
 //                    origin · origin outside every rect -> nearest, never -1 ·
 //                    degenerate zero-area union -> 0
+//   unionRect      — empty -> null · 1 rect -> itself · 2 rects -> the box
+//                    spanning both, gap included
+//   placeInkStroke — empty rects -> null · zero-area block -> null · untorn
+//                    block -> the block's box, not torn, nib scaled by width ·
+//                    surface origin subtracted · torn block -> union box + clip
+//                    to the fragment holding the origin (either side) · nib
+//                    scaled by the FRAGMENT so a torn block isn't double-thick
 import { describe, it, expect } from "vitest";
-import { INK_CFI_MAX_LENGTH, parseInkAnchor, pickFragment } from "@/lib/ink";
+import {
+  INK_CFI_MAX_LENGTH,
+  INK_VB,
+  parseInkAnchor,
+  pickFragment,
+  placeInkStroke,
+  unionRect,
+} from "@/lib/ink";
 
 describe("parseInkAnchor", () => {
   it("accepts a page anchor (the PDF shape)", () => {
@@ -132,5 +146,122 @@ describe("pickFragment", () => {
       { x: 5, y: 5, width: 0, height: 0 },
     ];
     expect(pickFragment(collapsed, 0.5, 0.5)).toBe(0);
+  });
+});
+
+describe("unionRect", () => {
+  it("has no box for no fragments", () => {
+    expect(unionRect([])).toBeNull();
+  });
+
+  it("returns a lone fragment unchanged", () => {
+    const only = { x: 10, y: 20, width: 300, height: 80 };
+    expect(unionRect([only])).toEqual(only);
+  });
+
+  it("spans both fragments of a split block, column gap included", () => {
+    expect(
+      unionRect([
+        { x: 0, y: 400, width: 400, height: 100 },
+        { x: 500, y: 0, width: 400, height: 60 },
+      ]),
+    ).toEqual({ x: 0, y: 0, width: 900, height: 500 });
+  });
+});
+
+describe("placeInkStroke", () => {
+  // One paragraph, whole and on screen — the overwhelmingly common case.
+  const whole = [{ x: 100, y: 200, width: 500, height: 120 }];
+  // The same paragraph torn across a two-column spread: the tail of column one,
+  // continuing at the head of column two. The union spans the gap between them.
+  const torn = [
+    { x: 0, y: 400, width: 400, height: 100 }, // fragment 0 — bottom of col 1
+    { x: 500, y: 0, width: 400, height: 60 }, // fragment 1 — top of col 2
+  ];
+
+  it("has nowhere to paint a block with no fragments", () => {
+    expect(placeInkStroke([], 0.5, 0.5, 0, 0)).toBeNull();
+  });
+
+  it("has nowhere to paint a block that measures zero", () => {
+    const hidden = [{ x: 10, y: 10, width: 0, height: 0 }];
+    expect(placeInkStroke(hidden, 0.5, 0.5, 0, 0)).toBeNull();
+  });
+
+  it("maps an untorn block's fractions onto its own box and leaves it unclipped", () => {
+    const p = placeInkStroke(whole, 0.5, 0.5, 0, 0);
+    expect(p).not.toBeNull();
+    expect(p!.torn).toBe(false);
+    expect({ x: p!.x, y: p!.y, width: p!.width, height: p!.height }).toEqual({
+      x: 100,
+      y: 200,
+      width: 500,
+      height: 120,
+    });
+    // The nib scales off the block's width, never its aspect.
+    expect(p!.strokeScale).toBe(500 / INK_VB);
+  });
+
+  it("subtracts the overlay's own origin so the caller gets overlay-local px", () => {
+    const p = placeInkStroke(whole, 0.5, 0.5, 40, 60);
+    expect({ x: p!.x, y: p!.y }).toEqual({ x: 60, y: 140 });
+    // The surface origin moves the box; it never resizes it.
+    expect({ width: p!.width, height: p!.height }).toEqual({
+      width: 500,
+      height: 120,
+    });
+  });
+
+  it("maps a torn block onto the union — the space capture measured in — and clips to the fragment holding the origin", () => {
+    // Origin low-left: inside fragment 0's share of the union box.
+    const p = placeInkStroke(torn, 0.1, 0.9, 0, 0);
+    expect(p!.torn).toBe(true);
+    expect({ x: p!.x, y: p!.y, width: p!.width, height: p!.height }).toEqual({
+      x: 0,
+      y: 0,
+      width: 900,
+      height: 500,
+    });
+    expect({
+      clipX: p!.clipX,
+      clipY: p!.clipY,
+      clipWidth: p!.clipWidth,
+      clipHeight: p!.clipHeight,
+    }).toEqual({ clipX: 0, clipY: 400, clipWidth: 400, clipHeight: 100 });
+  });
+
+  it("clips a torn block to the other fragment when the origin lives there", () => {
+    // Origin high-right: inside fragment 1's share of the union box.
+    const p = placeInkStroke(torn, 0.9, 0.05, 0, 0);
+    expect({ clipX: p!.clipX, clipY: p!.clipY }).toEqual({ clipX: 500, clipY: 0 });
+  });
+
+  it("rides a reflow — the whole point of anchoring to a block instead of pixels", () => {
+    // The font stepped up: the paragraph keeps its column width, grows taller,
+    // and is pushed down the page. A pixel-anchored stroke would rot here.
+    const before = placeInkStroke(whole, 0.5, 0.5, 0, 0);
+    const after = placeInkStroke(
+      [{ x: 100, y: 260, width: 500, height: 180 }],
+      0.5,
+      0.5,
+      0,
+      0,
+    );
+    // Same fractions, new box: the mark lands wherever the block landed.
+    expect({ x: after!.x, y: after!.y, height: after!.height }).toEqual({
+      x: 100,
+      y: 260,
+      height: 180,
+    });
+    expect(after!.y).toBeGreaterThan(before!.y);
+    // The column width didn't change, so the pen doesn't silently fatten just
+    // because the text got taller.
+    expect(after!.strokeScale).toBe(before!.strokeScale);
+  });
+
+  it("scales a torn block's nib by its fragment, not the gap-spanning union", () => {
+    const p = placeInkStroke(torn, 0.1, 0.9, 0, 0);
+    // 400 (the column), not 900 (both columns plus the gap between them).
+    expect(p!.strokeScale).toBe(400 / INK_VB);
   });
 });
