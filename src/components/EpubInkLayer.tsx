@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { hasSeenPen, inkPointerDraws, notePointerType } from "@/lib/ink-pointer";
 import {
   INK_VB,
   hasPressureVariation,
@@ -303,8 +304,26 @@ export function EpubInkLayer({
     [],
   );
 
+  // Drop the in-progress stroke without committing it.
+  const cancelStroke = useCallback(() => {
+    drawing.current = false;
+    latest.current = null;
+    activeRef.current = null;
+    setCurrent(null);
+  }, []);
+
   const onPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
     if (!drawMode || erasing) return;
+    notePointerType(e.pointerType);
+    // A second pointer landing while a stroke is live — a palm settling, a hand
+    // steadying the tablet — is never a continuation of it. Throw the stroke
+    // away rather than let the next move drag a line across the block to
+    // wherever the new pointer touched down.
+    if (drawing.current) {
+      cancelStroke();
+      return;
+    }
+    if (!inkPointerDraws(e.pointerType, e.isPrimary, hasSeenPen())) return;
     const svg = svgRef.current;
     if (!svg) return;
     const hit = blockAt(e.clientX, e.clientY);
