@@ -10,11 +10,26 @@ import {
   ChevronRight,
   Highlighter,
   Notebook,
+  Pencil,
   ScrollText,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
 import { ReaderContextMenu } from "./ReaderContextMenu";
+import { EpubInkLayer } from "./EpubInkLayer";
+import { InkToolbar } from "./InkToolbar";
+import {
+  HIGHLIGHTER_COLORS,
+  HIGHLIGHTER_OPACITY,
+  HIGHLIGHTER_WIDTHS,
+  INK_COLORS,
+  INK_OPACITIES,
+  INK_WIDTHS,
+  type InkAnchor,
+  type InkKind,
+  type InkPoint,
+  type InkStroke,
+} from "@/lib/ink";
 import { ThemeToggle } from "./ThemeToggle";
 import {
   ReaderToolbar,
@@ -56,6 +71,10 @@ interface ContentsLike {
   window: Window;
   range(cfi: string): Range;
   cfiFromRange?(range: Range): string;
+  // Returns a CFI STRING for any DOM node, despite epub.js's JSDoc claiming an
+  // EpubCFI — the implementation calls .toString() on it (contents.js:1005).
+  // This is how a freehand stroke fastens to the block it was drawn on.
+  cfiFromNode?(node: Node, ignoreClass?: string): string;
   // Index of the spine section this Contents renders — maps back to
   // book.spine.items[sectionIndex] to recover the section href.
   sectionIndex?: number;
@@ -256,6 +275,46 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
   const undoStackRef = useRef<string[]>([]);
   const undoLastHighlightRef = useRef<() => void>(() => {});
 
+  // Draw-tool state. Drawing takes over the pointer, so it's a distinct mode
+  // from reading/highlighting (which use text selection). It lives HERE and not
+  // inside the overlay because a flow-mode change rebuilds the whole rendition
+  // (see the main effect's dep array) and the strokes must survive that.
+  const [drawMode, setDrawMode] = useState(false);
+  const [erasing, setErasing] = useState(false);
+  // Two instruments share the Draw tool. Each remembers its own color/width;
+  // the highlighter's opacity is fixed (multiply blend does the see-through).
+  const [tool, setTool] = useState<InkKind>("pen");
+  const [inkColor, setInkColor] = useState<string>(INK_COLORS[0].value);
+  const [inkWidth, setInkWidth] = useState<number>(INK_WIDTHS[1].value);
+  const [inkOpacity, setInkOpacity] = useState<number>(INK_OPACITIES[0].value);
+  const [hlColor, setHlColor] = useState<string>(HIGHLIGHTER_COLORS[0].value);
+  const [hlWidth, setHlWidth] = useState<number>(HIGHLIGHTER_WIDTHS[1].value);
+  const [inkStrokes, setInkStrokes] = useState<InkStroke[]>([]);
+  const inkTemp = useRef(0);
+  // Bumped whenever the book moves under the overlay (page turn, re-render,
+  // container resize, font step) so every stroke is re-measured against where
+  // its block landed. A counter, not a flag: two moves in a row must both fire.
+  const [inkRepaint, setInkRepaint] = useState(0);
+  const drawModeRef = useRef(false);
+  const undoInkRef = useRef<() => void>(() => {});
+
+  // The live values for whichever instrument is selected — fed to the toolbar
+  // and the overlay so drawing previews match what will be saved.
+  const drawingHl = tool === "highlighter";
+  const activeColor = drawingHl ? hlColor : inkColor;
+  const activeWidth = drawingHl ? hlWidth : inkWidth;
+  const activeOpacity = drawingHl ? HIGHLIGHTER_OPACITY : inkOpacity;
+
+  // The rendition is rebuilt on a flow-mode change, so the overlay reads it
+  // through this accessor rather than holding one by value.
+  const getInkContents = useCallback((): ContentsLike[] => {
+    try {
+      return renditionRef.current?.getContents() ?? [];
+    } catch {
+      return []; // mid-teardown
+    }
+  }, []);
+
   // Highlighter mode: the reflowable-text answer to the PDF freehand
   // highlighter. With it on, selecting text applies the chosen color straight
   // away (no color popover) — swipe across the words and they're marked. It's
@@ -389,6 +448,94 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
     [bookId, repaintHighlight],
   );
 
+  // Load saved ink strokes; each paints as soon as its section is on screen and
+  // its CFI resolves. Only block-anchored strokes can render in a reflowable
+  // book — a page-anchored one has no page here to sit on.
+  const loadInk = useCallback(async () => {
+    try {
+      const r = await fetch(`/api/ink?bookId=${encodeURIComponent(bookId)}`);
+      if (r.ok) {
+        const data = (await r.json()) as { strokes: InkStroke[] };
+        setInkStrokes(data.strokes.filter((s) => s.anchor?.kind === "block"));
+      }
+    } catch {
+      /* non-blocking */
+    }
+  }, [bookId]);
+
+  useEffect(() => {
+    loadInk();
+  }, [loadInk]);
+
+  // Commit a finished stroke: show it immediately (optimistic, temp id), POST,
+  // then swap in the server id. On failure, drop the optimistic stroke.
+  const saveStroke = useCallback(
+    async (cfi: string, section: number, points: InkPoint[]) => {
+      const tempId = `tmp-${++inkTemp.current}`;
+      // Snapshot the active instrument at commit time (strokeWidth is named to
+      // avoid shadowing anything in this scope).
+      const strokeKind: InkKind = tool;
+      const strokeColor = drawingHl ? hlColor : inkColor;
+      const strokeWidth = drawingHl ? hlWidth : inkWidth;
+      const strokeOpacity = drawingHl ? HIGHLIGHTER_OPACITY : inkOpacity;
+      const anchor: InkAnchor = { kind: "block", cfi, section };
+      const optimistic: InkStroke = {
+        id: tempId,
+        // No page: a reflowable book has none. `anchor` is what fastens it.
+        page: null,
+        anchor,
+        color: strokeColor,
+        width: strokeWidth,
+        opacity: strokeOpacity,
+        kind: strokeKind,
+        points,
+      };
+      setInkStrokes((prev) => [...prev, optimistic]);
+      try {
+        const r = await fetch("/api/ink", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            bookId,
+            anchor,
+            points,
+            color: strokeColor,
+            width: strokeWidth,
+            opacity: strokeOpacity,
+            kind: strokeKind,
+          }),
+        });
+        if (!r.ok) throw new Error("save failed");
+        const row = (await r.json()) as InkStroke;
+        setInkStrokes((prev) => prev.map((s) => (s.id === tempId ? row : s)));
+      } catch {
+        setInkStrokes((prev) => prev.filter((s) => s.id !== tempId));
+      }
+    },
+    [bookId, tool, drawingHl, inkColor, inkWidth, inkOpacity, hlColor, hlWidth],
+  );
+
+  const eraseStroke = useCallback(async (id: string) => {
+    setInkStrokes((prev) => prev.filter((s) => s.id !== id));
+    if (id.startsWith("tmp-")) return; // never persisted
+    try {
+      await fetch(`/api/ink/${id}`, { method: "DELETE" });
+    } catch {
+      /* the row will reappear on next load if this failed; acceptable */
+    }
+  }, []);
+
+  const undoInk = useCallback(() => {
+    setInkStrokes((prev) => {
+      if (prev.length === 0) return prev;
+      const last = prev[prev.length - 1];
+      if (!last.id.startsWith("tmp-")) {
+        fetch(`/api/ink/${last.id}`, { method: "DELETE" }).catch(() => {});
+      }
+      return prev.slice(0, -1);
+    });
+  }, []);
+
   // Mirror the mode/color/create-fn into refs so the selection handlers (built
   // once, inside the render effect) always see the live values.
   const createHighlightRef = useRef(createHighlight);
@@ -401,6 +548,12 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
   useEffect(() => {
     highlighterColorRef.current = highlighterColor;
   }, [highlighterColor]);
+  useEffect(() => {
+    drawModeRef.current = drawMode;
+  }, [drawMode]);
+  useEffect(() => {
+    undoInkRef.current = undoInk;
+  }, [undoInk]);
 
   useEffect(() => {
     let cancelled = false;
@@ -531,6 +684,8 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
           | undefined;
         const cfi = location?.start?.cfi;
         const pct = location?.start?.percentage;
+        // A page turn slides the iframe under the overlay; re-measure the ink.
+        setInkRepaint((n) => n + 1);
         if (typeof pct === "number" && isFinite(pct)) setPercent(pct);
         if (!cfi) return;
 
@@ -842,6 +997,9 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
         const view = args[1] as { contents?: ContentsLike } | undefined;
         for (const c of rendition.getContents()) hookSelection(c);
         for (const h of highlightsRef.current.values()) repaintHighlight(h);
+        // A newly rendered section brings blocks the overlay hasn't resolved
+        // its strokes against yet.
+        setInkRepaint((n) => n + 1);
         if (section) {
           const contents = view?.contents ?? rendition.getContents()[0];
           if (contents) resolveTextQuoteInSection(section, contents);
@@ -871,7 +1029,11 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
         if (isUndoShortcut(e)) {
           if (isEditableTarget(e.target)) return;
           e.preventDefault();
-          undoLastHighlightRef.current();
+          // Draw mode owns Ctrl+Z while it's on: the stroke just drawn is what
+          // the reader means to take back, not a highlight from earlier in the
+          // session. The two undo stacks never compete for the same keypress.
+          if (drawModeRef.current) undoInkRef.current();
+          else undoLastHighlightRef.current();
           return;
         }
         if (mode !== "paginated") return;
@@ -900,6 +1062,8 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
           } catch {
             /* rendition mid-teardown */
           }
+          // The reflow moved every block; the ink has to follow it.
+          setInkRepaint((n) => n + 1);
         });
       });
       ro.observe(viewer);
@@ -925,6 +1089,9 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
   useEffect(() => {
     renditionRef.current?.themes.fontSize(`${fontPercent}%`);
     writeSetting("epub.font", fontPercent);
+    // The text reflows at the new size and every block moves. Block-anchored
+    // strokes ride that — re-measuring is what makes them ride it.
+    setInkRepaint((n) => n + 1);
   }, [fontPercent]);
 
   // The book follows the app theme LIVE: the header toggle stamps
@@ -1189,6 +1356,26 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
           onModeChange={setMode}
         />
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => {
+              setDrawMode((v) => !v);
+              setErasing(false);
+              // The two modes both want the pointer, and the ink overlay wins
+              // (it covers the text), which would leave the highlighter a dead
+              // toggle. Turning it off says so plainly.
+              setHighlighterMode(false);
+            }}
+            aria-label="Draw"
+            aria-pressed={drawMode}
+            title="Draw on the page"
+            className={`rounded p-1.5 transition-colors ${
+              drawMode
+                ? "bg-amber-500 text-zinc-950"
+                : "text-zinc-500 hover:bg-zinc-900 hover:text-zinc-200"
+            }`}
+          >
+            <Pencil size={14} />
+          </button>
           {/* Highlighter: a toggle, plus a color strip while it's on. With it
               on, selecting text marks it in the chosen color — no popover. */}
           <div className="flex items-center gap-1.5">
@@ -1259,6 +1446,34 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
         </div>
       </header>
 
+      {/* Mounting this band shrinks the reading row, which trips the container
+          ResizeObserver and reflows the book the moment Draw turns on. That is
+          the design working, not a bug: the strokes are fastened to blocks and
+          ride the reflow — which is exactly why they can't be fastened to
+          pixels. */}
+      {drawMode && (
+        <InkToolbar
+          tool={tool}
+          color={activeColor}
+          width={activeWidth}
+          opacity={activeOpacity}
+          erasing={erasing}
+          canUndo={inkStrokes.length > 0}
+          onTool={(t) => {
+            setTool(t);
+            setErasing(false);
+          }}
+          onColor={(c) => {
+            (tool === "highlighter" ? setHlColor : setInkColor)(c);
+            setErasing(false);
+          }}
+          onWidth={(w) => (tool === "highlighter" ? setHlWidth : setInkWidth)(w)}
+          onOpacity={setInkOpacity}
+          onToggleErase={() => setErasing((v) => !v)}
+          onUndo={undoInk}
+        />
+      )}
+
       {/* Reading row: surface and highlights panel side by side, so the open
           panel pushes the book text aside instead of covering it. The panel
           falls back to overlaying at phone widths (see HighlightsPanel); the
@@ -1278,6 +1493,25 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
           }}
         >
           <div ref={viewerRef} className="h-full w-full" />
+
+          {/* ONE overlay across the whole surface, a sibling of the viewer
+              rather than one per view: a stroke's screen position comes from
+              its own block's rect plus the section frame's offset, which is
+              correct in both flow modes, and strokes in off-page columns land
+              outside this box and are clipped by the parent for free. */}
+          <EpubInkLayer
+            strokes={inkStrokes}
+            getContents={getInkContents}
+            repaintKey={inkRepaint}
+            drawMode={drawMode}
+            erasing={erasing}
+            color={activeColor}
+            width={activeWidth}
+            opacity={activeOpacity}
+            kind={tool}
+            onCommit={saveStroke}
+            onErase={eraseStroke}
+          />
 
           {loadError && (
             <div className="absolute inset-0 z-20 flex items-center justify-center bg-zinc-950/80">
