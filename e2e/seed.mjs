@@ -1,8 +1,8 @@
 // Seed deterministic fixtures for the core-flow end-to-end suite.
 //
-// Creates one EPUB book and one PDF book, both pointing at the repository's real
+// Creates two EPUB books and one PDF book, all pointing at the repository's real
 // test fixtures so the reader routes stream genuine bytes, plus one pending
-// metadata suggestion attached to the EPUB for the enrich-accept path. No user
+// metadata suggestion attached to the first EPUB for the enrich-accept path. No user
 // rows are seeded: the spec deliberately creates the first admin through the
 // live first-run /setup flow, which is the first step of the tested journey.
 import { PrismaClient } from "@prisma/client";
@@ -21,6 +21,20 @@ async function main() {
       filePath: path.join(fixtures, "valid.epub"),
       format: "epub",
       title: "E2E Sample EPUB",
+    },
+  });
+
+  // A second EPUB, for the ink spec only. It exists because valid.epub holds a
+  // single short paragraph at the top of the body: that block hardly moves when
+  // the font size changes, so drawing on it could not tell a block-anchored
+  // stroke apart from a pixel-anchored one. This fixture carries enough prose
+  // that a mid-chapter paragraph demonstrably relocates at a larger size, which
+  // is what the reflow-survival assertion needs to be worth anything.
+  const inkEpub = await prisma.book.create({
+    data: {
+      filePath: path.join(fixtures, "ink.epub"),
+      format: "epub",
+      title: "E2E Ink EPUB",
     },
   });
 
@@ -53,7 +67,7 @@ async function main() {
   });
 
   console.log(
-    `[e2e seed] created epub=${epub.id} pdf=${pdf.id} + 1 pending suggestion`,
+    `[e2e seed] created epub=${epub.id} ink=${inkEpub.id} pdf=${pdf.id} + 1 pending suggestion`,
   );
 }
 
