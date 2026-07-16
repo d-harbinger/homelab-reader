@@ -103,9 +103,13 @@ test("text-quote highlight resolves to a CFI, paints, and upgrades in the DB", a
   await test.step("open the EPUB reader and confirm it renders", async () => {
     await page.goto(`/books/${epubId}/read`);
     await expect(page.getByText(EPUB_TITLE)).toBeVisible();
-    // epub.js reaches a rendered state: the pager label flips from "Loading…"
-    // to a concrete percentage once the rendition displays.
-    await expect(page.getByText(/^\d+%$/)).toBeVisible({ timeout: 30_000 });
+    // epub.js reaches a rendered state: the PAGER label flips from "Loading…"
+    // to a concrete percentage once the rendition displays. Target the pager by
+    // test id — the font-size chip reads "100%" from first paint and would
+    // satisfy /^\d+%$/ over the whole page before anything rendered.
+    await expect(page.getByTestId("epub-pager")).toHaveText(/^\d+%$/, {
+      timeout: 30_000,
+    });
   });
 
   await test.step("the resolved highlight paints a mark in the reader", async () => {
