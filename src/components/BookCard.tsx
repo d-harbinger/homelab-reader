@@ -29,12 +29,15 @@ export function BookCard({ book }: { book: BookCardData }) {
             className="h-full w-full object-cover"
           />
         ) : (
-          <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-zinc-800 to-zinc-900">
-            <span className="text-xs uppercase tracking-[0.2em] text-zinc-500">
-              {book.format}
-            </span>
-          </div>
+          <div className="h-full w-full bg-gradient-to-br from-zinc-800 to-zinc-900" />
         )}
+        {/* Format is what decides which reader — and which tools — a book opens
+            with: freehand ink is PDF-only, because EPUB reflows and a stroke has
+            nothing fixed to anchor to. The shelf is where that expectation gets
+            set, so the chip rides every tile, cover or not. */}
+        <span className="absolute right-1.5 top-1.5 rounded bg-zinc-950/75 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-300 ring-1 ring-white/10 backdrop-blur-sm">
+          {book.format}
+        </span>
       </div>
       <div className="space-y-0.5 px-0.5">
         <div className="text-sm font-medium text-zinc-100 line-clamp-2 leading-snug">
