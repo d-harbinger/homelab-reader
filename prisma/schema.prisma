@@ -255,15 +255,28 @@ model HighlightKeyEntry {
   @@unique([bookId, userId, color])
 }
 
-// A single freehand ink stroke drawn over a PDF page (the reader's Draw tool).
+// A single freehand ink stroke drawn over a book (the reader's Draw tool).
 // Per-user, like Highlight. One row per stroke keeps erase/undo trivial.
+//
+// A stroke is fastened exactly one of two ways, never both — a discriminated
+// union across `page` and `anchor`, deliberately with no sentinel page value.
+// A sentinel (page 0 or 1 standing in for "no page") would leave every PDF page
+// query eligible to collide with EPUB rows; null cannot collide with anything.
 model InkStroke {
   id        String   @id @default(cuid())
   bookId    String
   userId    String
-  page      Int
-  // JSON: { points: [[x, y, pressure], ...] } in page-fraction coords (0..1),
-  // so a stroke scales with the page at any zoom — same model as pdf-rect
+  // Set on PDF strokes, null on EPUB ones. Widened from NOT NULL when block
+  // anchors arrived; existing rows keep their page and are untouched.
+  page      Int?
+  // JSON InkAnchor (src/lib/ink.ts), set on EPUB strokes and null on PDF ones.
+  // A reflowable book has no pages to pin to, so an EPUB stroke carries the CFI
+  // of the block it was drawn on and rides the text through reflow. Null means
+  // a PDF stroke, which is every stroke saved before this field existed.
+  anchor    String?
+  // JSON: { points: [[x, y, pressure], ...] } in fraction coords (0..1) — of
+  // the page for a PDF stroke, of the anchoring block's box for an EPUB one —
+  // so a stroke scales with whatever it is fastened to. Same model as pdf-rect
   // highlights. Pressure is 0..1 (0.5 for devices that don't report it).
   path      String
   color     String   @default("#1c1c1e")

@@ -7,13 +7,16 @@ import {
   isInkKind,
   isInkOpacity,
   isWidthForKind,
+  parseInkAnchor,
   parseInkPoints,
+  type InkAnchor,
   type InkKind,
 } from "@/lib/ink";
 
 interface InkPayload {
   bookId?: string;
   page?: number;
+  anchor?: unknown;
   points?: unknown;
   color?: string;
   width?: number;
@@ -23,13 +26,26 @@ interface InkPayload {
 
 type InkRow = {
   id: string;
-  page: number;
+  page: number | null;
+  anchor: string | null;
   color: string;
   width: number;
   opacity: number;
   kind: string;
   path: string;
 };
+
+// Re-validate the stored column on the way out rather than trusting it: a row
+// written by an older or broken client can't emit a shape the reader would
+// choke on. Same posture as the points parse below — degrade, never throw.
+function readAnchorColumn(raw: string | null): InkAnchor | null {
+  if (raw === null) return null;
+  try {
+    return parseInkAnchor(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
 
 function serialize(row: InkRow) {
   let points: number[][] = [];
@@ -39,7 +55,16 @@ function serialize(row: InkRow) {
   } catch {
     points = [];
   }
-  return {
+  const out: {
+    id: string;
+    page: number | null;
+    color: string;
+    width: number;
+    opacity: number;
+    kind: string;
+    points: number[][];
+    anchor?: InkAnchor;
+  } = {
     id: row.id,
     page: row.page,
     color: row.color,
@@ -48,21 +73,51 @@ function serialize(row: InkRow) {
     kind: row.kind,
     points,
   };
+  // A PDF stroke has no anchor, and the key stays ABSENT rather than null so
+  // its payload is byte-for-byte what the PDF reader has always received.
+  const anchor = readAnchorColumn(row.anchor);
+  if (anchor) out.anchor = anchor;
+  return out;
 }
 
-// POST /api/ink — create a freehand ink stroke on a book page.
-// Body: { bookId, page, points: [[x,y,pressure],...], color?, width? }
+// POST /api/ink — create a freehand ink stroke on a book.
+// Body: { bookId, points: [[x,y,pressure],...], color?, width? } plus EXACTLY
+// one of:
+//   page   — a PDF stroke, fastened to a 1-based page number
+//   anchor — an EPUB stroke, fastened to the CFI of the block drawn on
 export const POST = withUser(async (user, req) => {
   const parsed = await parseJson<InkPayload>(req);
   if (!parsed.ok) return parsed.res;
 
-  const { bookId, page, points, color, width, opacity, kind } = parsed.body;
-  if (!bookId || typeof page !== "number" || !Number.isInteger(page) || page < 1) {
+  const { bookId, page, anchor, points, color, width, opacity, kind } = parsed.body;
+  // Exactly one way to fasten a stroke. Both is contradictory, neither leaves a
+  // stroke floating — either way there is no row worth writing.
+  if (!bookId || (page === undefined) === (anchor === undefined)) {
     return NextResponse.json(
-      { error: "missing bookId or valid page" },
+      { error: "missing bookId, or not exactly one of page and anchor" },
       { status: 400 },
     );
   }
+
+  let pageValue: number | null = null;
+  let anchorJson: string | null = null;
+  if (page !== undefined) {
+    if (typeof page !== "number" || !Number.isInteger(page) || page < 1) {
+      return NextResponse.json({ error: "invalid page" }, { status: 400 });
+    }
+    pageValue = page;
+  } else {
+    const parsedAnchor = parseInkAnchor(anchor);
+    // A page-kind anchor is rejected here on purpose: `page` is the one way to
+    // say "page". Taking it through this field too would write a row with a
+    // null page that no PDF page query can match — a stroke that saves and then
+    // never renders.
+    if (!parsedAnchor || parsedAnchor.kind !== "block") {
+      return NextResponse.json({ error: "invalid anchor" }, { status: 400 });
+    }
+    anchorJson = JSON.stringify(parsedAnchor);
+  }
+
   const pts = parseInkPoints(points);
   if (!pts) {
     return NextResponse.json({ error: "invalid points" }, { status: 400 });
@@ -93,7 +148,8 @@ export const POST = withUser(async (user, req) => {
     data: {
       bookId,
       userId: user.id,
-      page,
+      page: pageValue,
+      anchor: anchorJson,
       path: JSON.stringify({ points: pts }),
       color: color ?? (isHl ? "#fbbf24" : "#1c1c1e"),
       width: width ?? (isHl ? 24 : 4),
