@@ -1440,7 +1440,14 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
               </span>
             )}
           </button>
-          <div className="text-xs text-zinc-600 tabular-nums">
+          <div
+            // The reading-position pager. A test hook, not just cosmetics: its
+            // text is "Loading…" until the rendition displays, so it — and NOT
+            // the font-size chip, which reads "100%" from first paint — is the
+            // signal that epub.js has actually rendered.
+            data-testid="epub-pager"
+            className="text-xs text-zinc-600 tabular-nums"
+          >
             {loadError ? "—" : ready ? `${Math.round(percent * 100)}%` : "Loading…"}
           </div>
         </div>

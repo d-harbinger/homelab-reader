@@ -152,9 +152,14 @@ test("core flow: setup, login, library, readers, annotations, OPDS, enrich", asy
     // The reader chrome mounts (title + pager control)...
     await expect(page.getByText(EPUB_TITLE)).toBeVisible();
     await expect(page.getByRole("button", { name: /next page/i })).toBeVisible();
-    // ...and epub.js reaches a rendered state: the pager label flips from
-    // "Loading…" to a concrete percentage once the rendition displays.
-    await expect(page.getByText(/^\d+%$/)).toBeVisible({ timeout: 30_000 });
+    // ...and epub.js reaches a rendered state: the PAGER label flips from
+    // "Loading…" to a concrete percentage once the rendition displays. Target
+    // the pager by test id, not /^\d+%$/ over the whole page — the font-size
+    // chip reads "100%" from first paint and would satisfy that regex before
+    // anything rendered.
+    await expect(page.getByTestId("epub-pager")).toHaveText(/^\d+%$/, {
+      timeout: 30_000,
+    });
   });
 
   await test.step("open the PDF reader and confirm it renders", async () => {
