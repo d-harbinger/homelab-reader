@@ -28,6 +28,132 @@ export function isInkKind(v: unknown): v is InkKind {
   return v === "pen" || v === "highlighter";
 }
 
+// --- what a stroke is fastened to -------------------------------------------
+
+// A PDF page is a fixed canvas, so a stroke there anchors to a page number and
+// its points are fractions of that page. A reflowable EPUB has no pages: font
+// size, window width, and column count all move the text, so a stroke anchored
+// to pixels would rot on the first reflow. Instead an EPUB stroke anchors to
+// the CFI of the block element it was drawn on, with its points stored as
+// fractions of THAT BLOCK's box — resolve the CFI, measure the block, repaint.
+// The mark rides the text wherever the layout puts it.
+//
+// `section` is the spine index (epub.js `contents.sectionIndex`): a cheap
+// integer pre-filter so rendering only attempts a CFI resolve against the
+// section a stroke actually belongs to.
+export type InkAnchor =
+  | { kind: "page"; page: number }
+  | { kind: "block"; cfi: string; section: number };
+
+/**
+ * Maximum length of a stored CFI, in UTF-16 units. Mirrors the
+ * CHAPTER_HREF_MAX_LENGTH bound in src/lib/annotations/envelope.ts — same
+ * posture, same order of magnitude, because it bounds the same kind of thing (a
+ * document-location string). With every field bounded, a parsed anchor is
+ * bounded by construction, so the serialized JSON needs no separate size gate.
+ */
+export const INK_CFI_MAX_LENGTH = 500;
+
+function isObject(a: unknown): a is Record<string, unknown> {
+  return typeof a === "object" && a !== null;
+}
+
+/**
+ * Validate + normalize an anchor from an untrusted request body (or a stored
+ * column), returning the anchor or null — the same shape as parseInkPoints.
+ * Only the union's own keys survive, so nothing a client tacks on reaches the
+ * database.
+ */
+export function parseInkAnchor(raw: unknown): InkAnchor | null {
+  if (!isObject(raw)) return null;
+
+  if (raw.kind === "page") {
+    const { page } = raw;
+    // Same bound the /api/ink page path has always enforced: pages are 1-based.
+    if (typeof page !== "number" || !Number.isInteger(page) || page < 1) return null;
+    return { kind: "page", page };
+  }
+
+  if (raw.kind === "block") {
+    const { cfi, section } = raw;
+    if (typeof cfi !== "string" || cfi.length === 0) return null;
+    if (cfi.length > INK_CFI_MAX_LENGTH) return null;
+    // Spine indexes are 0-based, so 0 is a real section — not a falsy reject.
+    if (typeof section !== "number" || !Number.isInteger(section) || section < 0) {
+      return null;
+    }
+    return { kind: "block", cfi, section };
+  }
+
+  return null;
+}
+
+/** The shape of a measured box. Plain object, so this file stays DOM-free. */
+export interface InkRectLike {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Given the per-fragment rects of one block (`node.getClientRects()` returns one
+ * rect per fragment when a block straddles a column break) and a stroke's saved
+ * origin fraction, return the index of the fragment the stroke belongs to, or
+ * null when there is nothing to paint into.
+ *
+ * The rects are normalized against their own union box, which puts them in the
+ * same 0..1 space the stroke's points were saved in. An origin that lands in a
+ * column gap — or off the block entirely after a reflow — resolves to the
+ * NEAREST fragment rather than nowhere: a stroke that misses is worse than a
+ * stroke a few millimetres off, so this never reports "no fragment" for a block
+ * that has one.
+ */
+export function pickFragment(
+  rects: InkRectLike[],
+  originX: number,
+  originY: number,
+): number | null {
+  if (rects.length === 0) return null;
+  if (rects.length === 1) return 0;
+
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const r of rects) {
+    if (r.x < minX) minX = r.x;
+    if (r.y < minY) minY = r.y;
+    if (r.x + r.width > maxX) maxX = r.x + r.width;
+    if (r.y + r.height > maxY) maxY = r.y + r.height;
+  }
+  const w = maxX - minX;
+  const h = maxY - minY;
+  // A collapsed union (a hidden or zero-area block) has no fraction space to
+  // measure against; the first fragment is as good an answer as any.
+  if (!(w > 0) || !(h > 0)) return 0;
+
+  let nearest = 0;
+  let nearestDist = Infinity;
+  for (let i = 0; i < rects.length; i++) {
+    const r = rects[i];
+    const x0 = (r.x - minX) / w;
+    const x1 = (r.x + r.width - minX) / w;
+    const y0 = (r.y - minY) / h;
+    const y1 = (r.y + r.height - minY) / h;
+    if (originX >= x0 && originX <= x1 && originY >= y0 && originY <= y1) return i;
+    // Distance from the origin to this fragment's box (0 on the inside).
+    const dx = originX < x0 ? x0 - originX : originX > x1 ? originX - x1 : 0;
+    const dy = originY < y0 ? y0 - originY : originY > y1 ? originY - y1 : 0;
+    const dist = dx * dx + dy * dy;
+    if (dist < nearestDist) {
+      nearestDist = dist;
+      nearest = i;
+    }
+  }
+  return nearest;
+}
+
 // Pens are OPAQUE and saturated so they read on a white page (unlike the
 // translucent highlighter palette). Names map 1:1 to accepted color values.
 export const INK_COLORS: { name: string; value: string }[] = [
