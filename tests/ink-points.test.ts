@@ -13,7 +13,7 @@
 // edge instead of following the pen. Freeing position here is half the fix; the
 // capture step (EpubInkLayer.toPoint) is the other half.
 import { describe, it, expect } from "vitest";
-import { parseInkPoints } from "@/lib/ink";
+import { parseInkPoints, pointerLeftBox } from "@/lib/ink";
 
 describe("parseInkPoints — page strokes (PDF) stay caged to the page", () => {
   it("clamps position and pressure to 0..1 by default", () => {
@@ -55,5 +55,26 @@ describe("parseInkPoints — block strokes (EPUB) may leave their anchor block",
   it("still rejects non-finite position", () => {
     expect(parseInkPoints([[Number.NaN, 2, 0.5]], { allowOverflow: true })).toBeNull();
     expect(parseInkPoints([[2, Infinity, 0.5]], { allowOverflow: true })).toBeNull();
+  });
+});
+
+describe("pointerLeftBox — a PDF stroke ends when the pen leaves the page", () => {
+  // A page overlay's on-screen box (client coords), like an SVG bounding rect.
+  const page = { left: 100, top: 200, right: 700, bottom: 1000 };
+
+  it("is false well inside the page", () => {
+    expect(pointerLeftBox(400, 600, page, 6)).toBe(false);
+  });
+
+  it("is false within the slop margin — hand jitter at the edge does not cut", () => {
+    expect(pointerLeftBox(701, 600, page, 6)).toBe(false); // 1px past the right edge
+    expect(pointerLeftBox(400, 1004, page, 6)).toBe(false); // 4px below the bottom
+  });
+
+  it("is true once the pen crosses beyond the slop on any side", () => {
+    expect(pointerLeftBox(400, 1010, page, 6)).toBe(true); // dragged onto the next page
+    expect(pointerLeftBox(90, 600, page, 6)).toBe(true); // off the left
+    expect(pointerLeftBox(400, 190, page, 6)).toBe(true); // off the top
+    expect(pointerLeftBox(710, 600, page, 6)).toBe(true); // off the right
   });
 });

@@ -7,10 +7,16 @@ import {
   inkPath,
   inkSegments,
   hasPressureVariation,
+  pointerLeftBox,
   type InkStroke,
   type InkKind,
   type InkPoint,
 } from "@/lib/ink";
+
+// How far past the page edge the pen may stray before the stroke is ended.
+// A PDF page is the whole canvas, so a mark that leaves it is finished; this
+// slop just keeps hand jitter right at the edge from cutting a stroke short.
+const PAGE_EDGE_SLOP = 6;
 
 interface Props {
   strokes: InkStroke[]; // saved strokes for THIS page
@@ -107,9 +113,19 @@ export function InkLayer({
       typeof native.getCoalescedEvents === "function" ? native.getCoalescedEvents() : [];
     const src = coalesced.length ? coalesced : [native];
     const cur = latest.current;
-    if (!cur) return;
+    const r = rectRef.current;
+    if (!cur || !r) return;
     const next = cur.slice();
+    // Once the pen leaves the page, the stroke is done: append the in-page
+    // samples up to the crossing, then end it at the edge. Clamping past-edge
+    // points instead would smear a flat line along the page boundary — the same
+    // artifact the block-anchor cage caused on EPUB. PDF ink belongs to one page.
+    let left = false;
     for (const ev of src) {
+      if (pointerLeftBox(ev.clientX, ev.clientY, r, PAGE_EDGE_SLOP)) {
+        left = true;
+        break;
+      }
       const pt = toPoint(ev.clientX, ev.clientY, ev.pressure, ev.pointerType);
       const last = next[next.length - 1];
       const dx = (pt[0] - last[0]) * INK_VB;
@@ -119,6 +135,7 @@ export function InkLayer({
     }
     latest.current = next;
     setCurrent(next);
+    if (left) endStroke();
   };
 
   const endStroke = () => {
