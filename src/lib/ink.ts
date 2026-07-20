@@ -250,6 +250,27 @@ export function placeInkStroke(
   };
 }
 
+// True when a pointer at (clientX, clientY) has left a page overlay's box by
+// more than `slop` px on any side — the signal to END a PDF ink stroke at the
+// page edge instead of dragging a clamped line along it. A PDF ink mark is a
+// per-page object by the format itself (an Ink annotation belongs to one page,
+// PDF spec §12.5.6.13), so a stroke that leaves its page is finished, not
+// continued onto the next — the same reason GoodNotes and PDF.js clip ink at the
+// page rather than flow it across. `slop` forgives hand jitter right at the edge.
+export function pointerLeftBox(
+  clientX: number,
+  clientY: number,
+  box: { left: number; top: number; right: number; bottom: number },
+  slop: number,
+): boolean {
+  return (
+    clientX < box.left - slop ||
+    clientX > box.right + slop ||
+    clientY < box.top - slop ||
+    clientY > box.bottom + slop
+  );
+}
+
 // Pens are OPAQUE and saturated so they read on a white page (unlike the
 // translucent highlighter palette). Names map 1:1 to accepted color values.
 export const INK_COLORS: { name: string; value: string }[] = [
