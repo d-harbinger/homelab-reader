@@ -52,10 +52,6 @@ interface Props {
 const HIGHLIGHTER_CAP = "butt" as const;
 const PEN_CAP = "round" as const;
 
-function clamp01(n: number): number {
-  return n < 0 ? 0 : n > 1 ? 1 : n;
-}
-
 // The block a stroke is fastened to, measured on the outer viewport.
 interface BlockHit {
   cfi: string;
@@ -289,6 +285,14 @@ export function EpubInkLayer({
   // Fractions of the block's UNION box — the same space placeInkStroke paints
   // back into, which is what makes capture and render exact inverses, so a
   // stroke stays precisely where it was drawn until something reflows.
+  //
+  // Position is NOT clamped to 0..1: the block is a reference frame, not a cage,
+  // and a freehand stroke routinely runs past the small block it started on onto
+  // the rest of the page. Clamping pinned every outside point to the block edge,
+  // so the ink slid straight along an invisible boundary instead of following
+  // the pen. The placement geometry already maps out-of-range fractions back
+  // onto the page correctly (pickFragment/placeInkStroke), and /api/ink persists
+  // them un-clamped for block strokes, so the freed mark survives a reload.
   const toPoint = useCallback(
     (
       u: InkRectLike,
@@ -297,8 +301,8 @@ export function EpubInkLayer({
       pressure: number,
       type: string,
     ): InkPoint => [
-      clamp01((clientX - u.x) / u.width),
-      clamp01((clientY - u.y) / u.height),
+      (clientX - u.x) / u.width,
+      (clientY - u.y) / u.height,
       type === "pen" && pressure > 0 ? pressure : 0.5,
     ],
     [],

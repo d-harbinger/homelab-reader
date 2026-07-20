@@ -2,7 +2,11 @@
 // Single-sourced so the InkLayer overlay and the /api/ink routes agree on the
 // palette, the accepted widths, and the coordinate space.
 
-export type InkPoint = [number, number, number]; // [x, y, pressure] — all 0..1
+// [x, y, pressure]. Pressure is always 0..1. Position is 0..1 for a
+// page-anchored (PDF) stroke, whose fractions are of the whole page; a
+// block-anchored (EPUB) stroke's fractions are of its anchor block and may run
+// outside 0..1 where the mark extends past that block onto the rest of the page.
+export type InkPoint = [number, number, number];
 
 // Two instruments share the freehand overlay. To a reader a pen and a
 // highlighter are different tools: the pen lays an opaque, pressure-varying
@@ -344,8 +348,22 @@ function clamp01(n: number): number {
 }
 
 // Validate + normalize a points array from an untrusted request body.
-export function parseInkPoints(raw: unknown): InkPoint[] | null {
+//
+// `allowOverflow` frees the POSITION axes from the 0..1 clamp for block-anchored
+// (EPUB) strokes: those fractions are of the one text block a mark started on,
+// and a freehand stroke routinely runs past that small block onto the rest of
+// the page. Clamping there pins every outside point to the block edge, which is
+// exactly the "straight line along an invisible boundary" bug. A page-anchored
+// (PDF) stroke's fractions are of the whole page — the actual canvas — so it
+// keeps the clamp and nothing lands off-page. Pressure is a true 0..1 quantity
+// either way and is always clamped. Non-finite still rejects: the bound that
+// matters for storage is the point COUNT (MAX_INK_POINTS), not the magnitude.
+export function parseInkPoints(
+  raw: unknown,
+  opts?: { allowOverflow?: boolean },
+): InkPoint[] | null {
   if (!Array.isArray(raw) || raw.length === 0) return null;
+  const clampPos = opts?.allowOverflow ? (n: number) => n : clamp01;
   const src = raw.length > MAX_INK_POINTS ? raw.slice(0, MAX_INK_POINTS) : raw;
   const out: InkPoint[] = [];
   for (const p of src) {
@@ -355,7 +373,7 @@ export function parseInkPoints(raw: unknown): InkPoint[] | null {
     let pr = p.length > 2 ? Number(p[2]) : 0.5;
     if (!isFinite(x) || !isFinite(y)) return null;
     if (!isFinite(pr)) pr = 0.5;
-    out.push([clamp01(x), clamp01(y), clamp01(pr)]);
+    out.push([clampPos(x), clampPos(y), clamp01(pr)]);
   }
   return out;
 }
