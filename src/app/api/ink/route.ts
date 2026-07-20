@@ -118,7 +118,10 @@ export const POST = withUser(async (user, req) => {
     anchorJson = JSON.stringify(parsedAnchor);
   }
 
-  const pts = parseInkPoints(points);
+  // A block-anchored (EPUB) stroke's points are fractions of the one text block
+  // it started on and legitimately run past it; a page-anchored (PDF) stroke's
+  // are of the whole page and must stay on it. Free the former, cage the latter.
+  const pts = parseInkPoints(points, { allowOverflow: anchorJson !== null });
   if (!pts) {
     return NextResponse.json({ error: "invalid points" }, { status: 400 });
   }

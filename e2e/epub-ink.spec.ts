@@ -272,8 +272,10 @@ test("EPUB ink: a stroke persists, survives reload, and rides a font-size reflow
     expect(s.anchor!.section).toBe(0);
     expect(s.page, "an EPUB stroke has no page").toBeNull();
     expect(s.points.length, "the stroke has multiple sampled points").toBeGreaterThan(2);
-    // Points are fractions of the block's box, so they are all 0..1 — a pixel
-    // coordinate would blow this immediately.
+    // Points are fractions of the block's box. THIS gesture is an underline kept
+    // inside the paragraph, so its fractions all sit in 0..1 — a pixel coordinate
+    // would blow this immediately. (A stroke that leaves the block legitimately
+    // runs outside 0..1; that is the point of the "past the block" test below.)
     for (const [x, y] of s.points) {
       expect(x).toBeGreaterThanOrEqual(0);
       expect(x).toBeLessThanOrEqual(1);
@@ -382,5 +384,92 @@ test("EPUB ink: a stroke persists, survives reload, and rides a font-size reflow
     expect(afterStroke!.y).toBeLessThan(afterPara.y + afterPara.height + NIB);
 
     await page.screenshot({ path: "e2e/screenshots/epub-ink-after-font-change.png" });
+  });
+});
+
+// The bug this guards: the block a stroke starts on is a reference frame, not a
+// cage. Capture used to clamp every point to 0..1 of that block, so the instant
+// the pen left it the coordinate pinned to the block edge and the ink slid
+// straight along an invisible boundary instead of following the hand. The fix
+// frees position (client capture AND /api/ink), and the mark must both PAINT
+// past the block on screen and PERSIST with fractions outside 0..1.
+test("EPUB ink: a stroke drawn past its block follows the pen, not an edge", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+
+  let bookId = "";
+
+  await test.step("sign in, open the reader, turn on Draw", async () => {
+    await signIn(page);
+    const res = await page.request.get("/api/books");
+    const { books } = (await res.json()) as { books: BookRow[] };
+    const book = books.find((b) => b.format === "epub" && b.title === INK_TITLE);
+    expect(book, "seeded ink EPUB present").toBeTruthy();
+    bookId = book!.id;
+
+    // Start from a clean slate so the assertions below name exactly the stroke
+    // this test draws, not one left by the acceptance test on the shared DB.
+    const listed = (await (await page.request.get(`/api/ink?bookId=${bookId}`)).json()) as {
+      strokes: InkRow[];
+    };
+    for (const s of listed.strokes) await page.request.delete(`/api/ink/${s.id}`);
+
+    await page.goto(`/books/${bookId}/read`);
+    await settledBox(page, TARGET_SELECTOR);
+    await page.getByRole("button", { name: "Draw" }).click();
+    await expect(page.getByRole("button", { name: /eras/i })).toBeVisible();
+    await page.getByRole("button", { name: "Red" }).click();
+    await page.getByRole("button", { name: "Bold" }).click();
+  });
+
+  let para!: Box;
+
+  await test.step("draw from the paragraph down well past its bottom edge", async () => {
+    para = await settledBox(page, TARGET_SELECTOR);
+    const startX = para.x + para.width * 0.5;
+    const startY = para.y + para.height * 0.5;
+    // End a full paragraph-height BELOW the block's bottom: a point down there is
+    // a y-fraction well above 1. The old clamp would have frozen y at 1 for the
+    // whole descent, drawing a flat line along the block's bottom edge.
+    const endY = para.y + para.height * 2;
+
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    for (let i = 1; i <= 10; i++) {
+      // Curve the descent so a straight-line render can't accidentally match it.
+      const t = i / 10;
+      await page.mouse.move(startX + Math.sin(t * Math.PI) * 40, startY + (endY - startY) * t);
+    }
+    await page.mouse.up();
+  });
+
+  await test.step("the painted ink extends below the block, not pinned to its edge", async () => {
+    await expect
+      .poll(async () => (await strokeBox(page)) !== null, { timeout: 10_000 })
+      .toBe(true);
+    const s = await strokeBox(page);
+    expect(s, "a visible stroke path exists").toBeTruthy();
+    // The decisive on-screen check: the ink's bottom reaches well past the
+    // block's bottom edge. Pinned-to-edge ink would stop at para.y + height.
+    expect(
+      s!.y + s!.height,
+      "the stroke paints below the block instead of along its bottom edge",
+    ).toBeGreaterThan(para.y + para.height + 20);
+  });
+
+  await test.step("the freed coordinates persisted through /api/ink", async () => {
+    const { strokes } = (await (
+      await page.request.get(`/api/ink?bookId=${bookId}`)
+    ).json()) as { strokes: InkRow[] };
+    expect(strokes, "exactly the one stroke this test drew").toHaveLength(1);
+    const pts = strokes[0].points;
+    // The block-anchor contract still holds — this is a block stroke, no page.
+    expect(strokes[0].anchor?.kind).toBe("block");
+    expect(strokes[0].page).toBeNull();
+    // The proof the cage is gone: at least one saved point sits well past the
+    // block's bottom (y > 1). Under the clamp bug every y maxed out at exactly 1.
+    const maxY = Math.max(...pts.map(([, y]) => y));
+    expect(maxY, "a saved point sits below the anchor block (y > 1)").toBeGreaterThan(1.2);
   });
 });
