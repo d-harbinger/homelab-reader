@@ -134,3 +134,75 @@ test("PDF ink: a stroke dragged off the page ends at the edge, no smear", async 
 
   await page.screenshot({ path: "e2e/screenshots/pdf-ink-clean-clip.png" });
 });
+
+// Draw-to-erase gate.
+//
+// The eraser used to remove ONE stroke per tap. It now sweeps: pressing and
+// dragging deletes every stroke the eraser passes over, found by
+// elementsFromPoint against each stroke's hit target. This spec lays two
+// separate strokes and drags the eraser across both in one gesture; both must
+// be gone.
+test("PDF ink: dragging the eraser sweeps across strokes and removes them", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+
+  await signIn(page);
+
+  const res = await page.request.get("/api/books");
+  const { books } = (await res.json()) as { books: BookRow[] };
+  const bookId = books.find((b) => b.title === PDF_TITLE)!.id;
+
+  const listed = (await (await page.request.get(`/api/ink?bookId=${bookId}`)).json()) as {
+    strokes: InkRow[];
+  };
+  for (const s of listed.strokes) await page.request.delete(`/api/ink/${s.id}`);
+
+  await page.goto(`/books/${bookId}/read`);
+  await expect(page.getByText(/^1 \/ \d+$/)).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator("canvas").first()).toBeVisible();
+
+  await page.getByRole("button", { name: "Draw" }).click();
+  await expect(page.getByRole("button", { name: /eras/i })).toBeVisible();
+
+  const overlay = page.locator("svg.z-20").first();
+  await expect(overlay).toBeVisible();
+  const pg = (await overlay.boundingBox())!;
+
+  // Two separate vertical strokes, left and right, both crossing y≈0.47.
+  await test.step("draw two strokes", async () => {
+    for (const fx of [0.3, 0.7]) {
+      const x = pg.x + pg.width * fx;
+      await page.mouse.move(x, pg.y + pg.height * 0.4);
+      await page.mouse.down();
+      for (let i = 1; i <= 5; i++) {
+        await page.mouse.move(x, pg.y + pg.height * (0.4 + 0.03 * i));
+      }
+      await page.mouse.up();
+    }
+    const { strokes } = (await (
+      await page.request.get(`/api/ink?bookId=${bookId}`)
+    ).json()) as { strokes: InkRow[] };
+    expect(strokes, "both strokes persisted").toHaveLength(2);
+  });
+
+  await test.step("sweep the eraser across both in one drag", async () => {
+    await page.getByRole("button", { name: /eras/i }).click();
+    const y = pg.y + pg.height * 0.47;
+    await page.mouse.move(pg.x + pg.width * 0.2, y);
+    await page.mouse.down();
+    for (let i = 1; i <= 12; i++) {
+      await page.mouse.move(pg.x + pg.width * (0.2 + 0.05 * i), y);
+    }
+    await page.mouse.up();
+  });
+
+  await expect
+    .poll(async () => {
+      const { strokes } = (await (
+        await page.request.get(`/api/ink?bookId=${bookId}`)
+      ).json()) as { strokes: InkRow[] };
+      return strokes.length;
+    }, { message: "one eraser sweep removed both strokes", timeout: 10_000 })
+    .toBe(0);
+});

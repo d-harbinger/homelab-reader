@@ -177,7 +177,7 @@ export function InkToolbar({
         <button
           onClick={onToggleErase}
           aria-pressed={erasing}
-          title="Tap a stroke to remove it"
+          title="Drag over strokes to erase"
           className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs transition-colors ${
             erasing
               ? "border-amber-500 bg-amber-500/15 text-amber-400"

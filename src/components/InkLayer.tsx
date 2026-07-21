@@ -68,6 +68,22 @@ export function InkLayer({
   // A live finger-pan gesture: last client position, so each move scrolls by
   // the delta since the previous sample.
   const panLast = useRef<{ x: number; y: number } | null>(null);
+  // A live erase drag: the eraser sweeps over strokes rather than tapping one.
+  const erasingDrag = useRef(false);
+
+  // Delete every stroke whose hit target sits under the eraser right now.
+  // elementsFromPoint reads the real rendered geometry, so it works the same in
+  // both readers regardless of the stroke's coordinate space, and — unlike
+  // per-stroke pointer handlers — it survives touch's implicit pointer capture.
+  const eraseAt = useCallback(
+    (clientX: number, clientY: number) => {
+      for (const el of document.elementsFromPoint(clientX, clientY)) {
+        const id = el.getAttribute("data-ink-id");
+        if (id) onErase(id);
+      }
+    },
+    [onErase],
+  );
   // `current` drives the in-progress render; `latest` is the same points held in
   // a ref so the commit reads them WITHOUT a side effect inside a setState
   // updater — React StrictMode double-invokes updaters in dev, and committing
@@ -93,7 +109,16 @@ export function InkLayer({
   };
 
   const onPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
-    if (!drawMode || erasing) return;
+    if (!drawMode) return;
+    if (erasing) {
+      // Begin an erase sweep: capture so moves keep coming even off the page,
+      // then delete whatever is under the first touch too.
+      e.preventDefault();
+      erasingDrag.current = true;
+      svgRef.current?.setPointerCapture(e.pointerId);
+      eraseAt(e.clientX, e.clientY);
+      return;
+    }
     notePointerType(e.pointerType);
     // A second pointer landing while a stroke is live — a palm settling, a hand
     // steadying the tablet — is never a continuation of it. Throw the stroke
@@ -123,6 +148,10 @@ export function InkLayer({
   };
 
   const onPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (erasingDrag.current) {
+      eraseAt(e.clientX, e.clientY);
+      return;
+    }
     if (panLast.current) {
       const dx = e.clientX - panLast.current.x;
       const dy = e.clientY - panLast.current.y;
@@ -164,6 +193,7 @@ export function InkLayer({
 
   const endStroke = () => {
     panLast.current = null; // a finger-pan ends the same way a stroke does
+    erasingDrag.current = false; // and so does an erase sweep
     if (!drawing.current) return;
     drawing.current = false;
     const pts = latest.current;
@@ -190,7 +220,7 @@ export function InkLayer({
       aria-hidden="true"
     >
       {strokes.map((s) => (
-        <SavedStroke key={s.id} stroke={s} erasing={erasing} onErase={onErase} />
+        <SavedStroke key={s.id} stroke={s} erasing={erasing} />
       ))}
       {current && (
         <path
@@ -211,11 +241,9 @@ export function InkLayer({
 function SavedStroke({
   stroke,
   erasing,
-  onErase,
 }: {
   stroke: InkStroke;
   erasing: boolean;
-  onErase: (id: string) => void;
 }) {
   const isHighlighter = stroke.kind === "highlighter";
   // A highlighter is a uniform, flat-tipped, multiply-blended swipe — pressure
@@ -251,22 +279,18 @@ function SavedStroke({
         />
       )}
       {/* Fat invisible hit target — only live while erasing, so it never blocks
-          drawing over an existing stroke. */}
+          drawing over an existing stroke. The overlay finds it by data-ink-id
+          via elementsFromPoint as the eraser sweeps across; it does not handle
+          its own pointer events (touch would implicitly capture the first one
+          and starve the rest of the sweep). */}
       <path
+        data-ink-id={stroke.id}
         d={inkPath(stroke.points)}
         stroke="transparent"
         strokeWidth={Math.max(stroke.width * 3, 14)}
         fill="none"
         strokeLinecap="round"
         style={{ pointerEvents: erasing ? "stroke" : "none", cursor: "cell" }}
-        onPointerDown={
-          erasing
-            ? (e) => {
-                e.stopPropagation();
-                onErase(stroke.id);
-              }
-            : undefined
-        }
       />
     </g>
   );
