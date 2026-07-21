@@ -161,6 +161,22 @@ export function EpubInkLayer({
   // A live finger-pan gesture: last client position, so each move pans by the
   // delta since the previous sample.
   const panLast = useRef<{ x: number; y: number } | null>(null);
+  // A live erase drag: the eraser sweeps over strokes rather than tapping one.
+  const erasingDrag = useRef(false);
+
+  // Delete every stroke whose hit target sits under the eraser right now.
+  // elementsFromPoint reads the real rendered geometry, so a placed stroke's
+  // block transform is already accounted for, and it survives touch's implicit
+  // pointer capture the way per-stroke handlers can't.
+  const eraseAt = useCallback(
+    (clientX: number, clientY: number) => {
+      for (const el of document.elementsFromPoint(clientX, clientY)) {
+        const id = el.getAttribute("data-ink-id");
+        if (id) onErase(id);
+      }
+    },
+    [onErase],
+  );
   // The block the in-progress stroke is being drawn on, fixed at pointerdown:
   // its box is the fraction space the points are recorded in, and re-measuring
   // mid-stroke would move the ink out from under the pen.
@@ -325,7 +341,16 @@ export function EpubInkLayer({
   }, []);
 
   const onPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
-    if (!drawMode || erasing) return;
+    if (!drawMode) return;
+    if (erasing) {
+      // Begin an erase sweep: capture so moves keep coming, then delete
+      // whatever sits under the first touch too.
+      e.preventDefault();
+      erasingDrag.current = true;
+      svgRef.current?.setPointerCapture(e.pointerId);
+      eraseAt(e.clientX, e.clientY);
+      return;
+    }
     notePointerType(e.pointerType);
     // A second pointer landing while a stroke is live — a palm settling, a hand
     // steadying the tablet — is never a continuation of it. Throw the stroke
@@ -373,6 +398,10 @@ export function EpubInkLayer({
   };
 
   const onPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (erasingDrag.current) {
+      eraseAt(e.clientX, e.clientY);
+      return;
+    }
     if (panLast.current) {
       const dx = e.clientX - panLast.current.x;
       const dy = e.clientY - panLast.current.y;
@@ -404,6 +433,7 @@ export function EpubInkLayer({
 
   const endStroke = () => {
     panLast.current = null; // a finger-pan ends the same way a stroke does
+    erasingDrag.current = false; // and so does an erase sweep
     if (!drawing.current) return;
     drawing.current = false;
     const pts = latest.current;
@@ -435,12 +465,7 @@ export function EpubInkLayer({
       aria-hidden="true"
     >
       {placed.map((p) => (
-        <PlacedStroke
-          key={p.stroke.id}
-          placed={p}
-          erasing={erasing}
-          onErase={onErase}
-        />
+        <PlacedStroke key={p.stroke.id} placed={p} erasing={erasing} />
       ))}
       {current && (
         <InkGroup placement={current.placement}>
@@ -515,11 +540,9 @@ function InkGroup({
 function PlacedStroke({
   placed,
   erasing,
-  onErase,
 }: {
   placed: Placed;
   erasing: boolean;
-  onErase: (id: string) => void;
 }) {
   const { stroke, placement } = placed;
   const isHighlighter = stroke.kind === "highlighter";
@@ -563,8 +586,12 @@ function PlacedStroke({
           />
         )}
         {/* Fat invisible hit target — only live while erasing, so it never
-            blocks drawing over an existing stroke. */}
+            blocks drawing over an existing stroke. The overlay finds it by
+            data-ink-id via elementsFromPoint as the eraser sweeps; it does not
+            handle its own pointer events (touch would implicitly capture the
+            first one and starve the rest of the sweep). */}
         <path
+          data-ink-id={stroke.id}
           d={inkPath(stroke.points)}
           stroke="transparent"
           strokeWidth={Math.max(px(stroke.width) * 3, 14)}
@@ -572,14 +599,6 @@ function PlacedStroke({
           strokeLinecap="round"
           vectorEffect="non-scaling-stroke"
           style={{ pointerEvents: erasing ? "stroke" : "none", cursor: "cell" }}
-          onPointerDown={
-            erasing
-              ? (e) => {
-                  e.stopPropagation();
-                  onErase(stroke.id);
-                }
-              : undefined
-          }
         />
       </g>
     </InkGroup>
