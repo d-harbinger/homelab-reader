@@ -14,7 +14,12 @@
 //                     it · it stays set once a pen has been seen
 
 import { describe, expect, it } from "vitest";
-import { hasSeenPen, inkPointerDraws, notePointerType } from "@/lib/ink-pointer";
+import {
+  hasSeenPen,
+  inkPointerDraws,
+  inkPointerPans,
+  notePointerType,
+} from "@/lib/ink-pointer";
 
 describe("inkPointerDraws", () => {
   it("never draws for a non-primary pointer, whatever the instrument", () => {
@@ -44,6 +49,39 @@ describe("inkPointerDraws", () => {
     // A mouse cannot pan the page by dragging, so the latch is irrelevant to it.
     expect(inkPointerDraws("mouse", true, false)).toBe(true);
     expect(inkPointerDraws("mouse", true, true)).toBe(true);
+  });
+});
+
+// The other half of the split: a finger that isn't the instrument pans the
+// page instead of drawing, so the reader can scroll while the pen is active.
+describe("inkPointerPans", () => {
+  it("only a touch ever pans — a pen draws, a mouse uses the wheel", () => {
+    expect(inkPointerPans("pen", true, true)).toBe(false);
+    expect(inkPointerPans("mouse", true, true)).toBe(false);
+  });
+
+  it("does not pan while touch is still the drawing instrument", () => {
+    // Before any stylus, the finger draws, so it must not also pan.
+    expect(inkPointerPans("touch", true, false)).toBe(false);
+  });
+
+  it("pans for a finger once a stylus has taken over drawing", () => {
+    expect(inkPointerPans("touch", true, true)).toBe(true);
+  });
+
+  it("pans for a non-primary finger — a two-finger or palm scroll", () => {
+    expect(inkPointerPans("touch", false, false)).toBe(true);
+    expect(inkPointerPans("touch", false, true)).toBe(true);
+  });
+
+  it("is the exact complement of drawing for a touch pointer", () => {
+    for (const primary of [true, false]) {
+      for (const penSeen of [true, false]) {
+        expect(inkPointerPans("touch", primary, penSeen)).toBe(
+          !inkPointerDraws("touch", primary, penSeen),
+        );
+      }
+    }
   });
 });
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { hasSeenPen, inkPointerDraws, notePointerType } from "@/lib/ink-pointer";
+import { hasSeenPen, inkPointerDraws, inkPointerPans, notePointerType } from "@/lib/ink-pointer";
 import {
   INK_VB,
   hasPressureVariation,
@@ -44,6 +44,10 @@ interface Props {
   kind: InkKind;
   onCommit: (cfi: string, section: number, points: InkPoint[]) => void;
   onErase: (id: string) => void;
+  // A non-drawing finger drag pans the book (scroll or page-turn) instead of
+  // drawing, so the reader can move while the pen is active. The overlay keeps
+  // touch-action:none for the pen, so this is delegated to the reader in JS.
+  onPan?: (dx: number, dy: number) => void;
 }
 
 // A highlighter reads like a real marker: a broad, FLAT-tipped, multiply-blended
@@ -150,9 +154,13 @@ export function EpubInkLayer({
   kind,
   onCommit,
   onErase,
+  onPan,
 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [placed, setPlaced] = useState<Placed[]>([]);
+  // A live finger-pan gesture: last client position, so each move pans by the
+  // delta since the previous sample.
+  const panLast = useRef<{ x: number; y: number } | null>(null);
   // The block the in-progress stroke is being drawn on, fixed at pointerdown:
   // its box is the fraction space the points are recorded in, and re-measuring
   // mid-stroke would move the ink out from under the pen.
@@ -327,7 +335,15 @@ export function EpubInkLayer({
       cancelStroke();
       return;
     }
-    if (!inkPointerDraws(e.pointerType, e.isPrimary, hasSeenPen())) return;
+    if (!inkPointerDraws(e.pointerType, e.isPrimary, hasSeenPen())) {
+      // Not the drawing instrument. A finger (once a stylus is in play) pans the
+      // book instead — without this the reader can't move while the pen is on.
+      if (onPan && inkPointerPans(e.pointerType, e.isPrimary, hasSeenPen())) {
+        panLast.current = { x: e.clientX, y: e.clientY };
+        svgRef.current?.setPointerCapture(e.pointerId);
+      }
+      return;
+    }
     const svg = svgRef.current;
     if (!svg) return;
     const hit = blockAt(e.clientX, e.clientY);
@@ -357,6 +373,13 @@ export function EpubInkLayer({
   };
 
   const onPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (panLast.current) {
+      const dx = e.clientX - panLast.current.x;
+      const dy = e.clientY - panLast.current.y;
+      panLast.current = { x: e.clientX, y: e.clientY };
+      onPan?.(dx, dy);
+      return;
+    }
     if (!drawing.current) return;
     e.preventDefault();
     const native = e.nativeEvent as PointerEvent;
@@ -380,6 +403,7 @@ export function EpubInkLayer({
   };
 
   const endStroke = () => {
+    panLast.current = null; // a finger-pan ends the same way a stroke does
     if (!drawing.current) return;
     drawing.current = false;
     const pts = latest.current;
