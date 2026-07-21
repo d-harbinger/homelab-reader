@@ -8,6 +8,11 @@ import { FailedImportsBanner } from "@/components/FailedImportsBanner";
 import { Section } from "@/components/Section";
 import { FolderTree } from "@/components/FolderTree";
 import type { BookCardData } from "@/components/BookCard";
+import {
+  HIGHLIGHT_COLORS,
+  HIGHLIGHT_ORDER,
+  type HighlightColor,
+} from "@/lib/highlight-colors";
 import { fetcher } from "@/lib/fetcher";
 
 interface ScanStatus {
@@ -101,6 +106,27 @@ export default function Home() {
     fetcher,
     { refreshInterval: 30000 },
   );
+  // The reader's highlight colors per book, for the "filter by highlight color"
+  // bar. A stable /api/books fetch backs the filtered grid so it spans the whole
+  // library regardless of the folder rail (SWR dedupes it with the shelves-view
+  // books key, which is already "/api/books").
+  const { data: hlColorsResp } = useSWR<{
+    byBook: Record<string, Record<string, number>>;
+  }>("/api/books/highlight-colors", fetcher, { refreshInterval: 30000 });
+  const { data: allBooksResp } = useSWR<{ books: BookCardData[] }>(
+    "/api/books",
+    fetcher,
+    { refreshInterval: 30000 },
+  );
+  const [hlFilter, setHlFilter] = useState<Set<HighlightColor>>(new Set());
+  function toggleHlColor(c: HighlightColor) {
+    setHlFilter((prev) => {
+      const next = new Set(prev);
+      if (next.has(c)) next.delete(c);
+      else next.add(c);
+      return next;
+    });
+  }
 
   async function manualScan() {
     await fetch("/api/scan", { method: "POST" });
@@ -132,6 +158,31 @@ export default function Home() {
   // narrows the view to a single filtered Library grid.
   const folderActive = selectedFolder !== "";
   const libraryTitle = folderActive ? selectedFolder : "Library";
+
+  // Highlight-color filter. The chips show only colors that actually appear in
+  // the library (with how many books carry each); selecting one or more narrows
+  // the whole library to books holding any of those colors — one flat grid, so
+  // "every book with a green key-term mark" is one glance.
+  const byBook = hlColorsResp?.byBook ?? {};
+  const allBooks = allBooksResp?.books ?? [];
+  const colorBookCounts = HIGHLIGHT_ORDER.map((color) => ({
+    color,
+    books: Object.values(byBook).filter((m) => m[color]).length,
+  })).filter((c) => c.books > 0);
+  const hlActive = hlFilter.size > 0;
+  const filteredBooks: BookCardData[] = hlActive
+    ? allBooks
+        .filter((b) => {
+          const m = byBook[b.id];
+          return m ? [...hlFilter].some((c) => m[c]) : false;
+        })
+        .map((b) => ({
+          ...b,
+          highlightColors: HIGHLIGHT_ORDER.filter(
+            (c) => byBook[b.id]?.[c],
+          ).map((c) => ({ color: c, count: byBook[b.id][c] })),
+        }))
+    : [];
 
   return (
     <main className="mx-auto max-w-7xl px-6 py-10 space-y-12">
@@ -168,7 +219,62 @@ export default function Home() {
         ))}
       </div>
 
-      {view === "shelves" && (
+      {/* Filter the whole library to books carrying a given highlight color —
+          the way to see, at a glance, every book with the marks a reader
+          color-codes (e.g. green = key terms). Only colors present in the
+          library appear. */}
+      {colorBookCounts.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+            Highlights
+          </span>
+          {colorBookCounts.map(({ color, books: n }) => {
+            const on = hlFilter.has(color);
+            return (
+              <button
+                key={color}
+                aria-pressed={on}
+                onClick={() => toggleHlColor(color)}
+                title={`${HIGHLIGHT_COLORS[color].label} — ${n} book${n === 1 ? "" : "s"}`}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                  on
+                    ? "border-zinc-100 bg-zinc-800 text-zinc-100"
+                    : "border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200"
+                }`}
+              >
+                <span
+                  className="h-3 w-3 rounded-full ring-1 ring-white/25"
+                  style={{ background: HIGHLIGHT_COLORS[color].swatch }}
+                />
+                {HIGHLIGHT_COLORS[color].label}
+                <span className="text-zinc-500">{n}</span>
+              </button>
+            );
+          })}
+          {hlActive && (
+            <button
+              onClick={() => setHlFilter(new Set())}
+              className="text-xs text-amber-400/90 underline-offset-2 hover:underline"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      )}
+
+      {hlActive && (
+        <Section
+          title={
+            filteredBooks.length === 1
+              ? "1 book highlighted"
+              : `${filteredBooks.length} books highlighted`
+          }
+          books={filteredBooks}
+          layout="grid"
+        />
+      )}
+
+      {!hlActive && view === "shelves" && (
         <div className="space-y-12">
           <Section
             title="Continue reading"
@@ -222,7 +328,7 @@ export default function Home() {
         </div>
       )}
 
-      {view === "folders" && (
+      {!hlActive && view === "folders" && (
       <div className="flex flex-col gap-8 lg:flex-row">
         {/* self-start stops the default flex stretch so the rail is shorter
             than the scroll area and sticky has room to travel; its own

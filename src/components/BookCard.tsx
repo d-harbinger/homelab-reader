@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { HIGHLIGHT_COLORS, type HighlightColor } from "@/lib/highlight-colors";
 
 export interface BookCardData {
   id: string;
@@ -11,6 +12,10 @@ export interface BookCardData {
   // for a book directly under a scan root. The chip that renders it lands in
   // a later slice; this is the data/type seam only.
   genre?: string | null;
+  // Highlight colors present on this book, attached only in the library's
+  // highlight-color filter view so the tile shows which of the reader's marks
+  // it carries at a glance. Absent everywhere else.
+  highlightColors?: { color: HighlightColor; count: number }[];
 }
 
 export function BookCard({ book }: { book: BookCardData }) {
@@ -38,6 +43,18 @@ export function BookCard({ book }: { book: BookCardData }) {
         <span className="absolute right-1.5 top-1.5 rounded bg-zinc-950/75 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-300 ring-1 ring-white/10 backdrop-blur-sm">
           {book.format}
         </span>
+        {book.highlightColors && book.highlightColors.length > 0 && (
+          <span className="absolute left-1.5 top-1.5 flex gap-1 rounded bg-zinc-950/70 px-1.5 py-1 ring-1 ring-white/10 backdrop-blur-sm">
+            {book.highlightColors.map((h) => (
+              <span
+                key={h.color}
+                title={`${h.count} ${HIGHLIGHT_COLORS[h.color].label} highlight${h.count === 1 ? "" : "s"}`}
+                className="h-2.5 w-2.5 rounded-full ring-1 ring-white/25"
+                style={{ background: HIGHLIGHT_COLORS[h.color].swatch }}
+              />
+            ))}
+          </span>
+        )}
       </div>
       <div className="space-y-0.5 px-0.5">
         <div className="text-sm font-medium text-zinc-100 line-clamp-2 leading-snug">
