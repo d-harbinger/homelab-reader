@@ -54,9 +54,17 @@ describe("per-kind validation gates the API", () => {
     expect(isWidthForKind("highlighter", INK_WIDTHS[0].value)).toBe(false);
   });
 
-  it("a pen only accepts pen color/width", () => {
+  it("a pen accepts any hex color but only its own nib widths", () => {
+    // The pen's color picker lets a reader choose any hex, so pen color
+    // validation is the FORMAT, not palette membership: a preset, a highlighter
+    // swatch, or a hand-typed hex are all fine on a pen.
     expect(isColorForKind("pen", INK_COLORS[0].value)).toBe(true);
-    expect(isColorForKind("pen", HIGHLIGHTER_COLORS[0].value)).toBe(false);
+    expect(isColorForKind("pen", HIGHLIGHTER_COLORS[0].value)).toBe(true);
+    expect(isColorForKind("pen", "#0a7c5b")).toBe(true);
+    // Still rejects a non-color: no smuggling arbitrary strings through.
+    expect(isColorForKind("pen", "red")).toBe(false);
+    expect(isColorForKind("pen", "#fff")).toBe(false);
+    // Widths stay a fixed nib set — a broad highlighter width is not a pen nib.
     expect(isWidthForKind("pen", INK_WIDTHS[0].value)).toBe(true);
     expect(isWidthForKind("pen", HIGHLIGHTER_WIDTHS[0].value)).toBe(false);
   });

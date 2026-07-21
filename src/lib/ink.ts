@@ -281,9 +281,16 @@ export const INK_COLORS: { name: string; value: string }[] = [
   { name: "Amber", value: "#d97706" },
   { name: "Violet", value: "#7c3aed" },
 ];
-const INK_COLOR_SET = new Set(INK_COLORS.map((c) => c.value));
+// A full 6-digit hex color (#rrggbb). The named presets above are the quick
+// picks; the pen also accepts any custom hex from the toolbar's color picker,
+// so validation is the format, not membership. (The highlighter stays a closed
+// palette — its multiply blend is tuned to those five swatches.)
+const HEX6 = /^#[0-9a-fA-F]{6}$/;
+export function isHexColor(v: unknown): v is string {
+  return typeof v === "string" && HEX6.test(v);
+}
 export function isInkColor(v: unknown): v is string {
-  return typeof v === "string" && INK_COLOR_SET.has(v);
+  return isHexColor(v);
 }
 
 // Widths are in overlay viewBox units (see INK_VB). They scale with the page.

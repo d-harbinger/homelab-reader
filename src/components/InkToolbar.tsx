@@ -47,6 +47,10 @@ export function InkToolbar({
   const isPen = tool === "pen";
   const colors = isPen ? INK_COLORS : HIGHLIGHTER_COLORS;
   const widths = isPen ? INK_WIDTHS : HIGHLIGHTER_WIDTHS;
+  // A pen color that isn't one of the quick-pick swatches came from the custom
+  // picker; light it up so the current ink is always shown somewhere.
+  const isCustomColor = isPen && !colors.some((c) => c.value === color);
+  const pickerValue = /^#[0-9a-fA-F]{6}$/.test(color) ? color : "#1c1c1e";
 
   const tab = (t: InkKind, label: string, Icon: typeof PenLine) => (
     <button
@@ -88,6 +92,29 @@ export function InkToolbar({
               style={{ background: c.value }}
             />
           ))}
+          {isPen && (
+            // Custom color: a native picker behind a swatch. The swatch shows
+            // the chosen custom color, or a spectrum wheel to invite a pick.
+            <label
+              title="Custom color"
+              aria-label="Custom pen color"
+              className={`relative h-5 w-5 cursor-pointer overflow-hidden rounded-full ring-1 ring-white/15 transition-transform hover:scale-110 ${
+                isCustomColor && !erasing ? "ring-2 ring-zinc-100" : ""
+              }`}
+              style={{
+                background: isCustomColor
+                  ? color
+                  : "conic-gradient(#f87171,#fbbf24,#34d399,#60a5fa,#a78bfa,#f472b6,#f87171)",
+              }}
+            >
+              <input
+                type="color"
+                value={pickerValue}
+                onChange={(e) => onColor(e.target.value)}
+                className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+              />
+            </label>
+          )}
         </div>
       </div>
 
