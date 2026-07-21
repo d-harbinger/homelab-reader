@@ -222,6 +222,11 @@ function descendRangeToText(range: Range): Range {
 export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
   const viewerRef = useRef<HTMLDivElement>(null);
   const renditionRef = useRef<RenditionLike | null>(null);
+  // Finger-pan bookkeeping for draw mode: in paginated flow a horizontal swipe
+  // turns the page, so accumulate the drag and flip once past a threshold, with
+  // a cooldown so one gesture doesn't riffle through several pages.
+  const panAccum = useRef(0);
+  const panLastFlip = useRef(0);
   const bookRef = useRef<BookLike | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const highlightsRef = useRef<Map<string, StoredHighlight>>(new Map());
@@ -1528,6 +1533,24 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
             kind={tool}
             onCommit={saveStroke}
             onErase={eraseStroke}
+            onPan={(dx, dy) => {
+              if (mode === "scrolled") {
+                // Continuous flow scrolls its own container; pan it directly.
+                const sc = viewerRef.current?.querySelector<HTMLElement>(".epub-container");
+                if (sc) sc.scrollTop -= dy;
+                return;
+              }
+              // Paginated: a horizontal swipe turns the page (right → previous).
+              panAccum.current += dx;
+              const now = performance.now();
+              if (Math.abs(panAccum.current) > 60 && now - panLastFlip.current > 400) {
+                const back = panAccum.current > 0;
+                panAccum.current = 0;
+                panLastFlip.current = now;
+                if (back) renditionRef.current?.prev();
+                else renditionRef.current?.next();
+              }
+            }}
           />
 
           {loadError && (

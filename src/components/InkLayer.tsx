@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, useCallback } from "react";
-import { hasSeenPen, inkPointerDraws, notePointerType } from "@/lib/ink-pointer";
+import { hasSeenPen, inkPointerDraws, inkPointerPans, notePointerType } from "@/lib/ink-pointer";
 import {
   INK_VB,
   inkPath,
@@ -28,6 +28,10 @@ interface Props {
   kind: InkKind; // instrument for the in-progress stroke (pen | highlighter)
   onCommit: (points: InkPoint[]) => void; // a finished stroke — parent persists
   onErase: (id: string) => void;
+  // A non-drawing finger drag (the tablet-holding hand, once a stylus has been
+  // seen) pans the reading surface instead of drawing. The overlay keeps
+  // touch-action:none so the pen still draws, so this scroll is done in JS.
+  onPan?: (dx: number, dy: number) => void;
 }
 
 // A highlighter reads like a real marker: a broad, FLAT-tipped swipe that
@@ -56,10 +60,14 @@ export function InkLayer({
   kind,
   onCommit,
   onErase,
+  onPan,
 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const rectRef = useRef<DOMRect | null>(null);
   const drawing = useRef(false);
+  // A live finger-pan gesture: last client position, so each move scrolls by
+  // the delta since the previous sample.
+  const panLast = useRef<{ x: number; y: number } | null>(null);
   // `current` drives the in-progress render; `latest` is the same points held in
   // a ref so the commit reads them WITHOUT a side effect inside a setState
   // updater — React StrictMode double-invokes updaters in dev, and committing
@@ -95,7 +103,16 @@ export function InkLayer({
       cancelStroke();
       return;
     }
-    if (!inkPointerDraws(e.pointerType, e.isPrimary, hasSeenPen())) return;
+    if (!inkPointerDraws(e.pointerType, e.isPrimary, hasSeenPen())) {
+      // Not the drawing instrument. A finger (once a stylus is in play) pans the
+      // page instead — the overlay owns the surface in draw mode, so without
+      // this the page can't scroll while the pen is active.
+      if (onPan && inkPointerPans(e.pointerType, e.isPrimary, hasSeenPen())) {
+        panLast.current = { x: e.clientX, y: e.clientY };
+        svgRef.current?.setPointerCapture(e.pointerId);
+      }
+      return;
+    }
     e.preventDefault();
     rectRef.current = svgRef.current?.getBoundingClientRect() ?? null;
     svgRef.current?.setPointerCapture(e.pointerId);
@@ -106,6 +123,13 @@ export function InkLayer({
   };
 
   const onPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (panLast.current) {
+      const dx = e.clientX - panLast.current.x;
+      const dy = e.clientY - panLast.current.y;
+      panLast.current = { x: e.clientX, y: e.clientY };
+      onPan?.(dx, dy);
+      return;
+    }
     if (!drawing.current) return;
     e.preventDefault();
     const native = e.nativeEvent as PointerEvent;
@@ -139,6 +163,7 @@ export function InkLayer({
   };
 
   const endStroke = () => {
+    panLast.current = null; // a finger-pan ends the same way a stroke does
     if (!drawing.current) return;
     drawing.current = false;
     const pts = latest.current;

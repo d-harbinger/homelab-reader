@@ -866,6 +866,12 @@ export function PdfReader({
                       kind={tool}
                       onCommit={(pts) => saveStroke(page, pts)}
                       onErase={eraseStroke}
+                      onPan={(dx, dy) => {
+                        const el = containerRef.current;
+                        if (!el) return;
+                        el.scrollTop -= dy;
+                        el.scrollLeft -= dx;
+                      }}
                     />
                   </div>
                 )}

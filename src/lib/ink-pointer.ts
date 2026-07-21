@@ -48,3 +48,19 @@ export function inkPointerDraws(
   // A pen or a mouse is always deliberate.
   return true;
 }
+
+/**
+ * True when a pointer should PAN the reading surface rather than lay ink — the
+ * other half of the split. A finger that isn't the instrument (the hand holding
+ * the tablet once a stylus has been seen, or a second finger) should scroll the
+ * page even while draw mode owns the overlay. Only touch pans: a mouse scrolls
+ * with the wheel and a pen always draws. Pure for the same reason as above.
+ */
+export function inkPointerPans(
+  pointerType: string,
+  isPrimary: boolean,
+  penSeen: boolean,
+): boolean {
+  if (pointerType !== "touch") return false;
+  return !inkPointerDraws(pointerType, isPrimary, penSeen);
+}
