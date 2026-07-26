@@ -3,9 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "setup": "node scripts/setup.mjs",
     "check": "node scripts/preflight.mjs",
-    "predev": "node scripts/preflight.mjs && prisma generate && prisma migrate deploy && node scripts/copy-pdfjs-worker.mjs",
+    "predev": "node scripts/ensure-env.mjs && node scripts/preflight.mjs && prisma generate && prisma migrate deploy && node scripts/copy-pdfjs-worker.mjs",
     "dev": "next dev --turbopack",
     "dev:clean": "rm -rf .next && next dev --turbopack",
     "dev:webpack": "next dev",

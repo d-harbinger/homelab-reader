@@ -1,8 +1,13 @@
 #!/usr/bin/env node
-// One-shot project setup for a fresh clone: scaffold the env file, generate a
-// signing secret, and ensure the dev data directory exists — so the next
-// command is just `npm run dev`. Safe to re-run; it never overwrites values
-// that are already set.
+// ensure-env — dev-path parity with docker-entrypoint.sh.
+//
+// Scaffolds the env file, generates a signing secret, and ensures the dev data
+// directory exists, so a fresh clone runs with no manual setup step. Wired into
+// `predev` and runs BEFORE preflight.mjs, so preflight validates the fixed
+// state rather than reporting problems this script would have solved.
+//
+// Idempotent: never overwrites a value that is already set. The container path
+// does the same work in docker-entrypoint.sh; this keeps the two in step.
 import {
   readFileSync,
   existsSync,
@@ -47,6 +52,4 @@ if (hasValue(".env", "AUTH_SECRET") || hasValue(".env.local", "AUTH_SECRET")) {
 // 3. Dev SQLite directory (prod uses /data via the container)
 mkdirSync("data", { recursive: true });
 
-console.log("\nSetup complete.");
 console.log("  • Set BOOKS_PATH in .env to your library folder (optional — empty is fine to start)");
-console.log("  • npm run dev   → applies migrations and starts http://localhost:3000");

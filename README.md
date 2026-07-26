@@ -35,11 +35,13 @@ authentication for it is the next milestone.
 
 ```bash
 npm install
-npm run setup   # scaffolds .env, generates AUTH_SECRET, makes the data dir
 npm run dev     # http://localhost:3000
 ```
 
-`npm run setup` is safe to re-run — it never overwrites values that are
+No separate setup step. `predev` runs `scripts/ensure-env.mjs` first — it
+scaffolds `.env`, generates `AUTH_SECRET`, and makes the data dir, the same work
+`docker-entrypoint.sh` does on the container path — then `preflight.mjs`
+validates the result. Both are idempotent and never overwrite a value that is
 already set. After signing in, an admin adds library folders in-app from
 **Settings → Libraries** by browsing the server's filesystem; `BOOKS_PATH`,
 if set, is adopted as the first library on first run but is otherwise
