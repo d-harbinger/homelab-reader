@@ -49,9 +49,12 @@ Same shape as `chimera/`. When in doubt, reference how chimera does it.
 
 ## Docker
 
-- `docker compose up -d --build` brings up on host port 5456 by default
-  (override with `HOMELAB_PORT` in `.env`; container listens on 3000 internally).
-  Port follows the sibling scheme: chimera 5454, chef-calc-pro 5455, homelab-reader 5456.
+- `./launch.sh` (first run asks the books folder + network questions and saves
+  them to `.env`) or `docker compose up -d --build` once `.env` exists — the
+  bind `HOMELAB_HOST_BIND` is required, so compose refuses to start without a
+  saved answer. Host port 5456 by default (override with `HOMELAB_PORT`;
+  container listens on 3000 internally). Port follows the sibling scheme:
+  chimera 5454, chef-calc-pro 5455, homelab-reader 5456.
 - Volumes: `/books` (the user's library, read-only mount) and `/data` (DB + cover cache)
 - Entrypoint runs `prisma migrate deploy` and fails loudly if migrations don't apply
 
