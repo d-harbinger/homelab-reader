@@ -40,10 +40,10 @@ Caddy owns 80/443 on the host. Each app joins a shared external network and
        name: homelab-proxy
        external: true
    ```
-   Once it routes through Caddy, you can drop the app's `ports:` block. The
-   default bind is already `127.0.0.1` (loopback), so a published port stays
-   local to the host for direct debugging unless `HOMELAB_HOST_BIND=0.0.0.0`
-   was set to expose it on the network.
+   Once it routes through Caddy, you can drop the app's `ports:` block. With
+   `HOMELAB_HOST_BIND=127.0.0.1` (the right answer behind a proxy), a published
+   port stays local to the host for direct debugging; only
+   `HOMELAB_HOST_BIND=0.0.0.0` exposes it on the network.
 
 3. **Tell the app its public URL** (so auth/redirects are correct). In the app's
    `.env`:

@@ -105,17 +105,29 @@ it.
 
 | Variable | Default (as committed today) | Purpose |
 |---|---|---|
-| `HOMELAB_HOST_BIND` | `127.0.0.1` | Host interface the container publishes on. `127.0.0.1` (the committed default) restricts access to the machine itself; set `0.0.0.0` to make it reachable from other devices on the local network (the usual homelab case — e.g. feeding android-reader over OPDS). See the breaking-change note below. |
+| `HOMELAB_HOST_BIND` | *(required — no default)* | Host interface the container publishes on. Compose refuses to start until it is set; `./launch.sh` asks once and saves it. `127.0.0.1` restricts access to the machine itself; `0.0.0.0` makes it reachable from other devices on the local network (the usual homelab case — e.g. feeding android-reader over OPDS). See the breaking-change notes below. |
 | `HOMELAB_PORT` | `5456` | Host port. Follows the sibling scheme (chimera 5454, chef-calc-pro 5455, homelab-reader 5456). |
 | `BOOKS_HOST_PATH` | `./books` | Host directory holding the library; bind-mounted read-only at `/app/books`. |
 | `AUTH_SECRET` | *(auto-generated)* | NextAuth secret. If unset, the entrypoint generates one and persists it to the data volume on first run. Set explicitly with `openssl rand -base64 32` to control it. |
 
 The published port line in `docker-compose.yml` is
-`"${HOMELAB_HOST_BIND:-127.0.0.1}:${HOMELAB_PORT:-5456}:3000"`. The bind address
-is the real firewall here — a Docker published port bypasses the host firewall,
-so the interface it binds to is what limits who can reach the app.
+`"${HOMELAB_HOST_BIND:?…}:${HOMELAB_PORT:-5456}:3000"` — required-variable
+form: an unset bind refuses to start with a message pointing at `launch.sh`,
+rather than falling back to any default. The bind address is the real firewall
+here — a Docker published port bypasses the host firewall, so the interface it
+binds to is what limits who can reach the app.
 
-> ## ⚠️ Breaking default change — the committed bind is now loopback
+> ## ⚠️ Breaking change (2026-08) — the bind is now required, no default
+>
+> **What changed:** `HOMELAB_HOST_BIND` no longer has a committed default at
+> all. A deployment whose `.env` does not set it refuses to start with an
+> error naming the variable (earlier it silently fell back to loopback — a
+> fallback that bit when a fleet rebuild recreated a container whose `.env`
+> predated the variable). Existing deployments that already set the variable
+> are unaffected. If a redeploy refuses to start, run `./launch.sh` once or
+> add the line from the note below.
+
+> ## ⚠️ Breaking default change (2026-07) — the committed bind became loopback
 >
 > **What changed:** the committed default for `HOMELAB_HOST_BIND` flipped from
 > `0.0.0.0` (all interfaces, reachable across the local network) to `127.0.0.1`

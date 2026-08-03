@@ -56,12 +56,13 @@
 #
 # ── Network binding ───────────────────────────────────────────
 #
-#   Defaults to 127.0.0.1:5456 — reachable only from the machine itself. This
-#   is the safe default; the container is not exposed to the network until it
-#   is opted in. To serve other devices on the local network (the usual homelab
-#   case — e.g. feeding android-reader over OPDS), set HOMELAB_HOST_BIND=0.0.0.0
-#   in .env. Override the host port with HOMELAB_PORT (default 5456). The
-#   container always listens on 3000 inside.
+#   HOMELAB_HOST_BIND is required — compose refuses to start until it is set,
+#   so who can reach the app is always a deliberate answer, never a fallback
+#   (./launch.sh asks once and saves it to .env). Use 127.0.0.1 for the
+#   machine itself only; 0.0.0.0 to serve other devices on the local network
+#   (the usual homelab case — e.g. feeding android-reader over OPDS). Override
+#   the host port with HOMELAB_PORT (default 5456). The container always
+#   listens on 3000 inside.
 #
 # ── Where your data lives ─────────────────────────────────────
 #
@@ -86,10 +87,11 @@ services:
     container_name: homelab-reader
     init: true
     ports:
-      # Host bind + port are overridable via .env (the container always listens
-      # on 3000 internally). Default host port is 5456, following the sibling
-      # service scheme: chimera 5454, chef-calc-pro 5455, homelab-reader 5456.
-      - "${HOMELAB_HOST_BIND:-127.0.0.1}:${HOMELAB_PORT:-5456}:3000"
+      # Bind is required (see the network-binding note above); port is
+      # overridable via .env (the container always listens on 3000 internally).
+      # Default host port is 5456, following the sibling service scheme:
+      # chimera 5454, chef-calc-pro 5455, homelab-reader 5456.
+      - "${HOMELAB_HOST_BIND:?no saved network answer — run ./launch.sh once, or set HOMELAB_HOST_BIND in .env}:${HOMELAB_PORT:-5456}:3000"
     volumes:
       # The SQLite DB + covers + auth-secret. Persistent named volume.
       - homelab-reader-data:/app/data
