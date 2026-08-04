@@ -1,0 +1,71 @@
+# Continuous-integration gate. Runs the same checks a maintainer would run by
+# hand — generate the Prisma client, type-check, lint, test, and build — on every
+# push and pull request, and blocks merge on red. The node version matches the
+# Dockerfile (node:22-alpine) so CI exercises the same runtime as the image.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Nothing here publishes, comments, or pushes, so the workflow token is
+# narrowed to reading the checkout.
+permissions:
+  contents: read
+
+# One run per branch. A rapid second push supersedes the first rather than
+# queueing behind it; the older run's result is already stale by then.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # A throwaway local SQLite file is enough for prisma generate and next build;
+  # no real data or secret is involved. The test suite does not read this value:
+  # tests/setup.ts supplies its own placeholder DATABASE_URL and AUTH_SECRET, and
+  # tests/helpers/test-db.ts builds a freshly migrated database per suite under
+  # the temp directory.
+  DATABASE_URL: file:./prisma/ci.db
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # The one native dependency, @napi-rs/canvas (used with pdf-to-img to
+      # rasterise PDF pages for cover extraction), ships prebuilt linux-x64
+      # binaries, so this runner needs no compiler toolchain. A Node major-version
+      # bump must re-verify that those prebuilds still resolve.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      # Unit and route tests. Every suite that needs a database creates its own
+      # temporary SQLite file and applies the committed migrations to it, so the
+      # step is slow but needs no service container or shared fixture.
+      #
+      # The Playwright end-to-end suite is deliberately left out: it boots a real
+      # `next dev` server with a 180-second start budget and drives a browser, so
+      # it stays a pre-release gate run by hand rather than a per-push check.
+      - name: Test
+        run: npm test
+
+      # The `prebuild` hook runs implicitly here — it regenerates the Prisma
+      # client and copies the PDF.js worker into public/.
+      - name: Build
+        run: npm run build
