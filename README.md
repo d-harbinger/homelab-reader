@@ -106,11 +106,27 @@ This only resets existing accounts; it does not create them.
 
 ## Docker (production)
 
-Mount your library at `/books` and persistent data at `/data`:
+The library is bind-mounted read-only at `/books`; the database, cover cache,
+and generated signing secret live in a named volume at `/data`.
+
+Easiest path — `./launch.sh` asks where the books live and which network to
+serve, saves both answers to `.env`, and starts the app. By hand, the same
+thing:
 
 ```bash
+# The publish address is REQUIRED — no default, in the compose file or in
+# .env.example. Compose refuses to start until it is set, so who can reach
+# the reader is always a deliberate answer.
+echo 'HOMELAB_HOST_BIND=127.0.0.1' >> .env   # this machine only
+# ...or 0.0.0.0 to serve other devices on the local network.
+echo 'BOOKS_HOST_PATH=/srv/books'  >> .env   # the library folder
+
 docker compose up -d --build   # host port 5456 (set HOMELAB_PORT to change)
 ```
+
+An `up` against a clone with no `.env` stops with "no saved network answer".
+That is the required-choice guard working, not a broken checkout. Full
+deployment contract, including backup and rollback: `DEPLOY.md`.
 
 ## Privacy posture
 

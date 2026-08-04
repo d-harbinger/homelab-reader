@@ -42,9 +42,17 @@ cd homelab-reader
 # 2. Activate the privacy-guard commit hook (once per clone).
 git config core.hooksPath scripts/hooks
 
-# 3. Point the container at the library. Persist it in .env (gitignored):
-echo 'BOOKS_HOST_PATH=/srv/books' > .env
-#    (If unset, it falls back to ./books inside the repo directory.)
+# 3. Write the two answers compose needs into .env (gitignored).
+#
+#    HOMELAB_HOST_BIND is REQUIRED and has no default anywhere — not in the
+#    compose file, not in .env.example. Compose refuses to start until it is
+#    set. Pick one — 127.0.0.1 for this machine only (e.g. behind a reverse
+#    proxy), 0.0.0.0 to serve other devices on the local network:
+echo 'HOMELAB_HOST_BIND=127.0.0.1' >> .env
+#
+#    BOOKS_HOST_PATH points at the library. If unset it falls back to ./books
+#    inside the repo directory.
+echo 'BOOKS_HOST_PATH=/srv/books' >> .env
 
 # 4. Build and start.
 docker compose up -d --build
@@ -53,8 +61,12 @@ docker compose up -d --build
 #    The first scan takes roughly a minute per ~100 books (cover rendering).
 ```
 
-Copy `.env.example` to `.env` for the full set of tunable variables (see the
-env contract below). `.env` is gitignored and never committed.
+`.env.example` documents the full set of tunable variables (see the env
+contract below) and can be copied to `.env` as a starting point — but note
+that it ships `HOMELAB_HOST_BIND` **commented out**, deliberately, so copying
+it is not on its own enough to start the app. Uncomment the line, or add it as
+in step 3, or run `./launch.sh` and answer the question. `.env` is gitignored
+and never committed.
 
 ### Redeploy invariant
 
@@ -105,7 +117,7 @@ it.
 
 | Variable | Default (as committed today) | Purpose |
 |---|---|---|
-| `HOMELAB_HOST_BIND` | *(required — no default)* | Host interface the container publishes on. Compose refuses to start until it is set; `./launch.sh` asks once and saves it. `127.0.0.1` restricts access to the machine itself; `0.0.0.0` makes it reachable from other devices on the local network (the usual homelab case — e.g. feeding android-reader over OPDS). See the breaking-change notes below. |
+| `HOMELAB_HOST_BIND` | *(required — no default; `.env.example` ships it commented out)* | Host interface the container publishes on. Compose refuses to start until it is set; `./launch.sh` asks once and saves it. `127.0.0.1` restricts access to the machine itself; `0.0.0.0` makes it reachable from other devices on the local network (the usual homelab case — e.g. feeding android-reader over OPDS). See the breaking-change notes below. |
 | `HOMELAB_PORT` | `5456` | Host port. Follows the sibling scheme (chimera 5454, chef-calc-pro 5455, homelab-reader 5456). |
 | `BOOKS_HOST_PATH` | `./books` | Host directory holding the library; bind-mounted read-only at `/app/books`. |
 | `AUTH_SECRET` | *(auto-generated)* | NextAuth secret. If unset, the entrypoint generates one and persists it to the data volume on first run. Set explicitly with `openssl rand -base64 32` to control it. |
@@ -126,6 +138,11 @@ binds to is what limits who can reach the app.
 > predated the variable). Existing deployments that already set the variable
 > are unaffected. If a redeploy refuses to start, run `./launch.sh` once or
 > add the line from the note below.
+>
+> **`.env.example` ships the variable commented out**, for the same reason:
+> a template that carries a value would hand every fresh copy a publish
+> address nobody chose, which is precisely what the required-variable form in
+> the compose file exists to prevent. Uncommenting it is a deliberate act.
 
 > ## ⚠️ Breaking default change (2026-07) — the committed bind became loopback
 >
@@ -148,9 +165,10 @@ binds to is what limits who can reach the app.
 > ```
 >
 > This restores network reachability. Confirm with the LAN-reachability check in
-> the redeploy invariant above (`curl` from a device that matters). A
-> first-time deployment following the runbook already copies `.env.example`,
-> which documents this variable, so new installs simply set it during setup.
+> the redeploy invariant above (`curl` from a device that matters). Superseded
+> in part by the 2026-08 note above: there is no committed default to flip any
+> more, in either direction. A first-time deployment answers the question
+> during setup — step 3 of the runbook, or `./launch.sh`.
 
 ### `DATABASE_URL` and SQLite under concurrent use
 

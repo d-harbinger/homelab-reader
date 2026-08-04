@@ -1,3 +1,10 @@
+# A note on glob semantics, because it is the easy mistake to make here:
+# a pattern with no slash — `*.png`, `.dev-logs` — is matched against the
+# path relative to the build-context root, so it excludes ONLY entries at
+# the top level. Excluding the same thing anywhere in the tree needs the
+# `**/` prefix (`**/*.log`). Both forms appear below and each one is
+# deliberate; the comments say which is which.
+
 # ── Source control ──
 .git
 .gitignore
@@ -21,41 +28,90 @@ data
 *.db
 *.db-journal
 
-# ── Local books folder used in dev — never bake into the image ──
-books
+# ══ PRIVACY — local-only content, mirrored from .gitignore ══════════════
+# Everything in this block is kept out of version control because it holds
+# personal content or machine-specific identifiers. The same reasoning
+# applies to a build layer: the Dockerfile copies the whole context into the
+# builder stage, nothing in the build or in the running image reads any of
+# these, and a file copied into an image stays there for good. This block is
+# separate from the build-noise block below on purpose — it exists for a
+# different reason and must not be merged with it or pruned on
+# build-performance grounds.
 
-# ── Editor / OS junk ──
-.DS_Store
-Thumbs.db
+# The library itself. Mounted read-only at runtime; never baked in.
+books
+# Sample books used to exercise the scanner during development.
+test-library
+# privacy-guard: per-clone pattern file, trusted-network allowlist, and
+# identity allowlist. All three name real local values.
+.privacy-patterns
+.lan-allow
+.identity-allow
+# privacy-guard: diagnostic log output, which may contain device identifiers.
+# `.dev-logs/` is the current name; `.gsd-logs/` is the previous one, kept so
+# an older checkout is covered too.
+.dev-logs/
+.gsd-logs/
+graveyard-logs/
+# Local assistant configuration, transcripts, and the agent mailbox.
+.claude
+.agent-comms/
+# Autonomous-run scaffolding written on the machine that ran it.
+OVERNIGHT_PLAN.md
+NIGHT-LOG.md
+ASSUMPTIONS.md
+# Log and scratch output anywhere in the tree — recursive on purpose, since
+# these are written next to whatever produced them.
+**/*.log
+**/*.hprof
+**/*.tmp
+# Key and certificate material, recursive. Nothing in the build reads any of
+# these; the app's signing secret is generated onto the data volume at boot.
+**/*.pem
+**/*.key
+**/*.crt
+**/*.p12
+**/*.pfx
+**/id_rsa*
+# Files dropped at the repository root during review — screenshots, and stray
+# books used for a one-off test. Root-level only, matching .gitignore: images
+# that belong to the app live under public/ and must still ship.
+Screenshot_*.png
+Screenshot_*.jpg
+*.png
+*.jpg
+*.jpeg
+*.pdf
+*.epub
+ink-prototype.html
+# ══ end of privacy block ═══════════════════════════════════════════════
+
+# ── Editor / OS junk (build noise, not privacy) ──
+**/.DS_Store
+**/Thumbs.db
+.directory
 .vscode
 .idea
 .codium
 
-# ── Screenshots dropped during dev review ──
-Screenshot_*.png
-Screenshot_*.jpg
-
-# ── Backups / scratch ──
+# ── Backups / scratch (build noise, not privacy) ──
 .backups
 backups
 *.bak
+**/*.bak
+*.orig
+*.rej
 
-# ── Claude / agent state ──
-.claude
-
-# ── Build cache ──
+# ── Build cache (regenerated inside the builder stage) ──
 tsconfig.tsbuildinfo
-.gsd-logs
+**/*.tsbuildinfo
 
-# ── Privacy patterns are per-clone, not for the image ──
-.privacy-patterns
-
-# ── Test / docs (builder never needs them; keeps context lean) ──
+# ── Test / docs (the builder never needs them; keeps the context lean) ──
 tests
 e2e
-test-library
 docs
 .planning
 deploy
 launch.sh
-ink-prototype.html
+playwright-report
+test-results

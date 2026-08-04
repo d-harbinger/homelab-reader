@@ -13,23 +13,35 @@
 #   git clone https://github.com/d-harbinger/homelab-reader.git
 #   cd homelab-reader
 #
-#   # 2. Tell the container where your books live. Two equivalent ways:
+#   # 2. Answer the network question. REQUIRED — there is no default for
+#   #    HOMELAB_HOST_BIND anywhere, and compose refuses to start without it
+#   #    (see the network-binding note below). Pick one — 127.0.0.1 for this
+#   #    machine only, 0.0.0.0 to serve other devices on the local network:
+#   echo 'HOMELAB_HOST_BIND=127.0.0.1' >> .env
 #
-#   #    a) Create a .env next to this docker-compose.yml — recommended,
-#   #       persists across reboots:
-#   echo 'BOOKS_HOST_PATH=/srv/books' > .env
+#   # 3. Point the container at the library folder. Two equivalent ways:
+#
+#   #    a) Append it to the same .env — recommended, persists across reboots:
+#   echo 'BOOKS_HOST_PATH=/srv/books' >> .env
 #
 #   #    b) Or set it inline for a single `up`:
 #   BOOKS_HOST_PATH=/srv/books docker compose up -d --build
 #
-#   #    (If you skip both, it falls back to ./books in this repo dir.)
+#   #    (With neither, it falls back to ./books in this repo dir. The bind in
+#   #    step 2 has no such fallback — it must be in .env or the environment.)
 #
-#   # 3. Build and start
+#   # 4. Build and start
 #   docker compose up -d --build
 #
-#   # 4. Open the app
+#   # 5. Open the app
 #   #    http://<homelab-ip-or-hostname>:5456
 #   #    First scan can take a minute per ~100 books (cover rendering).
+#
+#   Copying .env.example is a fine starting point, but it ships
+#   HOMELAB_HOST_BIND commented out on purpose — a template that carried a
+#   value would hand every fresh copy a publish address nobody chose. Copying
+#   it alone is therefore not enough to start; uncomment the line or use
+#   step 2.
 #
 # ── Day-to-day operations ─────────────────────────────────────
 #
