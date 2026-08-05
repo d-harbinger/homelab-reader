@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # pre-push — ship-boundary gate on container-shaping changes.
 #
+# Canonical copy: privacy-guard/templates/hooks/pre-push. Installed by
+# privacy-guard's install.sh into every repo that builds a container image.
+# Edit it there, then re-run the installer across the fleet — never edit an
+# installed copy in place, or the fix stops travelling.
+#
 # Fires ONLY when the outgoing commits touch the files that shape the
 # production image (Dockerfile, .dockerignore, compose, entrypoint); every
 # other push is untouched. When it fires, the image is built (layer cache
@@ -11,6 +16,43 @@
 # Why pre-push: deployment pulls from origin and builds, so the push IS the
 # deploy gate. Same no-bypass rule as the privacy-guard pre-commit — fix the
 # finding or allowlist a ruled exception; never --no-verify.
+#
+# Recorded verdict.  Git opens the connection to the remote BEFORE running this
+# hook, and a build with a cold layer cache can take longer than the remote
+# holds an idle connection open — the gate prints PASS and the push then dies
+# with a confusing "connection closed by remote host". So a PASS is written to
+# .git/shipcheck-pass, against the commit that triggered it. That file is
+# per-clone and never committed. A later push of the same commit matches the
+# recorded verdict and goes straight out without rebuilding. When the build and
+# check together took longer than SHIP_GATE_SLOW_SECS, the connection is
+# presumed already gone: the hook stops the push itself and asks for one more
+# `git push`, which then passes instantly from the recorded verdict.
+#
+# Disk preflight.  An image build that runs out of room dies mid-layer with an
+# opaque error, after minutes of work. Before building, the free space under
+# the container runtime's data directory is measured; below
+# SHIP_GATE_MIN_FREE_GB the dangling build images are pruned, and if that is
+# still not enough the push stops with a plain message instead of a failed
+# build.
+#
+# Local variants.  A repo that deliberately runs a different pre-push declares
+# it by opening a comment line with the keep directive — the directive has to be
+# the first thing on the line after the comment marker, like the middle line of:
+#
+#   #!/usr/bin/env bash
+#   # pg-variant: keep — <why this repo runs its own gate>
+#   ...
+#
+# The privacy-guard installer then leaves that file alone, including under
+# --force. Only a line that STARTS with the directive counts; naming it inside a
+# sentence, the way this paragraph does, deliberately does not — otherwise this
+# canonical hook would read as a local variant of itself and every later
+# template fix would stop travelling.
+#
+# Tunable per host or per invocation:
+#   SHIP_GATE_MIN_FREE_GB  gigabytes that must be free before building (default 5)
+#   SHIP_GATE_SLOW_SECS    build+check duration past which the push connection
+#                          is presumed dead and the push is retried (default 25)
 #
 # Per-host prereqs: docker on PATH; the dev-tools repo checked out as a
 # sibling (standard workspace layout). Missing prereqs fail the push loudly
@@ -23,8 +65,14 @@ APP_NAME="$(basename "$REPO_ROOT")"
 SHIP_CHECK="$REPO_ROOT/../dev-tools/scripts/ship-check.sh"
 GATE_PATHS='^(Dockerfile|\.dockerignore|docker-compose[^/]*\.ya?ml|docker-entrypoint\.sh)$'
 
+GIT_DIR="$(git rev-parse --git-dir)"
+MARKER="$GIT_DIR/shipcheck-pass"
+MIN_FREE_GB="${SHIP_GATE_MIN_FREE_GB:-5}"
+SLOW_SECS="${SHIP_GATE_SLOW_SECS:-25}"
+
 Z40=0000000000000000000000000000000000000000
 touched=0
+gate_sha=""
 while read -r _local_ref local_sha _remote_ref remote_sha; do
   [ "$local_sha" = "$Z40" ] && continue            # branch deletion
   if [ "$remote_sha" = "$Z40" ]; then
@@ -35,10 +83,19 @@ while read -r _local_ref local_sha _remote_ref remote_sha; do
   # shellcheck disable=SC2086
   if git diff --name-only $range 2>/dev/null | grep -qE "$GATE_PATHS"; then
     touched=1
+    gate_sha="$local_sha"
   fi
 done
 
 [ "$touched" = 0 ] && exit 0
+
+# A verdict already recorded for this exact commit means the image was built and
+# checked moments ago — most likely on the push whose connection did not survive
+# the build. Nothing has changed since, so the push proceeds immediately.
+if [ -f "$MARKER" ] && [ "$(cat "$MARKER")" = "$gate_sha" ]; then
+  echo "[ship-gate] cached PASS for ${gate_sha:0:12} — push proceeds"
+  exit 0
+fi
 
 echo "[ship-gate] container-shaping files in outgoing commits — running ship-check"
 
@@ -51,6 +108,28 @@ command -v docker >/dev/null 2>&1 || {
   exit 1
 }
 
+docker_root="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || echo /)"
+free_gb() { df -Pk "$1" 2>/dev/null | awk 'NR==2 {printf "%d", $4/1048576}'; }
+avail="$(free_gb "$docker_root")"
+if [ "${avail:-0}" -lt "$MIN_FREE_GB" ]; then
+  echo "[ship-gate] ${avail:-?} GB free under ${docker_root} — pruning dangling images"
+  docker image prune -f >/dev/null 2>&1 || true
+  avail="$(free_gb "$docker_root")"
+fi
+if [ "${avail:-0}" -lt "$MIN_FREE_GB" ]; then
+  echo "[ship-gate] ✗ ${avail:-?} GB free (< ${MIN_FREE_GB} GB) — an image build would fail mid-layer. Free space or lower SHIP_GATE_MIN_FREE_GB." >&2
+  exit 1
+fi
+
 IMG="${APP_NAME}-shipcheck:prepush"
+build_start=$(date +%s)
 docker build -q -t "$IMG" "$REPO_ROOT" >/dev/null
 bash "$SHIP_CHECK" "$IMG" --repo "$REPO_ROOT"
+build_secs=$(( $(date +%s) - build_start ))
+printf '%s\n' "$gate_sha" > "$MARKER"
+
+if [ "$build_secs" -gt "$SLOW_SECS" ]; then
+  echo "[ship-gate] PASS took ${build_secs}s — longer than a push connection survives (~30 s on github.com)." >&2
+  echo "[ship-gate] Verdict recorded. Run 'git push' again — the gate passes instantly from the recorded verdict." >&2
+  exit 1
+fi
