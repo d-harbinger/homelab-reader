@@ -8,6 +8,31 @@ import type { NextAuthConfig } from "next-auth";
 // sessions, and the middleware decodes the token at the edge). The single
 // user's id rides in the token so server routes can attribute notes,
 // highlights, and progress to a real User row.
+
+// Cookies are scoped by HOST NAME, not by port. Several apps published from
+// one box therefore share one cookie jar, and with Auth.js's default names
+// they all reach for "authjs.session-token". That is not a benign collision:
+// each app signs its token with its own AUTH_SECRET, and Auth.js DELETES a
+// session cookie it cannot verify — so opening the sibling app silently wipes
+// this one's session, which reads as "sign in again on every refresh".
+// App-unique names keep the sessions independent.
+//
+// `secure` is DERIVED from the deployment's own address rather than written
+// into the code. A Secure cookie is discarded by the browser over plain HTTP
+// (nobody can sign in), and a non-Secure one behind TLS leaks the session to
+// any downgraded request. AUTH_URL is the single deployment answer that
+// settles it — see docker-compose.yml and ./launch.sh.
+//
+// No `domain` attribute on purpose: the cookie stays on the exact host that
+// issued it rather than spreading across sibling names.
+const secure = (process.env.AUTH_URL ?? "").startsWith("https://");
+const cookieOptions = {
+  httpOnly: true,
+  sameSite: "lax",
+  path: "/",
+  secure,
+} as const;
+
 export const authConfig = {
   // Self-hosted on the LAN behind an arbitrary host/port — not Vercel — so
   // Auth.js must trust the incoming Host header. Without this it rejects
@@ -15,6 +40,15 @@ export const authConfig = {
   trustHost: true,
   pages: { signIn: "/login" },
   session: { strategy: "jwt" },
+  // These MUST live in this shared config, not in auth.ts alone: the Edge
+  // middleware builds its own NextAuth instance from this file, and a
+  // middleware that does not know the cookie name looks for the default,
+  // never finds the session, and bounces every signed-in request to /login.
+  cookies: {
+    sessionToken: { name: "homelab-reader.session-token", options: cookieOptions },
+    csrfToken: { name: "homelab-reader.csrf-token", options: cookieOptions },
+    callbackUrl: { name: "homelab-reader.callback-url", options: cookieOptions },
+  },
   callbacks: {
     jwt({ token, user }) {
       if (user?.id) token.id = user.id;
