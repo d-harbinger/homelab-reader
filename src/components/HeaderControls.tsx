@@ -3,8 +3,8 @@
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { LogOut, Search, Settings } from "lucide-react";
-import { doSignOut } from "@/app/actions";
+import { Search, Settings } from "lucide-react";
+import { SignOutButton } from "@/components/SignOutButton";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
 // The header's right-hand cluster — search, the settings door, the theme
@@ -62,16 +62,7 @@ export function HeaderControls({
         </Link>
       )}
       <ThemeToggle />
-      <form action={doSignOut}>
-        <button
-          type="submit"
-          aria-label="Sign out"
-          title="Sign out"
-          className="rounded-md p-1.5 text-zinc-500 transition-colors hover:bg-zinc-900 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60"
-        >
-          <LogOut size={15} />
-        </button>
-      </form>
+      <SignOutButton />
     </div>
   );
 }
