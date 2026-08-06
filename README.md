@@ -109,9 +109,9 @@ This only resets existing accounts; it does not create them.
 The library is bind-mounted read-only at `/books`; the database, cover cache,
 and generated signing secret live in a named volume at `/data`.
 
-Easiest path — `./launch.sh` asks where the books live and which network to
-serve, saves both answers to `.env`, and starts the app. By hand, the same
-thing:
+Easiest path — `./launch.sh` asks where the books live, which network to
+serve, and the address people open the reader at, saves the answers to
+`.env`, and starts the app. By hand, the same thing:
 
 ```bash
 # The publish address is REQUIRED — no default, in the compose file or in
@@ -119,6 +119,12 @@ thing:
 # the reader is always a deliberate answer.
 echo 'HOMELAB_HOST_BIND=127.0.0.1' >> .env   # this machine only
 # ...or 0.0.0.0 to serve other devices on the local network.
+# Also REQUIRED: the address a person types to open the reader. Signing in
+# has to redirect the browser somewhere real, and from inside its container
+# the app only sees the 0.0.0.0 it listens on. Behind a TLS proxy, use the
+# public https:// address — that also marks the session cookie
+# encrypted-only.
+echo 'AUTH_URL=http://localhost:5456'  >> .env
 echo 'BOOKS_HOST_PATH=/srv/books'  >> .env   # the library folder
 
 docker compose up -d --build   # host port 5456 (set HOMELAB_PORT to change)

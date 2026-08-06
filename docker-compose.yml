@@ -114,6 +114,21 @@ services:
       - BOOKS_PATH=/app/books
       - AUTH_SECRET=${AUTH_SECRET:-}
       - AUTH_TRUST_HOST=true
+      # The address a person actually types to reach the reader — for example
+      # http://<the box's address>:5456, or https://reader.example behind a
+      # TLS proxy. REQUIRED, no default and no fallback, the same "a choice,
+      # never a fallback" rule the bind above follows; ./launch.sh asks for it
+      # once and saves it.
+      #
+      # It settles two things the container cannot work out for itself. First,
+      # sign-in redirects: without it the app derives its own address from the
+      # request it is answering, which inside the container is the 0.0.0.0 it
+      # listens on — so the redirect after signing in points at an address no
+      # browser can reach. Second, whether the session cookie is marked
+      # Secure: an https:// answer here turns that on, and only an https://
+      # answer should (a Secure cookie over plain HTTP is discarded by the
+      # browser, and nobody can sign in).
+      - AUTH_URL=${AUTH_URL:?no saved address — run ./launch.sh once, or set AUTH_URL in .env}
       - NODE_ENV=production
     restart: unless-stopped
     cap_drop:

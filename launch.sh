@@ -42,14 +42,16 @@ CONFIG_SUMMARY="books folder, network"
 configure() {
   echo "homelab-reader — first-time setup"
   echo
-  echo "This launcher asks two questions, saves the answers to a small settings"
+  echo "This launcher asks three questions, saves the answers to a small settings"
   echo "file (.env), and starts the reader. The answers can be changed at any"
   echo "time by running ./launch.sh again and pressing r — nothing here is"
   echo "permanent, and nothing here can delete the library or the notes."
   echo
   echo "Question 1 is where the book files live (the reader only ever READS"
   echo "that folder). Question 2 is who should be able to open the reader:"
-  echo "just this machine, or other devices on the home network."
+  echo "just this machine, or other devices on the home network. Question 3 is"
+  echo "the address they open it at, which signing in needs in order to send"
+  echo "the browser back to the right place."
   echo
   # The one question that has no sane default: where the books live.
   local books current
@@ -67,7 +69,45 @@ configure() {
   ask_network
   set_env "$BIND_VAR" "$ASKED_BIND"
   set_env "$MODE_KEY" "$ASKED_MODE"
+  ask_auth_url
   confirm_saved
+}
+
+# The deployment's public address, saved as AUTH_URL and required by compose.
+# Asked here rather than guessed because the container genuinely cannot work it
+# out: from the inside it only ever sees the 0.0.0.0 it listens on, so sign-in
+# would redirect the browser to an address nothing answers. The answer also
+# tells the app whether the connection is encrypted, which decides how the
+# sign-in cookie is marked. Call AFTER ask_network — the bind becomes the
+# suggested answer.
+ask_auth_url() {
+  local port suggested answer bind
+  port=$(current_port)
+  bind=${ASKED_BIND:-}
+  case "$bind" in
+    127.0.0.1) suggested="http://localhost:$port" ;;
+    ""|0.0.0.0) suggested="" ;;
+    *) suggested="http://$bind:$port" ;;
+  esac
+  echo
+  echo "What address will people type to open $APP_THING?"
+  echo
+  echo "Copy it exactly as it appears in the browser's address bar, including"
+  echo "the http:// or https:// and the port. Behind a proxy that adds"
+  echo "encryption, use the https:// address people actually visit, not the"
+  echo "address of this box."
+  echo
+  if [ -n "$suggested" ]; then
+    read -rp "Address [$suggested]: " answer
+    answer=${answer:-$suggested}
+  else
+    read -rp "Address (for example http://<the box's address>:$port): " answer
+  fi
+  case "$answer" in
+    http://*|https://*) ;;
+    *) die "the address has to start with http:// or https:// — run ./launch.sh -r and try again" ;;
+  esac
+  set_env AUTH_URL "${answer%/}"
 }
 
 # >>> launcher-core (synced from dev-tools/templates/launch-core.sh — edit there, then: devtools launcher-sync) >>>

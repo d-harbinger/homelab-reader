@@ -42,13 +42,21 @@ cd homelab-reader
 # 2. Activate the privacy-guard commit hook (once per clone).
 git config core.hooksPath scripts/hooks
 
-# 3. Write the two answers compose needs into .env (gitignored).
+# 3. Write the answers compose needs into .env (gitignored).
 #
 #    HOMELAB_HOST_BIND is REQUIRED and has no default anywhere — not in the
 #    compose file, not in .env.example. Compose refuses to start until it is
 #    set. Pick one — 127.0.0.1 for this machine only (e.g. behind a reverse
 #    proxy), 0.0.0.0 to serve other devices on the local network:
 echo 'HOMELAB_HOST_BIND=127.0.0.1' >> .env
+#
+#    AUTH_URL is REQUIRED for the same reason and in the same form: the
+#    address a person types to open the reader, scheme and port included.
+#    Signing in has to redirect the browser somewhere real, and from inside
+#    its container the app only sees the 0.0.0.0 it listens on. Use the
+#    public https:// address when a TLS proxy fronts the reader — that also
+#    marks the session cookie encrypted-only.
+echo 'AUTH_URL=http://localhost:5456' >> .env
 #
 #    BOOKS_HOST_PATH points at the library. If unset it falls back to ./books
 #    inside the repo directory.
@@ -120,6 +128,7 @@ it.
 | `HOMELAB_HOST_BIND` | *(required — no default; `.env.example` ships it commented out)* | Host interface the container publishes on. Compose refuses to start until it is set; `./launch.sh` asks once and saves it. `127.0.0.1` restricts access to the machine itself; `0.0.0.0` makes it reachable from other devices on the local network (the usual homelab case — e.g. feeding android-reader over OPDS). See the breaking-change notes below. |
 | `HOMELAB_PORT` | `5456` | Host port. Follows the sibling scheme (chimera 5454, chef-calc-pro 5455, homelab-reader 5456). |
 | `BOOKS_HOST_PATH` | `./books` | Host directory holding the library; bind-mounted read-only at `/app/books`. |
+| `AUTH_URL` | *(required — no default; `.env.example` ships it commented out)* | The address a person types to open the reader, scheme and port included. Decides where sign-in redirects the browser, and whether the session cookie is marked encrypted-only (an `https://` value turns that on). Compose refuses to start until it is set; `./launch.sh` asks once and saves it. See the breaking-change notes below. |
 | `AUTH_SECRET` | *(auto-generated)* | NextAuth secret. If unset, the entrypoint generates one and persists it to the data volume on first run. Set explicitly with `openssl rand -base64 32` to control it. |
 
 The published port line in `docker-compose.yml` is
@@ -128,6 +137,47 @@ form: an unset bind refuses to start with a message pointing at `launch.sh`,
 rather than falling back to any default. The bind address is the real firewall
 here — a Docker published port bypasses the host firewall, so the interface it
 binds to is what limits who can reach the app.
+
+> ## ⚠️ Breaking change (2026-08) — `AUTH_URL` is now required, and the session cookie is renamed
+>
+> **What changed, and why.** Two things, both part of one fix for sessions
+> that would not survive a page refresh.
+>
+> 1. **The session cookie is now named `homelab-reader.session-token`**
+>    instead of the library default `authjs.session-token`. Browsers scope
+>    cookies by host name and ignore the port, so every app published from one
+>    box shares a single cookie jar. Under the default name the reader and its
+>    sibling apps all reached for the same cookie — and each one deletes a
+>    session cookie it cannot verify, so opening one app silently destroyed the
+>    other's session. That is the "sign in again on every refresh" symptom.
+>
+> 2. **`AUTH_URL` is now required**, in the same required-variable form as the
+>    bind. It is the address a person types to open the reader. Without it the
+>    app derived its own address from the request it was answering, which
+>    inside the container is the `0.0.0.0` it listens on — so the redirect
+>    after signing in pointed at an address no browser can reach. It also
+>    decides whether the session cookie is marked encrypted-only: an `https://`
+>    value turns that on, and only an `https://` value should, because a
+>    browser discards an encrypted-only cookie sent over plain HTTP.
+>
+> **Who this affects:** every existing deployment.
+>
+> * A redeploy whose `.env` does not set `AUTH_URL` **refuses to start**, with
+>   an error naming the variable. Run `./launch.sh` once, or add the line by
+>   hand before redeploying:
+>
+>   ```sh
+>   echo 'AUTH_URL=http://<the box address people type>:5456' >> .env
+>   docker compose up -d --build
+>   ```
+>
+>   Behind a TLS proxy, use the public `https://` address people actually
+>   visit — not this box's plain-HTTP address.
+>
+> * **Everyone is signed out once** when this lands. The old default-named
+>   cookie is orphaned rather than migrated; the next visit shows the login
+>   screen. Nothing else is lost — accounts, books, notes, highlights and
+>   progress are untouched. One sign-in per browser and it is over.
 
 > ## ⚠️ Breaking change (2026-08) — the bind is now required, no default
 >
