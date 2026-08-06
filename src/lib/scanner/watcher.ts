@@ -26,6 +26,67 @@ function formatFromExtension(filePath: string): BookFormat {
 // across all handlers) so the cap is global, not per-handler.
 const limiter = createLimiter(4);
 
+// How long the initial walk must have been quiet before the reconcile-delete
+// sweep may run. Generously above awaitWriteFinish's stabilityThreshold
+// (1500ms) plus its poll interval, because the sweep's mistake is
+// irreversible: deleting a Book row cascades its notes, highlights and ink.
+const RECONCILE_SETTLE_MS = 4000;
+
+// chokidar fires "ready" when the initial directory walk has been ENUMERATED,
+// not when the add handlers it queued have finished — and awaitWriteFinish can
+// hold individual add events back until after "ready". Running the
+// reconcile-delete sweep in that window is how a mount-point move destroyed a
+// library's annotations (2026-08-06): the sweep saw every old path as missing
+// before the hash re-link scans could repoint the rows to the new paths, and
+// the delete cascade took the notes, highlights and ink with them. A book's
+// identity follows its content; the sweep must not run until the scans that
+// enforce that have settled.
+export class ScanTracker {
+  private pending = new Set<Promise<unknown>>();
+  private lastQueuedAt = 0;
+
+  track<T>(p: Promise<T>): Promise<T> {
+    this.lastQueuedAt = Date.now();
+    this.pending.add(p);
+    const drop = () => this.pending.delete(p);
+    p.then(drop, drop);
+    return p;
+  }
+
+  /** Resolves once nothing is in flight and nothing new arrived for settleMs. */
+  async settle(settleMs: number): Promise<void> {
+    for (;;) {
+      await Promise.allSettled([...this.pending]);
+      const quietFor = Date.now() - this.lastQueuedAt;
+      if (this.pending.size === 0 && quietFor >= settleMs) return;
+      await new Promise((r) => setTimeout(r, Math.max(50, settleMs - quietFor)));
+    }
+  }
+}
+
+// Reconcile DB against disk: any Book row whose file doesn't exist anymore
+// (deleted while the watcher was offline) gets removed, so the library shows
+// no ghost rows from the last run. Deliberately a standalone function: the
+// caller decides when it is SAFE to run (see ScanTracker), and the sweep is
+// testable without chokidar. Returns how many rows were removed.
+export async function reconcileMissingBooks(): Promise<number> {
+  const { prisma } = await import("@/lib/prisma");
+  const rows = await prisma.book.findMany({ select: { id: true, filePath: true } });
+  const missingBooks: string[] = [];
+  for (const r of rows) {
+    try {
+      await fs.access(r.filePath);
+    } catch {
+      missingBooks.push(r.id);
+    }
+  }
+  if (missingBooks.length > 0) {
+    await prisma.book.deleteMany({ where: { id: { in: missingBooks } } });
+    console.log(`[scanner] reconciled — removed ${missingBooks.length} missing book(s)`);
+  }
+  return missingBooks.length;
+}
+
 // State lives on globalThis so it survives Next's instrumentation-vs-
 // request-handler module split (the same gotcha that forces the Prisma
 // singleton pattern). Without this, /api/scan/status reports
@@ -120,6 +181,10 @@ export async function startWatcher(): Promise<void> {
   console.log(`[scanner] watching ${ok.length} folder(s): ${ok.join(", ")}`);
   s.watchedPaths = ok;
 
+  // Per-watcher tracker: the reconcile sweep below waits on the scans this
+  // watcher instance queued, and a restart gets a fresh one.
+  const tracker = new ScanTracker();
+
   const w = chokidar.watch(ok, {
     persistent: true,
     ignoreInitial: false,
@@ -130,22 +195,29 @@ export async function startWatcher(): Promise<void> {
     followSymlinks: false,
   });
 
-  w.on("add", async (filePath: string) => {
+  w.on("add", (filePath: string) => {
     if (!isBookFile(filePath)) return;
-    try {
-      await limiter.run(() => scanFile(filePath));
-      // Succeeded — drop any prior failure record for this path so a fixed
-      // book stops being reported.
-      await clearFailedImport(filePath);
-    } catch (err) {
-      console.error(`[scanner] add failed: ${filePath}`, err);
-      // Extraction threw — record a visible FailedImport instead of letting
-      // the book silently vanish.
-      await recordFailedImport(filePath, formatFromExtension(filePath), err).catch(
-        (recErr) =>
-          console.error(`[scanner] recordFailedImport failed: ${filePath}`, recErr),
-      );
-    }
+    // Tracked so the reconcile sweep can wait for the initial walk's scans —
+    // the hash re-link that keeps annotations on a moved file happens inside
+    // scanFile, and the sweep must never outrun it.
+    void tracker.track(
+      (async () => {
+        try {
+          await limiter.run(() => scanFile(filePath));
+          // Succeeded — drop any prior failure record for this path so a fixed
+          // book stops being reported.
+          await clearFailedImport(filePath);
+        } catch (err) {
+          console.error(`[scanner] add failed: ${filePath}`, err);
+          // Extraction threw — record a visible FailedImport instead of letting
+          // the book silently vanish.
+          await recordFailedImport(filePath, formatFromExtension(filePath), err).catch(
+            (recErr) =>
+              console.error(`[scanner] recordFailedImport failed: ${filePath}`, recErr),
+          );
+        }
+      })(),
+    );
   });
 
   w.on("change", async (filePath: string) => {
@@ -174,24 +246,13 @@ export async function startWatcher(): Promise<void> {
   });
 
   w.on("ready", async () => {
-    // Reconcile DB against disk: any Book row whose file doesn't exist
-    // anymore (deleted while the watcher was offline) gets removed. Without
-    // this, the library shows ghost rows from the last run.
+    // Wait out the initial walk before reconciling (see ScanTracker), and
+    // abort if this watcher was torn down while waiting — the restart's own
+    // ready handler runs its own sweep.
+    await tracker.settle(RECONCILE_SETTLE_MS);
+    if (state().watcher !== w) return;
     try {
-      const { prisma } = await import("@/lib/prisma");
-      const rows = await prisma.book.findMany({ select: { id: true, filePath: true } });
-      const missingBooks: string[] = [];
-      for (const r of rows) {
-        try {
-          await fs.access(r.filePath);
-        } catch {
-          missingBooks.push(r.id);
-        }
-      }
-      if (missingBooks.length > 0) {
-        await prisma.book.deleteMany({ where: { id: { in: missingBooks } } });
-        console.log(`[scanner] reconciled — removed ${missingBooks.length} missing book(s)`);
-      }
+      await reconcileMissingBooks();
     } catch (err) {
       console.error("[scanner] reconcile failed", err);
     }
