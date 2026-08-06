@@ -143,6 +143,22 @@ describe("reconcileMissingBooks", () => {
   });
 });
 
+describe("reconcileMissingBooks — empty-mount refusal", () => {
+  it("refuses to delete when every book is missing (unmounted/renamed disk)", async () => {
+    await h.prisma.book.create({
+      data: { filePath: path.join(lib, "a.epub"), format: "epub", title: "A" },
+    });
+    await h.prisma.book.create({
+      data: { filePath: path.join(lib, "b.epub"), format: "epub", title: "B" },
+    });
+
+    const removed = await reconcileMissingBooks();
+
+    expect(removed).toBe(0);
+    expect(await h.prisma.book.count()).toBe(2);
+  });
+});
+
 describe("mount move — identity follows the book", () => {
   it("a settled scan repoints the row first, so reconcile deletes nothing and notes survive", async () => {
     // The library as it was before the move: a row pointing at the old path,

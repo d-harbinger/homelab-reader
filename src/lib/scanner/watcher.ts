@@ -80,6 +80,18 @@ export async function reconcileMissingBooks(): Promise<number> {
       missingBooks.push(r.id);
     }
   }
+  // Refuse the delete-everything case: a library where EVERY book is missing
+  // is an unmounted, renamed or empty mount, not a deliberate deletion of the
+  // whole collection — and rows deleted here cascade their annotations away.
+  // Ghost rows until the next healthy boot are the cheap side of that trade.
+  if (missingBooks.length > 0 && missingBooks.length === rows.length) {
+    console.error(
+      `[scanner] reconcile refused: all ${rows.length} book(s) are missing from disk — ` +
+        "this looks like an unmounted or empty library, not a deletion. No rows removed; " +
+        "fix the books mount and restart.",
+    );
+    return 0;
+  }
   if (missingBooks.length > 0) {
     await prisma.book.deleteMany({ where: { id: { in: missingBooks } } });
     console.log(`[scanner] reconciled — removed ${missingBooks.length} missing book(s)`);
