@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { GENRES, UNSORTED } from "@/lib/library/genre-taxonomy";
+import { shelfPickerOptions, UNSORTED } from "@/lib/library/genre-taxonomy";
 
 // The book's bookstore shelf, shown on the detail page. Admins get a
 // select (the taxonomy list + Unsorted; a custom owner-set shelf stays
@@ -52,8 +52,7 @@ export function GenreShelf({
     );
   }
 
-  const options = [...GENRES];
-  if (current && !GENRES.includes(current)) options.push(current);
+  const options = shelfPickerOptions(current);
 
   return (
     <span className="inline-flex items-center gap-2">

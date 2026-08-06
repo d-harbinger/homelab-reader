@@ -294,6 +294,18 @@ const RULES: Rule[] = [
 export const GENRES: string[] = RULES.map((r) => r.genre);
 
 /**
+ * Option list for a shelf picker: the full taxonomy plus the book's own
+ * off-taxonomy value (a legacy/custom shelf stays selectable), sorted
+ * alphabetically for scanning. GENRES itself keeps matching order —
+ * that order is load-bearing for classifyGenre; display order is not.
+ */
+export function shelfPickerOptions(current: string | null): string[] {
+  const options = [...GENRES];
+  if (current && !GENRES.includes(current)) options.push(current);
+  return options.sort((a, b) => a.localeCompare(b));
+}
+
+/**
  * Normalize a book's subject strings to one shelf. First rule whose
  * pattern matches any subject wins; null when nothing matches (the
  * caller shelves it as Unsorted).

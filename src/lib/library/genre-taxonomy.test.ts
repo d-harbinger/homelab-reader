@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyGenre, GENRES, UNSORTED } from "./genre-taxonomy";
+import { classifyGenre, GENRES, shelfPickerOptions, UNSORTED } from "./genre-taxonomy";
 
 // The normalizer's contract: noisy real-world subject strings (embedded
 // EPUB dc:subject and OpenLibrary subjects both look like these) land on
@@ -50,5 +50,29 @@ describe("classifyGenre", () => {
   it("taxonomy shelf names are unique and Unsorted is reserved", () => {
     expect(new Set(GENRES).size).toBe(GENRES.length);
     expect(GENRES).not.toContain(UNSORTED);
+  });
+});
+
+// The picker shows the taxonomy alphabetized; GENRES keeps its
+// specific-before-general matching order for classifyGenre.
+describe("shelfPickerOptions", () => {
+  const alphabetized = (list: string[]) =>
+    [...list].sort((a, b) => a.localeCompare(b));
+
+  it("returns every taxonomy shelf, alphabetized", () => {
+    const options = shelfPickerOptions(null);
+    expect(new Set(options)).toEqual(new Set(GENRES));
+    expect(options).toEqual(alphabetized(options));
+  });
+
+  it("keeps an off-taxonomy shelf selectable, in alphabetical position", () => {
+    const options = shelfPickerOptions("Aviation");
+    expect(options).toContain("Aviation");
+    expect(options).toHaveLength(GENRES.length + 1);
+    expect(options).toEqual(alphabetized(options));
+  });
+
+  it("does not duplicate a shelf already in the taxonomy", () => {
+    expect(shelfPickerOptions("Fiction")).toHaveLength(GENRES.length);
   });
 });
