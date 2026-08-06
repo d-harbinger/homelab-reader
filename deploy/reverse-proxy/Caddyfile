@@ -1,27 +1,92 @@
-# Caddy reverse proxy for a homelab — STARTING POINT, not wired into the live
-# stack. Fronts homelab-reader (and, when ready, the sibling chimera service) by
-# hostname so individual host ports stop mattering. Adopt by following README.md.
+# Caddy reverse proxy for the homelab app stack.
+#
+# One TLS front door for every self-hosted app on the services host, so each app
+# can stop publishing a plaintext port on the local network. Activation is
+# staged in README.md — bringing this up is only half the change, and the other
+# half (each app retreating to a loopback bind) is what actually closes the
+# plaintext paths.
 #
 # Each app joins a shared external Docker network (default: homelab-proxy) and
-# Caddy reaches it by container/service name on its INTERNAL port (3000 for a
-# Next.js app) — the published host port (3334) is no longer needed once traffic
-# comes through the proxy.
-
+# Caddy reaches it by container name on its INTERNAL port — 3000 for the
+# Next.js apps, 4321 for the globe viewer. The published host port stops being
+# the way in and becomes a loopback-only debugging convenience.
+#
+# {$PROXY_ZONE} comes from .env via the compose env_file, the same arrangement
+# the mesh's own ingress uses. It holds the DNS zone the app names live in, so
+# no site-specific name is committed here. Copy .env.example to .env and fill
+# it in.
 {
-	# LAN HTTPS with Caddy's built-in CA (certs are self-signed — trust the root
-	# once per client, or accept the browser warning). For a real public domain,
-	# delete this block and Caddy will use Let's Encrypt automatically.
+	# HTTPS with Caddy's built-in certificate authority. The names below are
+	# private, so no public authority can issue for them; Caddy issues from a
+	# local root instead. That root has to be trusted once per client device —
+	# README.md stage 3 walks through it. Until it is, browsers warn and
+	# command-line clients need the root passed explicitly.
+	#
+	# For a real, publicly-resolvable domain: delete this line and add an
+	# ACME DNS challenge instead. HTTP validation is not an option here, by
+	# design — nothing in this stack is reachable from the public internet.
 	local_certs
+
+	# No plaintext listener at all. Caddy would otherwise open port 80 to
+	# redirect to HTTPS, and a redirect is still a plaintext request carrying
+	# the path — on a network that is not assumed friendly, a connection
+	# refused is the better answer than a helpful redirect.
+	auto_https disable_redirects
 }
 
-# Reader. Point a DNS record (or /etc/hosts on each client) at the proxy host:
-#   reader.home.lan  ->  <homelab-ip>
-reader.home.lan {
+# Applied to every site below.
+(common) {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+}
+
+# The personal dashboard / hub. Host port 5454 before the cutover.
+dashboard.{$PROXY_ZONE} {
+	import common
+	reverse_proxy chimera:3000
+}
+
+# The kitchen console. Host port 5455 before the cutover.
+kitchen.{$PROXY_ZONE} {
+	import common
+	reverse_proxy chef-calc-pro:3000
+}
+
+# The reading library. Host port 5456 before the cutover.
+#
+# TLS matters more here than anywhere else in this file: the catalog feed
+# authenticates with HTTP Basic, which sends the credential on every single
+# request. Over plain HTTP that is a credential on the wire dozens of times an
+# hour.
+reader.{$PROXY_ZONE} {
+	import common
 	reverse_proxy homelab-reader:3000
 }
 
-# Sibling dashboard — uncomment once chimera joins the homelab-proxy network.
-# Adjust the internal port if chimera does not listen on 3000.
-# chimera.home.lan {
-# 	reverse_proxy chimera:3000
+# The music server. Host port 5457 before the cutover.
+music.{$PROXY_ZONE} {
+	import common
+	reverse_proxy homelab-music:3000
+}
+
+# The globe viewer. Host port 5458 before the cutover. Its container listens on
+# 4321 rather than 3000, and it reads X-Forwarded-Proto to decide whether to
+# mark its session cookie Secure — Caddy sets that header by default, so
+# arriving through here is what makes the cookie correct.
+globe.{$PROXY_ZONE} {
+	import common
+	reverse_proxy open-earth-viewer:4321
+}
+
+# The books service. Host port 5459 before the cutover. Commented until it is
+# actually running on the services host — a site block for an absent container
+# makes Caddy log a resolution failure on every request rather than fail
+# usefully.
+# books.{$PROXY_ZONE} {
+# 	import common
+# 	reverse_proxy homelab-banking:3000
 # }

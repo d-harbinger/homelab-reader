@@ -24,6 +24,10 @@ node_modules/
 .env.local
 .env.*.local
 
+# Certificate authority root exported from the reverse proxy for installing on
+# client devices (deploy/reverse-proxy/README.md stage 3). Per-deployment.
+caddy-root.crt
+
 # Editor / OS
 .DS_Store
 Thumbs.db

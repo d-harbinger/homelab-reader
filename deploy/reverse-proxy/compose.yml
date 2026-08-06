@@ -1,31 +1,49 @@
-# Standalone Caddy reverse proxy — runs on its own, fronts the app services that
-# join the shared `homelab-proxy` network. STARTING POINT; see README.md.
+# Standalone Caddy reverse proxy — one TLS front door for the homelab app
+# stack. Runs on its own and fronts the app services that join the shared
+# `homelab-proxy` network. Activation is staged in README.md.
 #
-# This is intentionally separate from the app compose files so it can front
-# multiple projects (reader, chimera, …) without any one of them owning it.
+# Deliberately separate from the app compose files so it can front multiple
+# projects without any one of them owning it.
 
 name: homelab-proxy
 
 services:
   caddy:
-    image: caddy:2-alpine
+    # Pinned to an exact release, matching the pin the mesh ingress uses, so a
+    # `docker compose pull` cannot silently change the component that terminates
+    # TLS for every app on the host. A floating tag on a proxy is the one place
+    # where "it updated itself" is least welcome.
+    image: caddy:2.11.4-alpine
     container_name: homelab-proxy
     restart: unless-stopped
+    env_file:
+      # Holds PROXY_ZONE, the DNS zone the app names live in. Copy
+      # .env.example and fill it in; the file is not committed.
+      - .env
     ports:
-      # The proxy owns 80/443 on the host; the app services stop publishing
-      # their own host ports once they route through here.
-      - "80:80"
-      - "443:443"
+      # HTTPS only. Port 80 is deliberately absent: nothing here uses HTTP
+      # validation to obtain certificates, and a plaintext redirect listener is
+      # surface without a purpose on a network that is not assumed friendly.
+      #
+      # The bind address is required rather than defaulted, matching the
+      # convention the app repos use — the publish interface is a decision, and
+      # a published port bypasses the host firewall, so the bind address is the
+      # firewall. Answer once in .env.
+      #
+      #   PROXY_BIND=0.0.0.0     reachable from the local network AND the mesh
+      #   PROXY_BIND=<mesh-addr> reachable ONLY over the mesh; local-network
+      #                          clients lose access entirely
+      - "${PROXY_BIND:?no publish address recorded — set PROXY_BIND in .env, see README.md stage 1}:443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy-data:/data # certs + CA — persist so they survive restarts
+      - caddy-data:/data # certs + the local CA root — persist so they survive restarts
       - caddy-config:/config
     networks:
       - homelab-proxy
     cap_drop:
       - ALL
     cap_add:
-      - NET_BIND_SERVICE # bind 80/443 without running as root
+      - NET_BIND_SERVICE # bind 443 without running as root
     security_opt:
       - no-new-privileges:true
 
