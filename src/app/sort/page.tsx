@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import useSWR from "swr";
 import { ArrowLeft, Sparkles } from "lucide-react";
@@ -43,22 +43,45 @@ export default function SortPage() {
 
   const [autoBusy, setAutoBusy] = useState(false);
   const [autoMsg, setAutoMsg] = useState("");
+  const stopRef = useRef(false);
 
-  // One polite OpenLibrary batch per click; the response says whether
-  // another click is worth it. Deliberately not an auto-loop — the
-  // admin stays in control of how much lookup traffic a session sends.
-  async function runAutoBatch() {
+  // One click runs polite batch after polite batch until the pile is
+  // cleared (a 400-book library meant ~20 attended clicks under the old
+  // one-batch-per-click design; reruled 2026-08-06). Politeness to
+  // OpenLibrary is unchanged — the server caps each batch and paces the
+  // lookups; this loop only saves the re-clicks. Stop returns control
+  // after the batch in flight; a batch is atomic on the server, so
+  // mid-batch cancellation isn't a thing to offer.
+  async function runAutoLookup() {
     setAutoBusy(true);
     setAutoMsg("");
+    stopRef.current = false;
+    const total = { processed: 0, shelved: 0, suggested: 0, skipped: 0 };
+    let batches = 0;
     try {
-      const res = await fetch("/api/shelves/auto", { method: "POST" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const r = (await res.json()) as AutoResult;
-      setAutoMsg(
-        `Looked up ${r.processed}: ${r.shelved} shelved, ${r.suggested} saved for review, ` +
-          `${r.skipped} no match. ${r.remaining > 0 ? `${r.remaining} remaining.` : "Done."}`,
-      );
-      await mutate();
+      for (;;) {
+        const res = await fetch("/api/shelves/auto", { method: "POST" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const r = (await res.json()) as AutoResult;
+        batches += 1;
+        total.processed += r.processed;
+        total.shelved += r.shelved;
+        total.suggested += r.suggested;
+        total.skipped += r.skipped;
+        // processed === 0 with books remaining should be unreachable
+        // (every processed book leaves the queue), but treat it as done
+        // rather than risk spinning against a surprise.
+        const done = r.remaining === 0 || r.processed === 0;
+        const stopped = !done && stopRef.current;
+        setAutoMsg(
+          `${stopped ? "Stopped — " : ""}looked up ${total.processed} in ${batches} ` +
+            `${batches === 1 ? "batch" : "batches"}: ${total.shelved} shelved, ` +
+            `${total.suggested} saved for review, ${total.skipped} no match.` +
+            (r.remaining > 0 ? ` ${r.remaining} remaining.` : " Done."),
+        );
+        await mutate();
+        if (done || stopped) break;
+      }
     } catch (err) {
       setAutoMsg(`Lookup failed: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
@@ -102,19 +125,31 @@ export default function SortPage() {
 
       {isAdmin && privacy?.onlineLookups && (
         <div className="space-y-2">
-          <button
-            onClick={runAutoBatch}
-            disabled={autoBusy || books.length === 0}
-            className="inline-flex items-center gap-2 rounded-md bg-amber-500 px-3 py-1.5 text-xs font-medium text-zinc-950 transition-colors hover:bg-amber-400 disabled:opacity-50"
-          >
-            <Sparkles size={14} />
-            {autoBusy ? "Looking books up…" : "Look shelves up online (batch of 20)"}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={runAutoLookup}
+              disabled={autoBusy || books.length === 0}
+              className="inline-flex items-center gap-2 rounded-md bg-amber-500 px-3 py-1.5 text-xs font-medium text-zinc-950 transition-colors hover:bg-amber-400 disabled:opacity-50"
+            >
+              <Sparkles size={14} />
+              {autoBusy ? "Looking books up…" : "Look shelves up online"}
+            </button>
+            {autoBusy && (
+              <button
+                onClick={() => {
+                  stopRef.current = true;
+                }}
+                className="rounded-md border border-zinc-800 px-3 py-1.5 text-xs text-zinc-300 transition-colors hover:border-zinc-600 hover:text-zinc-100"
+              >
+                Stop after this batch
+              </button>
+            )}
+          </div>
           <p className="text-xs text-zinc-600">
             Looks each book up on OpenLibrary by title/author/ISBN. Confident
             matches are shelved directly; uncertain ones are saved as metadata
-            suggestions to review on the book&apos;s page. One batch per
-            click, rate-limited.
+            suggestions to review on the book&apos;s page. Runs in rate-limited
+            batches of 20 until the pile is cleared; stop any time.
           </p>
           {autoMsg && <p className="text-xs text-zinc-400">{autoMsg}</p>}
         </div>
