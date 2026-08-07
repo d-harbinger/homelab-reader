@@ -92,14 +92,23 @@ async function sweep(): Promise<SweepResult> {
   return (await res.json()) as SweepResult;
 }
 
-/** Seed `n` shelf-less books, oldest first (the order the sweep consumes). */
+/**
+ * Seed `n` shelf-less books, oldest first (the order the sweep consumes).
+ *
+ * The file path carries the per-book uniqueness; the TITLE is the record's
+ * title exactly, because these books name no author and the matcher no longer
+ * treats a title that merely overlaps as certain. A title of "TCP/IP
+ * Illustrated <prefix> <i>" would be held for review — correctly, since with
+ * no author nothing separates a longer title from a different book — and these
+ * tests are about the sweep's throttle bookkeeping, not about scoring.
+ */
 async function seedBooks(prefix: string, n: number): Promise<void> {
   for (let i = 0; i < n; i++) {
     await h.prisma.book.create({
       data: {
         filePath: `/books/${prefix}-${i}.pdf`,
         format: "pdf",
-        title: `TCP/IP Illustrated ${prefix} ${i}`,
+        title: "TCP/IP Illustrated",
         genre: null,
         addedAt: new Date(Date.now() + i * 1000),
       },

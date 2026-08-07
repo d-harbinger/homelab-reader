@@ -8,8 +8,10 @@ import {
   lookupOpenLibrary,
   scoreMatch,
   searchOpenLibrary,
+  UNCORROBORATED_MATCH_CEILING,
 } from "@/lib/metadata/openlibrary";
 import { AUTO_SHELVE_CONFIDENCE } from "@/lib/library/auto-shelve";
+import { MIN_SUGGESTION_CONFIDENCE } from "@/lib/metadata/enrich";
 
 // A canned OpenLibrary /search.json response (trimmed to the fields we read).
 const SAMPLE = {
@@ -170,6 +172,130 @@ describe("scoreMatch — main-title comparison", () => {
       { title: "Think Python", authors: ["Allen B. Downey"] },
     );
     expect(s).toBeGreaterThan(0.7);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A title that OVERLAPS is not a title that matches.
+//
+// Token overlap is symmetric: it counts the words two titles share and cannot
+// see which side brought the extra ones. So a candidate that is the query plus
+// a word — "IMPLEMENTING Domain-Driven Design", "MORE Programming Pearls" —
+// scored three shared tokens out of four, 0.750, and auto-shelved a different
+// book by a different author. The scanner reads no author at all from many
+// PDFs, which is exactly when nothing else is left to catch it.
+//
+// The rule: a candidate whose main title carries words the query does not is
+// not certain, and an uncertain match is held under the auto-shelve floor by
+// construction rather than ranked out of it. The reverse direction — words the
+// QUERY carries — is usually filename noise ("2nd Edition"), so it disqualifies
+// only when no author corroborates the match.
+// ---------------------------------------------------------------------------
+describe("scoreMatch — a title that overlaps is not a title that matches", () => {
+  it("holds the superset that used to score 0.750 under the floor", () => {
+    // The reported defect, with the author signal the scanner did not find.
+    expect(
+      scoreMatch(
+        { title: "Domain-Driven Design" },
+        { title: "Implementing Domain-Driven Design", authors: ["Vaughn Vernon"] },
+      ),
+    ).toBeLessThan(AUTO_SHELVE_CONFIDENCE);
+
+    // The book it actually is still matches outright, subtitle and all.
+    expect(
+      scoreMatch(
+        { title: "Domain-Driven Design" },
+        {
+          title: "Domain-Driven Design: Tackling Complexity in the Heart of Software",
+          authors: ["Eric Evans"],
+        },
+      ),
+    ).toBeGreaterThanOrEqual(AUTO_SHELVE_CONFIDENCE);
+  });
+
+  it("is not talked round by a matching author", () => {
+    // A sequel shares its author with the book it is not. "More Programming
+    // Pearls" scored 0.767 on that strength; "The Go Programming Language"
+    // reached 0.570 on three shared title words and a shared co-author.
+    for (const [title, authors, candidate, candidateAuthors] of [
+      [
+        "Programming Pearls",
+        ["Jon Bentley"],
+        "More Programming Pearls: Confessions of a Coder",
+        ["Jon Bentley"],
+      ],
+      [
+        "The C Programming Language",
+        ["Brian W. Kernighan"],
+        "The Go Programming Language",
+        ["Alan A. A. Donovan", "Brian W. Kernighan"],
+      ],
+    ] as const) {
+      expect(
+        scoreMatch({ title, authors: [...authors] }, { title: candidate, authors: [...candidateAuthors] }),
+        `${title} must not auto-shelve against ${candidate}`,
+      ).toBeLessThan(AUTO_SHELVE_CONFIDENCE);
+    }
+  });
+
+  it("treats words the QUERY adds as noise only while an author corroborates", () => {
+    const edition = "Clean Code 2nd Edition";
+    const record = "Clean Code: A Handbook of Agile Software Craftsmanship";
+
+    // An edition suffix is filename debris, not a different book — and the
+    // author says so. This case shelved correctly before the rule and still does.
+    expect(
+      scoreMatch(
+        { title: edition, authors: ["Robert C. Martin"] },
+        { title: record, authors: ["Robert C. Martin"] },
+      ),
+    ).toBeGreaterThanOrEqual(AUTO_SHELVE_CONFIDENCE);
+
+    // With no author, the same shape can equally be a longer, different title:
+    // "Modern Operating Systems" is not "Operating Systems: Three Easy Pieces",
+    // which shared two of three tokens and scored 0.667. Nothing but a human
+    // can tell those apart, so a human gets them.
+    expect(
+      scoreMatch(
+        { title: "Modern Operating Systems" },
+        { title: "Operating Systems: Three Easy Pieces", authors: ["Remzi H. Arpaci-Dusseau"] },
+      ),
+    ).toBeLessThan(AUTO_SHELVE_CONFIDENCE);
+  });
+
+  it("keeps a held candidate in the review queue rather than dropping it", () => {
+    // Held, not discarded: the point is to route the decision to a person, so
+    // the candidate must still clear the suggestion floor and be offered.
+    const held = scoreMatch(
+      { title: "Domain-Driven Design" },
+      { title: "Implementing Domain-Driven Design", authors: ["Vaughn Vernon"] },
+    );
+    expect(held).toBeGreaterThanOrEqual(MIN_SUGGESTION_CONFIDENCE);
+  });
+
+  it("holds every uncertain candidate under the floor by construction", () => {
+    // Confidence never exceeds 1, so scaling by a ceiling below the floor is
+    // what makes the guarantee arithmetic rather than a tuned number. If the
+    // auto-shelve floor is ever lowered, this is the test that notices.
+    expect(UNCORROBORATED_MATCH_CEILING).toBeLessThan(AUTO_SHELVE_CONFIDENCE);
+  });
+
+  it("offers nothing above the floor when every candidate is a longer title", async () => {
+    // End to end, the way the sweep sees it: a PDF that named no author, and
+    // an OpenLibrary answer that does not contain the book.
+    const docs = [
+      { key: "/works/IDDD", title: "Implementing Domain-Driven Design", author_name: ["Vaughn Vernon"] },
+      { key: "/works/DDDDIST", title: "Domain-Driven Design Distilled", author_name: ["Vaughn Vernon"] },
+    ];
+    const ranked = await searchOpenLibrary(
+      { title: "Domain-Driven Design" },
+      { fetchImpl: fetchReturning({ docs }) },
+    );
+    expect(ranked.length).toBe(2); // candidates exist, and are offered…
+    for (const s of ranked) {
+      // …but none of them writes a shelf nobody will review.
+      expect(s.confidence, s.title).toBeLessThan(AUTO_SHELVE_CONFIDENCE);
+    }
   });
 });
 

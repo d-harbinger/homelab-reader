@@ -124,10 +124,74 @@ function titleSimilarity(queryTitle?: string, candidateTitle?: string): number {
 }
 
 /**
+ * Whether the candidate's main title differs from the query's by words that
+ * change WHICH BOOK it is. A token overlap cannot see this on its own: it is
+ * symmetric, so it treats one extra word as a small dilution rather than as a
+ * different book. "Domain-Driven Design" against "Implementing Domain-Driven
+ * Design" shares three tokens of four and scores 0.750 — comfortably over the
+ * auto-shelve floor, for a book by a different author about a different thing.
+ *
+ * The two directions are not equally suspicious:
+ *
+ *   words the CANDIDATE adds — "IMPLEMENTING Domain-Driven Design", "MORE
+ *     Programming Pearls", "The GO Programming Language". These are the
+ *     record's own title words, and they are precisely what makes it another
+ *     book. A matching author does not redeem them; "More Programming Pearls"
+ *     is by the author of "Programming Pearls", and scored 0.767 on the
+ *     strength of it. Always disqualifying.
+ *
+ *   words the QUERY adds — usually noise a filename picked up along the way
+ *     ("2nd Edition", "4th ed"), but sometimes a real longer title: "MODERN
+ *     Operating Systems" is not "Operating Systems: Three Easy Pieces". An
+ *     author that matches tells those two cases apart. With no author, nothing
+ *     does — so this direction disqualifies only when no author corroborates.
+ *
+ * Subtitles are stripped from both sides first, so the extra words a record
+ * carries after its colon still count for nothing.
+ */
+function mainTitlesDisagree(
+  queryTitle: string | undefined,
+  candidateTitle: string | undefined,
+  haveAuthors: boolean,
+): boolean {
+  // Nothing to compare is not agreement.
+  if (!queryTitle || !candidateTitle) return true;
+
+  const queryMain = tokens(mainTitle(queryTitle));
+  const candidateMain = tokens(mainTitle(candidateTitle));
+
+  const shared = sharedTokenCount(queryMain, candidateMain);
+  const candidateAdds = new Set(candidateMain).size - shared;
+  if (candidateAdds > 0) return true;
+
+  const queryAdds = new Set(queryMain).size - shared;
+  return !haveAuthors && queryAdds > 0;
+}
+
+/**
+ * What a match no other signal corroborates is worth: at most half.
+ *
+ * Confidence runs 0..1, so scaling such a candidate by a factor below the
+ * auto-shelve floor puts it under that floor BY CONSTRUCTION — whatever the
+ * title and author agreement, and with no threshold arithmetic to get wrong
+ * (tests/openlibrary.test.ts pins the relationship). Scaling rather than
+ * clamping leaves the ranking intact, and anything that scored at least twice
+ * MIN_SUGGESTION_CONFIDENCE still clears it afterwards — so a held candidate
+ * reaches the review queue as a suggestion instead of disappearing. Held for
+ * a human, not thrown away.
+ */
+export const UNCORROBORATED_MATCH_CEILING = 0.5;
+
+/**
  * Confidence that `candidate` is the book described by `query`. Title is the
  * dominant signal; author, when both sides have one, contributes a bonus.
  * Pure and deterministic — exported so the import UI (and tests) can reason
  * about the threshold.
+ *
+ * A candidate whose main title is not the query's title (see
+ * `mainTitlesDisagree`) is held under the auto-shelve floor rather than
+ * ranked out of it: without an author to corroborate, a title that merely
+ * OVERLAPS is not evidence enough to write a shelf nobody will review.
  */
 export function scoreMatch(
   query: EnrichQuery,
@@ -136,13 +200,20 @@ export function scoreMatch(
   const titleScore = titleSimilarity(query.title, candidate.title);
 
   const haveAuthors = !!query.authors?.length && candidate.authors.length > 0;
-  if (!haveAuthors) return round(titleScore);
+  const score = haveAuthors
+    ? titleScore * 0.7 +
+      jaccard(
+        tokens((query.authors ?? []).join(" ")),
+        tokens(candidate.authors.join(" ")),
+      ) *
+        0.3
+    : titleScore;
 
-  const authorScore = jaccard(
-    tokens((query.authors ?? []).join(" ")),
-    tokens(candidate.authors.join(" ")),
+  return round(
+    mainTitlesDisagree(query.title, candidate.title, haveAuthors)
+      ? score * UNCORROBORATED_MATCH_CEILING
+      : score,
   );
-  return round(titleScore * 0.7 + authorScore * 0.3);
 }
 
 function round(n: number): number {
