@@ -9,6 +9,7 @@ import {
   scoreMatch,
   searchOpenLibrary,
 } from "@/lib/metadata/openlibrary";
+import { AUTO_SHELVE_CONFIDENCE } from "@/lib/library/auto-shelve";
 
 // A canned OpenLibrary /search.json response (trimmed to the fields we read).
 const SAMPLE = {
@@ -63,6 +64,112 @@ describe("scoreMatch", () => {
       { title: "Think Python", authors: [] },
     );
     expect(s).toBeGreaterThan(0.9);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The subtitle rule and the guard that makes it safe.
+//
+// OpenLibrary stores subtitles inline after a colon, so comparing full titles
+// diluted correct matches below the auto-shelve floor. `scoreMatch` therefore
+// also compares the MAIN titles — the parts before the colon — and keeps
+// whichever reading scores higher.
+//
+// That change is only safe because of the two-shared-token guard. Without it,
+// a one-word main title scores a perfect 1.000 against any candidate whose
+// main title is that same word, and a book the scanner could only read as
+// "Python" would silently shelve itself as an arbitrary Python primer. An
+// automatic shelving is never reviewed, so a false positive costs far more
+// than a missed match: the guard is the point of the whole change, and these
+// are its tests.
+// ---------------------------------------------------------------------------
+describe("scoreMatch — main-title comparison", () => {
+  it("does NOT let a one-word title carry a match (the bare-'Python' case)", () => {
+    // Comparing main titles alone would score this an unqualified 1.000.
+    const primer = scoreMatch(
+      { title: "Python" },
+      { title: "Python: The Complete Beginner's Guide to Learning Python", authors: [] },
+    );
+    expect(primer).toBeLessThan(AUTO_SHELVE_CONFIDENCE);
+
+    // The same trap, with the query's own author attached — still no shelving.
+    for (const [title, candidate] of [
+      ["Java", "Java: A Beginner's Guide"],
+      ["Linux", "Linux: The Textbook"],
+      ["Code", "Code Complete: A Practical Handbook of Software Construction"],
+    ] as const) {
+      expect(
+        scoreMatch({ title }, { title: candidate, authors: [] }),
+        `${title} must not auto-shelve against ${candidate}`,
+      ).toBeLessThan(AUTO_SHELVE_CONFIDENCE);
+    }
+  });
+
+  it("does not auto-shelve a bare one-word query end to end", async () => {
+    const docs = [
+      { key: "/works/PYBEG", title: "Python: The Complete Beginner's Guide", author_name: ["Nobody Relevant"] },
+      { key: "/works/PYCRASH", title: "Python Crash Course: A Hands-On Introduction", author_name: ["Eric Matthes"] },
+    ];
+    const ranked = await searchOpenLibrary(
+      { title: "Python" },
+      { fetchImpl: fetchReturning({ docs }) },
+    );
+    expect(ranked.length).toBeGreaterThan(0); // candidates exist…
+    for (const s of ranked) {
+      // …and every one of them stays under the floor, so the sweep hands the
+      // book to a human instead of guessing.
+      expect(s.confidence, s.title).toBeLessThan(AUTO_SHELVE_CONFIDENCE);
+    }
+  });
+
+  it("recovers a correct match that a subtitle had diluted", () => {
+    // 0.475 before the main-title comparison — under the 0.55 floor, so a
+    // certain match sat in the review queue.
+    const s = scoreMatch(
+      { title: "Clean Code", authors: ["Robert C. Martin"] },
+      {
+        title: "Clean Code: A Handbook of Agile Software Craftsmanship",
+        authors: ["Robert C. Martin"],
+      },
+    );
+    expect(s).toBeGreaterThanOrEqual(AUTO_SHELVE_CONFIDENCE);
+  });
+
+  it("keeps a same-author neighbour below the floor", () => {
+    // Two shared tokens are necessary, not sufficient: "Clean Architecture"
+    // shares only "clean" with "Clean Code", and the near-miss neighbours
+    // that DO share two tokens still have to earn the score.
+    const neighbours = [
+      "Clean Architecture: A Craftsman's Guide to Software Structure and Design",
+      "The Clean Coder: A Code of Conduct for Professional Programmers",
+    ];
+    for (const title of neighbours) {
+      expect(
+        scoreMatch(
+          { title: "Clean Code", authors: ["Robert C. Martin"] },
+          { title, authors: ["Robert C. Martin"] },
+        ),
+        title,
+      ).toBeLessThan(AUTO_SHELVE_CONFIDENCE);
+    }
+    // A different book that shares two main-title tokens is still not this
+    // book: the subtitle-free comparison must not flatten the difference.
+    expect(
+      scoreMatch(
+        { title: "Design Patterns", authors: ["Erich Gamma"] },
+        { title: "Head First Design Patterns: A Brain-Friendly Guide", authors: ["Eric Freeman"] },
+      ),
+    ).toBeLessThan(AUTO_SHELVE_CONFIDENCE);
+  });
+
+  it("never scores a candidate lower than the full-title comparison did", () => {
+    // The rule takes the better of the two readings, so it can only move a
+    // candidate toward the floor — no previously-matched book regresses.
+    const s = scoreMatch(
+      { title: "Think Python", authors: ["Allen Downey"] },
+      { title: "Think Python", authors: ["Allen B. Downey"] },
+    );
+    expect(s).toBeGreaterThan(0.7);
   });
 });
 

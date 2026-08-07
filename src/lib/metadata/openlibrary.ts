@@ -56,6 +56,73 @@ function jaccard(a: string[], b: string[]): number {
   return union === 0 ? 0 : intersection / union;
 }
 
+/** How many tokens two token lists share (set semantics). */
+function sharedTokenCount(a: string[], b: string[]): number {
+  const sb = new Set(b);
+  let n = 0;
+  for (const t of new Set(a)) if (sb.has(t)) n++;
+  return n;
+}
+
+/**
+ * The part of a title that comes before its subtitle. OpenLibrary stores the
+ * subtitle inline after a colon — "Clean Code: A Handbook of Agile Software
+ * Craftsmanship" — while a scanned filename almost never carries one.
+ */
+function mainTitle(s: string): string {
+  const colon = s.indexOf(":");
+  if (colon === -1) return s;
+  const head = s.slice(0, colon).trim();
+  // A title that opens with the colon has no main part to speak of.
+  return head.length > 0 ? head : s;
+}
+
+/**
+ * Tokens two main titles must share before the main-title comparison is
+ * allowed to carry a match on its own.
+ *
+ * The guard is the whole reason this is safe. A one-token main title matches
+ * ANY candidate whose main title is that same token, at a perfect 1.000: a
+ * book the scanner could only read as "Python" would otherwise auto-shelve
+ * against an arbitrary "Python: <subtitle>" primer, silently and with no
+ * review. Requiring two shared tokens means a single common word can never
+ * decide a match by itself — such books fall back to the full-title
+ * comparison and, short of that floor, go to a human instead.
+ */
+const MIN_SHARED_MAIN_TITLE_TOKENS = 2;
+
+/**
+ * Title similarity, 0..1 — the better of two readings:
+ *
+ *   full title  — every token on both sides, the original behaviour;
+ *   main titles — the parts before the subtitle, compared to each other.
+ *
+ * The second reading exists because a subtitle DILUTES a correct match under
+ * a plain token overlap: "Clean Code" against "Clean Code: A Handbook of
+ * Agile Software Craftsmanship" shares both of its tokens but scores 0.250 on
+ * the full title, and 0.475 once the exact author is folded in — under the
+ * 0.55 auto-shelve floor, so a certain match went to the review queue. Six of
+ * twenty bench titles failed exactly that way (see tests/openlibrary-bench.test.ts).
+ *
+ * Taking the better of the two never lowers a score, so it can only move
+ * candidates toward the floor — which is precisely why the shared-token guard
+ * on the main-title reading is load-bearing rather than decorative.
+ */
+function titleSimilarity(queryTitle?: string, candidateTitle?: string): number {
+  const full = jaccard(
+    queryTitle ? tokens(queryTitle) : [],
+    candidateTitle ? tokens(candidateTitle) : [],
+  );
+  if (!queryTitle || !candidateTitle) return full;
+
+  const queryMain = tokens(mainTitle(queryTitle));
+  const candidateMain = tokens(mainTitle(candidateTitle));
+  if (sharedTokenCount(queryMain, candidateMain) < MIN_SHARED_MAIN_TITLE_TOKENS) {
+    return full;
+  }
+  return Math.max(full, jaccard(queryMain, candidateMain));
+}
+
 /**
  * Confidence that `candidate` is the book described by `query`. Title is the
  * dominant signal; author, when both sides have one, contributes a bonus.
@@ -66,10 +133,7 @@ export function scoreMatch(
   query: EnrichQuery,
   candidate: { title?: string; authors: string[] },
 ): number {
-  const titleScore = jaccard(
-    query.title ? tokens(query.title) : [],
-    candidate.title ? tokens(candidate.title) : [],
-  );
+  const titleScore = titleSimilarity(query.title, candidate.title);
 
   const haveAuthors = !!query.authors?.length && candidate.authors.length > 0;
   if (!haveAuthors) return round(titleScore);
