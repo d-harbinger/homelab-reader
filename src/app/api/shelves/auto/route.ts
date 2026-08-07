@@ -16,8 +16,27 @@ import { onlineLookupsEnabled } from "@/lib/app-settings";
 // is shelved over repeated batches at a respectful request rate, not in
 // one hammering burst. The response reports what happened and how many
 // remain; the sorting bench's button re-runs it until done.
+//
+// The gap is the published policy, not a guess. OpenLibrary documents
+// one request per second for anonymous callers, and three per second for
+// callers that identify themselves with an application name and a
+// contact address in the User-Agent (https://openlibrary.org/developers/api).
+// This sweep stays anonymous — a contact address is the operator's to
+// give, not this code's to send — so it takes the anonymous rate.
+//
+// The gap therefore precedes EVERY lookup, including the first of a
+// batch. Skipping it on the first one let each new batch begin the
+// instant the previous ended, which put twenty requests inside nineteen
+// seconds and quietly exceeded the very limit this constant exists to
+// respect. That is what earned the throttling the sweep now handles.
+//
+// Note also the standing request in the same policy: the API is for
+// "real-time, low-volume, high-value use" and explicitly not for bulk
+// download. A library large enough to feel slow at one request per
+// second is a library that should be matched against the monthly data
+// dumps instead of this endpoint.
 const BATCH_SIZE = 20;
-const LOOKUP_GAP_MS = 400;
+const LOOKUP_GAP_MS = 1000;
 const LOOKUP_TIMEOUT_MS = 8000;
 
 // A sweep that runs batch after batch unattended can cross OpenLibrary's
@@ -77,8 +96,8 @@ export const POST = withAdmin(async () => {
   let consecutiveFailures = 0;
   let stopped: "throttled" | "unreachable" | null = null;
 
-  for (const [i, b] of batch.entries()) {
-    if (i > 0) await sleep(LOOKUP_GAP_MS);
+  for (const b of batch) {
+    await sleep(LOOKUP_GAP_MS);
 
     const decision = await decideShelf(
       { id: b.id, title: b.title, isbn: b.isbn, authors: b.authors.map((a) => a.name) },
