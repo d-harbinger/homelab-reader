@@ -12,6 +12,10 @@ interface AutoResult {
   shelved: number;
   suggested: number;
   skipped: number;
+  /** Lookups the service never answered — the books stay in the queue. */
+  failed: number;
+  /** Set when the server yielded; the loop must stop and say why. */
+  stopped: "throttled" | "unreachable" | null;
   remaining: number;
 }
 
@@ -52,11 +56,17 @@ export default function SortPage() {
   // lookups; this loop only saves the re-clicks. Stop returns control
   // after the batch in flight; a batch is atomic on the server, so
   // mid-batch cancellation isn't a thing to offer.
+  //
+  // The loop also yields when the SERVER says to (`stopped`): an
+  // unattended sweep is long enough to meet OpenLibrary's throttle, and
+  // hammering through that answers every remaining book with nothing.
+  // Books the service never answered stay in the queue for a later run,
+  // so the summary reports them apart from a genuine "no match".
   async function runAutoLookup() {
     setAutoBusy(true);
     setAutoMsg("");
     stopRef.current = false;
-    const total = { processed: 0, shelved: 0, suggested: 0, skipped: 0 };
+    const total = { processed: 0, shelved: 0, suggested: 0, skipped: 0, failed: 0 };
     let batches = 0;
     try {
       for (;;) {
@@ -68,15 +78,27 @@ export default function SortPage() {
         total.shelved += r.shelved;
         total.suggested += r.suggested;
         total.skipped += r.skipped;
+        total.failed += r.failed;
         // processed === 0 with books remaining should be unreachable
         // (every processed book leaves the queue), but treat it as done
         // rather than risk spinning against a surprise.
         const done = r.remaining === 0 || r.processed === 0;
-        const stopped = !done && stopRef.current;
+        const yielded = r.stopped;
+        const stopped = !done && (stopRef.current || !!yielded);
+        const lead =
+          yielded === "throttled"
+            ? "Paused — OpenLibrary asked for a break; "
+            : yielded === "unreachable"
+              ? "Paused — OpenLibrary is not answering; "
+              : stopped
+                ? "Stopped — "
+                : "";
         setAutoMsg(
-          `${stopped ? "Stopped — " : ""}looked up ${total.processed} in ${batches} ` +
+          // Books the service never answered for are not "looked up".
+          `${lead}looked up ${total.processed - total.failed} in ${batches} ` +
             `${batches === 1 ? "batch" : "batches"}: ${total.shelved} shelved, ` +
             `${total.suggested} saved for review, ${total.skipped} no match.` +
+            (total.failed > 0 ? ` ${total.failed} not answered — still queued.` : "") +
             (r.remaining > 0 ? ` ${r.remaining} remaining.` : " Done."),
         );
         await mutate();

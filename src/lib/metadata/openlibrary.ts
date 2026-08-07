@@ -100,6 +100,14 @@ interface OlDoc {
   subject?: string[];
 }
 
+/**
+ * How many candidates to fetch and score in order to return `limit` of them.
+ * Four pages' worth, never fewer than 20 — enough that a correct-but-not-
+ * top-ranked edition still gets scored, small enough to stay one modest
+ * request. Exported so the tests can assert the URL rather than restate it.
+ */
+export const CANDIDATE_POOL = (limit: number): number => Math.max(limit * 4, 20);
+
 function buildUrl(query: EnrichQuery, limit: number): string {
   const params = new URLSearchParams();
   if (query.isbn) {
@@ -108,8 +116,16 @@ function buildUrl(query: EnrichQuery, limit: number): string {
   }
   if (query.title) params.set("title", query.title);
   if (query.authors?.length) params.set("author", query.authors.join(" "));
-  // Ask for a few extra so confidence ranking has something to sort.
-  params.set("limit", String(Math.max(limit, 5)));
+  // Ask for a real candidate POOL, not just the page being returned.
+  //
+  // OpenLibrary orders `docs` by its own relevance, which is not this
+  // module's confidence order — the edition a messy filename actually
+  // refers to often sits several places down ("Refactoring" returns five
+  // other refactoring books before Fowler's). Asking for exactly `limit`
+  // truncated the candidate set BEFORE scoring, so the right book was
+  // frequently never scored at all. Score a wider pool, still return the
+  // top `limit`: same single request, more for the ranking to choose from.
+  params.set("limit", String(CANDIDATE_POOL(limit)));
   params.set(
     "fields",
     "key,title,author_name,first_publish_year,isbn,cover_i,publisher,subject",
@@ -145,15 +161,40 @@ function toSuggestion(doc: OlDoc, query: EnrichQuery): MetadataSuggestion {
 }
 
 /**
- * Query OpenLibrary and return ranked metadata suggestions (best first).
- * Best-effort: any network/parse failure resolves to [] — enrichment must
- * never break an import.
+ * Why a lookup produced no suggestions. The distinction is load-bearing:
+ * "answered, nothing matched" is a fact about the book, while "throttled" and
+ * "failed" are facts about the network — and a caller that remembers the
+ * second kind as if it were the first permanently mislabels a matchable book
+ * as unmatchable. (That is exactly how a whole-library sweep started
+ * reporting hundreds of false "no match" results; see the sweep in
+ * src/app/api/shelves/auto/route.ts.)
  */
-export async function searchOpenLibrary(
+export type LookupOutcome = "ok" | "throttled" | "failed";
+
+export interface LookupResult {
+  outcome: LookupOutcome;
+  /** Ranked suggestions, best first. Always [] unless outcome is "ok". */
+  suggestions: MetadataSuggestion[];
+}
+
+// OpenLibrary is a free community service and throttles heavy callers rather
+// than serving them; it answers a throttled client with 429, and 403 in the
+// same role. Both mean "come back later", never "this book is unknown".
+const THROTTLE_STATUSES = new Set([403, 429]);
+
+/**
+ * Query OpenLibrary and return ranked metadata suggestions PLUS why the list
+ * looks the way it does. Never throws — a caller that only wants the list can
+ * use `searchOpenLibrary`, while a caller that must not confuse an outage with
+ * an answer reads `outcome`.
+ */
+export async function lookupOpenLibrary(
   query: EnrichQuery,
   opts: SearchOptions = {},
-): Promise<MetadataSuggestion[]> {
-  if (!query.title && !query.isbn && !query.authors?.length) return [];
+): Promise<LookupResult> {
+  if (!query.title && !query.isbn && !query.authors?.length) {
+    return { outcome: "ok", suggestions: [] };
+  }
 
   const fetchImpl = opts.fetchImpl ?? fetch;
   const limit = opts.limit ?? 5;
@@ -167,10 +208,17 @@ export async function searchOpenLibrary(
         "User-Agent": "homelab-reader (self-hosted personal library)",
       },
     });
-    if (!res.ok) return [];
+    if (!res.ok) {
+      return {
+        outcome: THROTTLE_STATUSES.has(res.status) ? "throttled" : "failed",
+        suggestions: [],
+      };
+    }
     data = await res.json();
   } catch {
-    return [];
+    // Network error, abort/timeout, or unparseable body — all "the service
+    // did not answer", none of them "the book is unknown".
+    return { outcome: "failed", suggestions: [] };
   }
 
   const docs =
@@ -178,8 +226,24 @@ export async function searchOpenLibrary(
       ? ((data as { docs: OlDoc[] }).docs)
       : [];
 
-  return docs
-    .map((doc) => toSuggestion(doc, query))
-    .sort((a, b) => b.confidence - a.confidence)
-    .slice(0, limit);
+  return {
+    outcome: "ok",
+    suggestions: docs
+      .map((doc) => toSuggestion(doc, query))
+      .sort((a, b) => b.confidence - a.confidence)
+      .slice(0, limit),
+  };
+}
+
+/**
+ * Query OpenLibrary and return ranked metadata suggestions (best first).
+ * Best-effort: any network/parse failure resolves to [] — enrichment must
+ * never break an import. Callers that need to tell an empty answer apart from
+ * an outage should use `lookupOpenLibrary` instead.
+ */
+export async function searchOpenLibrary(
+  query: EnrichQuery,
+  opts: SearchOptions = {},
+): Promise<MetadataSuggestion[]> {
+  return (await lookupOpenLibrary(query, opts)).suggestions;
 }
