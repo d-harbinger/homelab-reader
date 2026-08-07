@@ -114,21 +114,27 @@ services:
       - BOOKS_PATH=/app/books
       - AUTH_SECRET=${AUTH_SECRET:-}
       - AUTH_TRUST_HOST=true
-      # The address a person actually types to reach the reader — for example
-      # http://<the box's address>:5456, or https://reader.example behind a
-      # TLS proxy. REQUIRED, no default and no fallback, the same "a choice,
-      # never a fallback" rule the bind above follows; ./launch.sh asks for it
-      # once and saves it.
+      # OPTIONAL, and unset is the normal case. The address a person actually
+      # types to reach the reader — for example https://reader.example behind a
+      # TLS proxy. A plain-HTTP deployment leaves this empty.
       #
-      # It settles two things the container cannot work out for itself. First,
-      # sign-in redirects: without it the app derives its own address from the
-      # request it is answering, which inside the container is the 0.0.0.0 it
-      # listens on — so the redirect after signing in points at an address no
-      # browser can reach. Second, whether the session cookie is marked
-      # Secure: an https:// answer here turns that on, and only an https://
-      # answer should (a Secure cookie over plain HTTP is discarded by the
-      # browser, and nobody can sign in).
-      - AUTH_URL=${AUTH_URL:?no saved address — run ./launch.sh once, or set AUTH_URL in .env}
+      # Setting it opts into two things at once. It marks the session cookie
+      # Secure when the value begins https:// — and only an https:// answer
+      # should, because a Secure cookie over plain HTTP is discarded by the
+      # browser and nobody can sign in. It also OVERRIDES the origin of every
+      # request Auth.js handles (next-auth/lib/env.js, reqWithEnvURL), pinning
+      # the deployment to that one address.
+      #
+      # That second effect is why a box reachable at TWO addresses — a LAN one
+      # and a public one — must leave this UNSET. AUTH_TRUST_HOST above then
+      # derives the origin per request and both addresses keep working. An
+      # empty value is treated as unset by Auth.js (the `if (!url)` guard), so
+      # the empty default below is the same as not passing it at all.
+      #
+      # Deliberately NOT a required variable: every deployment predating it
+      # runs without it, and a required variable with no default breaks those
+      # boxes on the next pull rather than at the moment someone chose TLS.
+      - AUTH_URL=${AUTH_URL:-}
       - NODE_ENV=production
     restart: unless-stopped
     cap_drop:
