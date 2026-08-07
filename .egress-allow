@@ -1,0 +1,24 @@
+# .egress-allow — third-party network hosts this repo is ALLOWED to contact.
+# Committed, so every clone agrees on what egress is intentional. One hostname
+# per line; a host also covers its dot-boundary subdomains. See
+# privacy-guard/templates/egress-allow.example for the full contract.
+#
+# This server is otherwise self-contained: the library, its covers, its notes
+# and its OPDS feed are all served from this origin. The one external service
+# below is opt-in at runtime — Settings → Privacy gates every call to it, and
+# an install that never turns it on makes no outbound request at all.
+
+# Open Library (Internet Archive) — book metadata lookup for the import
+# enricher and the sorting bench's shelf sweep, plus cover images under
+# covers.openlibrary.org, which this entry also covers.
+#
+# Anonymous, at the one-request-per-second rate their policy publishes for
+# anonymous callers (https://openlibrary.org/developers/api). The faster
+# identified tier is deliberately declined: it is bought with an operator's
+# contact address, which is theirs to give rather than this code's to send.
+openlibrary.org
+
+# Not listed on purpose, because they are not egress: opds-spec.org, purl.org
+# and w3.org appear only as XML namespace identifiers in the OPDS feed, and
+# specs.opds.io and docs.ankiweb.net only as reference links inside comments.
+# None of them is ever fetched.
