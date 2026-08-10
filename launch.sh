@@ -34,7 +34,7 @@ CONTAINER=homelab-reader
 BIND_VAR=HOMELAB_HOST_BIND
 PORT_VAR=HOMELAB_PORT
 PORT_DEFAULT=5456
-MODE_KEY=HOMELAB_LAUNCH   # lan | local — remembered menu choice
+MODE_KEY=HOMELAB_LAUNCH   # mesh | lan | local — remembered menu choice
 CONFIG_SUMMARY="books folder, network"
 
 # First-run setup: where the books live (read-only to the app), then the
@@ -135,23 +135,58 @@ set_env() {
   mv "$ENV_FILE.tmp" "$ENV_FILE"
 }
 
+# The box's addresses on the mesh, when it is on one. A mesh — Tailscale
+# and headscale call theirs a "tailnet" — is a private network that joins
+# one owner's own devices straight to each other and admits nothing else.
+# Mesh addresses all sit in one reserved range, 100.64.0.0/10, which is
+# what the fallback scan looks for when the mesh's own command is absent.
+# Prints nothing off a mesh, and stays quiet when neither helper exists.
+mesh_addresses() {
+  local found=""
+  if command -v tailscale >/dev/null; then
+    found=$(tailscale ip -4 2>/dev/null | grep -E '^[0-9]{1,3}(\.[0-9]{1,3}){3}$' || true)
+  fi
+  if [ -z "$found" ] && command -v ip >/dev/null; then
+    found=$(ip -4 -o addr show 2>/dev/null \
+      | awk '{split($4,a,"/"); split(a[1],o,"."); if (o[1]+0==100 && o[2]+0>=64 && o[2]+0<=127) print a[1]}' || true)
+  fi
+  [ -n "$found" ] && printf '%s\n' "$found"
+  return 0
+}
+
 # The box's IPv4 addresses — real interfaces only (loopback and
 # container-runtime bridges like docker0/br-*/veth* are not addresses
-# another device can be served on).
+# another device can be served on). Mesh addresses drop out here as well:
+# they are offered on their own, and listing one among the home-network
+# addresses would label it as something it is not. The match is on the
+# address rather than the interface name, because mesh software names its
+# interface differently on every platform.
 lan_addresses() {
+  local mesh
+  mesh=$(mesh_addresses | tr '\n' ' ')
   if command -v ip >/dev/null; then
     ip -4 -o addr show scope global 2>/dev/null \
-      | awk '$2 !~ /^(docker|br-|veth|virbr)/ {split($4,a,"/"); print a[1]" ("$2")"}'
+      | awk -v mesh=" $mesh " '$2 !~ /^(docker|br-|veth|virbr)/ {split($4,a,"/"); if (index(mesh, " " a[1] " ") == 0) print a[1]" ("$2")"}'
   elif command -v hostname >/dev/null; then
-    hostname -I 2>/dev/null | tr ' ' '\n' | sed '/^$/d'
+    hostname -I 2>/dev/null | tr ' ' '\n' | sed '/^$/d' \
+      | awk -v mesh=" $mesh " 'NF && index(mesh, " " $1 " ") == 0'
   fi
 }
 
 # The one question every launcher asks: which interface should the app
-# answer on. Sets ASKED_BIND and ASKED_MODE (lan|local); the caller saves
-# them with set_env. The bind is REQUIRED by compose (${VAR:?…}), so this
-# answer is what first setup exists to record.
+# answer on. Sets ASKED_BIND and ASKED_MODE (mesh|lan|local); the caller
+# saves them with set_env. The bind is REQUIRED by compose (${VAR:?…}), so
+# this answer is what first setup exists to record.
+#
+# The menu is numbered by a running counter: mesh addresses first when the
+# box is on a mesh, then the home-network addresses, then the two fixed
+# entries. `modes` runs in step with `addrs` so a numbered pick carries its
+# own label out; adding a row anywhere means appending to both arrays.
 ask_network() {
+  local i=1; local -a addrs=() modes=()
+  local line mesh_list mesh_first=""
+  mesh_list=$(mesh_addresses)
+
   echo "Which network should $APP_THING answer on?"
   echo
   echo "A box can be connected to more than one network at once (wired, wifi…)"
@@ -159,12 +194,25 @@ ask_network() {
   echo "the address chosen here. With a single connection, the specific address"
   echo "and 'all interfaces' behave identically — the specific one is simply"
   echo "tidier. 'This machine only' keeps everything private to the box."
+  if [ -n "$mesh_list" ]; then
+    echo
+    echo "This box is also on a mesh: a private network that joins one owner's"
+    echo "own devices straight to each other, wherever each one happens to be,"
+    echo "and lets nothing else in. Serving the mesh address reaches those"
+    echo "devices from anywhere without answering on the home network at all —"
+    echo "but a device that has not joined the mesh cannot reach it that way."
+  fi
   echo
-  local i=1; local -a addrs=()
-  local line
   while IFS= read -r line; do
     [ -n "$line" ] || continue
-    addrs+=("${line%% *}")
+    addrs+=("${line%% *}"); modes+=(mesh)
+    [ -n "$mesh_first" ] || mesh_first="${line%% *}"
+    echo "  $i) ${line%% *} (mesh)   — serve the mesh on this address (recommended)"
+    i=$((i+1))
+  done <<< "$mesh_list"
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    addrs+=("${line%% *}"); modes+=(lan)
     echo "  $i) $line   — serve the home network on this address"
     i=$((i+1))
   done < <(lan_addresses)
@@ -176,12 +224,20 @@ ask_network() {
   ASKED_MODE=lan
   if [[ "$pick" =~ ^[0-9]+$ ]] && [ "$pick" -ge 1 ] && [ "$pick" -lt "$i" ]; then
     ASKED_BIND="${addrs[$((pick-1))]}"
+    ASKED_MODE="${modes[$((pick-1))]}"
   elif [ "$pick" = "$i" ]; then
     ASKED_BIND=0.0.0.0
+    if [ -n "$mesh_first" ]; then
+      echo "  Note: $mesh_first serves the same devices without answering on the home network."
+    fi
   elif [ "$pick" = "$((i+1))" ]; then
     ASKED_BIND=127.0.0.1; ASKED_MODE=local
   elif [[ "$pick" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
     ASKED_BIND="$pick"   # a typed address
+    # A mesh address typed by hand is still a mesh bind; label it as one.
+    if [ -n "$mesh_list" ] && printf '%s\n' "$mesh_list" | grep -qxF "$pick"; then
+      ASKED_MODE=mesh
+    fi
   else
     die "'$pick' is not a menu number or an address — run ./launch.sh -r and try again"
   fi
