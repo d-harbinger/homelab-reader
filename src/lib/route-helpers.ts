@@ -5,6 +5,7 @@ import {
   UnauthenticatedError,
   type CurrentUser,
 } from "@/lib/current-user";
+import { crossOriginRejection } from "@/lib/same-origin";
 
 // Route-handler helpers (TEACHING #3). Two blocks of ceremony opened almost
 // every mutating handler: an inline `try { req.json() } catch { 400 }` and a
@@ -63,6 +64,12 @@ export function withUser<C = StaticContext>(
   handler: UserHandler<C>,
 ): RouteExport<C> {
   return (async (req?: Request, ctx?: C): Promise<Response> => {
+    // Before auth: a cross-origin write is refused whether or not the borrowed
+    // cookie is valid, so the check costs nothing and answers nothing about the
+    // session. See src/lib/same-origin.ts for why SameSite does not cover this.
+    const crossOrigin = crossOriginRejection(req);
+    if (crossOrigin) return crossOrigin;
+
     const user = await getCurrentUser();
     if (!user) return authError(new UnauthenticatedError());
     return handler(user, req as Request, ctx as C);
@@ -75,6 +82,9 @@ export function withAdmin<C = StaticContext>(
   handler: UserHandler<C>,
 ): RouteExport<C> {
   return (async (req?: Request, ctx?: C): Promise<Response> => {
+    const crossOrigin = crossOriginRejection(req);
+    if (crossOrigin) return crossOrigin;
+
     let admin: CurrentUser;
     try {
       admin = await requireAdmin();

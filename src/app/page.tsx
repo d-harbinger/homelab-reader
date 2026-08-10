@@ -17,7 +17,10 @@ import { fetcher } from "@/lib/fetcher";
 
 interface ScanStatus {
   running: boolean;
-  watchedPaths: string[];
+  // A COUNT, not the paths. /api/scan/status serves the absolute library roots
+  // to admins only — they are home-directory paths on a homelab — and this
+  // screen never needed more than "how many folders" anyway.
+  watchedCount: number;
   lastError: string | null;
   lastFullScanAt: string | null;
   bookCount: number;
@@ -187,7 +190,7 @@ export default function Home() {
   return (
     <main className="mx-auto max-w-7xl px-6 py-10 space-y-12">
       <LibraryHeader
-        watchedPaths={status?.watchedPaths ?? []}
+        watchedCount={status?.watchedCount ?? 0}
         bookCount={status?.bookCount ?? 0}
         lastError={status?.lastError ?? null}
         onRescan={manualScan}
@@ -309,7 +312,7 @@ export default function Home() {
             <p className="text-sm text-zinc-600">
               {books.length > 0 ? (
                 "No shelves yet — run a rescan to classify the library."
-              ) : (status?.watchedPaths?.length ?? 0) === 0 ? (
+              ) : (status?.watchedCount ?? 0) === 0 ? (
                 <>
                   No library folders yet. An admin can add one in{" "}
                   <Link
@@ -368,7 +371,7 @@ export default function Home() {
             <p className="text-sm text-zinc-600">
               {folderActive ? (
                 "No books in this folder."
-              ) : (status?.watchedPaths?.length ?? 0) === 0 ? (
+              ) : (status?.watchedCount ?? 0) === 0 ? (
                 <>
                   No library folders yet. An admin can add one in{" "}
                   <Link

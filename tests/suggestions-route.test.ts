@@ -43,6 +43,7 @@ vi.mock("@/lib/prisma", () => ({ prisma: h.prisma }));
 vi.mock("@/auth", () => ({ auth: vi.fn() }));
 
 import { asReader, asAdmin, signOut } from "./helpers/auth-mock";
+import { seedSessionUser } from "./helpers/test-db";
 import { GET } from "@/app/api/books/[id]/suggestions/route";
 import { DELETE, POST } from "@/app/api/books/[id]/suggestions/[sid]/route";
 
@@ -66,6 +67,19 @@ beforeEach(async () => {
   await h.prisma.tag.deleteMany();
   await h.prisma.user.deleteMany();
 });
+
+// The gate re-reads the User row, so a session has to name an account that
+// actually exists. This suite deletes every User between tests AND drives the
+// same id at both roles, so the row is (re)created at the moment the session is
+// set rather than once up front.
+async function signInReader(id: string) {
+  await seedSessionUser(h.prisma, id, "reader");
+  asReader(id);
+}
+async function signInAdmin(id: string) {
+  await seedSessionUser(h.prisma, id, "admin");
+  asAdmin(id);
+}
 
 function gctx(id: string) {
   return { params: Promise.resolve({ id }) };
@@ -124,7 +138,7 @@ describe("GET /api/books/[id]/suggestions", () => {
 
   it("404s an unknown book", async () => {
     await makeUser("u");
-    asReader("u");
+    await signInReader("u");
     const res = await GET(new Request("http://test"), gctx("nope"));
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: "Not found" });
@@ -137,7 +151,7 @@ describe("GET /api/books/[id]/suggestions", () => {
     await makeSuggestion(book.id, { confidence: 0.9, title: "High" });
     await makeSuggestion(book.id, { confidence: 0.7, status: "rejected", title: "Gone" });
 
-    asReader("u");
+    await signInReader("u");
     const res = await GET(new Request("http://test"), gctx(book.id));
     expect(res.status).toBe(200);
     const json = (await res.json()) as { suggestions: { title: string }[] };
@@ -153,7 +167,7 @@ describe("GET /api/books/[id]/suggestions", () => {
       subjects: JSON.stringify(["Computing"]),
     });
 
-    asReader("u");
+    await signInReader("u");
     const res = await GET(new Request("http://test"), gctx(book.id));
     const json = (await res.json()) as {
       suggestions: { authors: string[]; subjects: string[] }[];
@@ -172,14 +186,14 @@ describe("POST /api/books/[id]/suggestions/[sid] (accept)", () => {
 
   it("403s a non-admin reader (catalog curation is admin-only)", async () => {
     await makeUser("u");
-    asReader("u");
+    await signInReader("u");
     const res = await POST(postReq(), pctx("b", "s"));
     expect(res.status).toBe(403);
   });
 
   it("404s an unknown book", async () => {
     await makeUser("u");
-    asAdmin("u");
+    await signInAdmin("u");
     const res = await POST(postReq(), pctx("nope", "s"));
     expect(res.status).toBe(404);
   });
@@ -190,7 +204,7 @@ describe("POST /api/books/[id]/suggestions/[sid] (accept)", () => {
     const bookB = await makeBook();
     const sugOfB = await makeSuggestion(bookB.id, { confidence: 0.9 });
 
-    asAdmin("u");
+    await signInAdmin("u");
     const res = await POST(postReq(), pctx(bookA.id, sugOfB.id));
     expect(res.status).toBe(404);
   });
@@ -209,7 +223,7 @@ describe("POST /api/books/[id]/suggestions/[sid] (accept)", () => {
     });
     const sibling = await makeSuggestion(book.id, { confidence: 0.6 });
 
-    asAdmin("u");
+    await signInAdmin("u");
     const res = await POST(postReq(), pctx(book.id, chosen.id));
     expect(res.status).toBe(200);
 
@@ -237,7 +251,7 @@ describe("POST /api/books/[id]/suggestions/[sid] (accept)", () => {
       title: "Forced Title",
     });
 
-    asAdmin("u");
+    await signInAdmin("u");
     const res = await POST(postReq({ force: true }), pctx(book.id, chosen.id));
     expect(res.status).toBe(200);
 
@@ -259,7 +273,7 @@ describe("DELETE /api/books/[id]/suggestions/[sid] (dismiss)", () => {
 
   it("403s a non-admin reader (review is admin-only, same as accept)", async () => {
     await makeUser("u");
-    asReader("u");
+    await signInReader("u");
     const res = await DELETE(delReq(), pctx("b", "s"));
     expect(res.status).toBe(403);
   });
@@ -270,7 +284,7 @@ describe("DELETE /api/books/[id]/suggestions/[sid] (dismiss)", () => {
     const bookB = await makeBook();
     const sugOfB = await makeSuggestion(bookB.id, { confidence: 0.9 });
 
-    asAdmin("u");
+    await signInAdmin("u");
     const res = await DELETE(delReq(), pctx(bookA.id, sugOfB.id));
     expect(res.status).toBe(404);
   });
@@ -280,7 +294,7 @@ describe("DELETE /api/books/[id]/suggestions/[sid] (dismiss)", () => {
     const book = await makeBook();
     const resolved = await makeSuggestion(book.id, { status: "accepted" });
 
-    asAdmin("u");
+    await signInAdmin("u");
     const res = await DELETE(delReq(), pctx(book.id, resolved.id));
     expect(res.status).toBe(404);
   });
@@ -295,7 +309,7 @@ describe("DELETE /api/books/[id]/suggestions/[sid] (dismiss)", () => {
     });
     const sibling = await makeSuggestion(book.id, { confidence: 0.6 });
 
-    asAdmin("u");
+    await signInAdmin("u");
     const res = await DELETE(delReq(), pctx(book.id, dismissed.id));
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true, rejected: dismissed.id });

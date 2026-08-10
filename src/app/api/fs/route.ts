@@ -52,6 +52,26 @@ export const GET = withAdmin(async (_admin, req) => {
     return denied();
   }
 
+  // path.resolve normalises ".." lexically; it does not follow symlinks. A link
+  // planted anywhere inside the books mount therefore sails through the check
+  // above while pointing wherever it likes. Compare the RESOLVED paths too.
+  // The root is resolved as well, because the mount itself may legitimately be
+  // a link — comparing a real target against an unresolved root would reject
+  // every request on such a deployment.
+  try {
+    const realRoot = await fs.realpath(root);
+    const realTarget = await fs.realpath(target);
+    const realRel = path.relative(realRoot, realTarget);
+    if (realRel.startsWith("..") || path.isAbsolute(realRel)) {
+      console.warn(`/api/fs denied: symlink escape from ${target}`);
+      return denied();
+    }
+  } catch {
+    // A path that cannot be resolved (missing, unreadable) is refused with the
+    // same opaque body as everything else, preserving the existence oracle fix.
+    return denied();
+  }
+
   let entries;
   try {
     entries = await fs.readdir(target, { withFileTypes: true });

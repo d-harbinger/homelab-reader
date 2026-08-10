@@ -66,6 +66,29 @@ export interface SeedResult {
   progressOfB: string;
 }
 
+// Give a fake session a real row to resolve against.
+//
+// The gate re-reads the User row on every call (src/lib/current-user.ts), so
+// mocking `auth()` alone no longer authenticates anything: a session naming an
+// id that does not exist in the database is exactly the "deleted account still
+// holding a token" case, and the gate correctly answers 401. Suites that drive
+// the auth mock with a synthetic id call this once against their ephemeral
+// database so the id is a real account.
+//
+// Upsert rather than create so a suite can call it per-test, and so re-running a
+// test that changes the role lands on the role it asked for.
+export async function seedSessionUser(
+  prisma: PrismaClient,
+  id: string,
+  role: "admin" | "reader" = "reader",
+): Promise<void> {
+  await prisma.user.upsert({
+    where: { id },
+    update: { role },
+    create: { id, username: `session-${id}`, passwordHash: "x", role },
+  });
+}
+
 export async function seedTwoUsers(prisma: PrismaClient): Promise<SeedResult> {
   const a = await prisma.user.create({
     data: { username: "user-a", passwordHash: "x", role: "reader" },

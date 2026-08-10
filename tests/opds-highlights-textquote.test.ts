@@ -21,6 +21,7 @@
 //     G1 round-trips the envelope fields through list
 
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { tokenExpiry } from "@/lib/opds-auth";
 import { execFileSync } from "node:child_process";
 import { rmSync } from "node:fs";
 import { createHash } from "node:crypto";
@@ -93,7 +94,7 @@ beforeAll(async () => {
     data: { username: "user-a", passwordHash: "x", role: "reader" },
   });
   await h.prisma.opdsToken.create({
-    data: { userId: a.id, tokenHash: sha(TOKEN_A), label: "a-device" },
+    data: { userId: a.id, tokenHash: sha(TOKEN_A), label: "a-device", expiresAt: tokenExpiry() },
   });
   const book = await h.prisma.book.create({
     data: { title: "Synthetic Title", format: "epub", filePath: "/synthetic.epub" },

@@ -10,6 +10,9 @@ interface TokenRow {
   label: string;
   createdAt: string;
   lastUsedAt: string | null;
+  expiresAt: string;
+  // Computed server-side: the server owns the clock the guard checks against.
+  expired: boolean;
 }
 
 // The mint response carries the plaintext token EXACTLY ONCE. We hold it in
@@ -19,6 +22,8 @@ interface MintedToken {
   id: string;
   label: string;
   token: string;
+  expiresAt: string;
+  lifetimeDays: number;
 }
 
 export function TokenManager() {
@@ -99,6 +104,11 @@ function MintedBanner({
           <p className="mt-1 text-xs text-amber-300/80">
             Copy it now and store it in your OPDS client — you won&apos;t see it
             again. It is stored hashed; no one can recover the plaintext later.
+          </p>
+          <p className="mt-1 text-xs text-amber-300/80">
+            It works for {minted.lifetimeDays} days, until{" "}
+            {new Date(minted.expiresAt).toLocaleDateString()}. Mint a new one
+            then, or revoke it here at any time.
           </p>
         </div>
         <button
@@ -230,16 +240,42 @@ function TokenRowItem({
     ? `last used ${new Date(token.lastUsedAt).toLocaleDateString()}`
     : "never used";
 
+  // Remaining lifetime, in the unit that reads naturally at that distance:
+  // days while the end is in sight, otherwise the date itself.
+  const msLeft = new Date(token.expiresAt).getTime() - Date.now();
+  const daysLeft = Math.ceil(msLeft / 86_400_000);
+  const expiry = token.expired
+    ? "expired"
+    : daysLeft <= 14
+      ? `expires in ${daysLeft} ${daysLeft === 1 ? "day" : "days"}`
+      : `expires ${new Date(token.expiresAt).toLocaleDateString()}`;
+
   return (
     <li className="flex items-center justify-between gap-3 px-4 py-3">
       <div className="flex min-w-0 items-center gap-3">
         <KeyRound size={15} className="shrink-0 text-zinc-600" />
         <div className="min-w-0">
-          <span className="truncate text-sm text-zinc-100">{token.label}</span>
+          <span
+            className={`truncate text-sm ${token.expired ? "text-zinc-500 line-through" : "text-zinc-100"}`}
+          >
+            {token.label}
+          </span>
           <p className="text-[11px] text-zinc-600">
             created {created}
             {"  ·  "}
             {used}
+            {"  ·  "}
+            <span
+              className={
+                token.expired
+                  ? "text-red-400/80"
+                  : daysLeft <= 14
+                    ? "text-amber-400/80"
+                    : undefined
+              }
+            >
+              {expiry}
+            </span>
           </p>
         </div>
       </div>

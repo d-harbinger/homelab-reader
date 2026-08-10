@@ -13,6 +13,7 @@
 // to drive the cookie-session branch.
 
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { tokenExpiry } from "@/lib/opds-auth";
 import { execFileSync } from "node:child_process";
 import { rmSync } from "node:fs";
 import { createHash } from "node:crypto";
@@ -53,7 +54,7 @@ beforeAll(async () => {
   });
   userId = u.id;
   await h.prisma.opdsToken.create({
-    data: { userId: u.id, tokenHash: sha(TOKEN), label: "reader-device" },
+    data: { userId: u.id, tokenHash: sha(TOKEN), label: "reader-device", expiresAt: tokenExpiry() },
   });
 });
 
@@ -80,12 +81,24 @@ describe("authenticateReaderRequest — cookie OR OPDS token", () => {
   });
 
   it("accepts a valid browser cookie session", async () => {
+    // The cookie path resolves through the live gate, so the session has to
+    // name an account that exists — `userId` is the seeded reader.
     vi.mocked(auth).mockResolvedValue({
-      user: { id: "cookie-user", role: "reader" },
+      user: { id: userId, role: "reader" },
     } as never);
     const u = await authenticateReaderRequest(noHeader());
     expect(u).not.toBeNull();
-    expect(u?.id).toBe("cookie-user");
+    expect(u?.id).toBe(userId);
+  });
+
+  it("refuses a cookie session whose account has been deleted", async () => {
+    // The revocation case, at the binary-content guard: a token that still
+    // decodes, naming a row that is gone. Before the gate re-read the row this
+    // returned a user and the deleted account kept downloading books.
+    vi.mocked(auth).mockResolvedValue({
+      user: { id: "deleted-account", role: "reader" },
+    } as never);
+    expect(await authenticateReaderRequest(noHeader())).toBeNull();
   });
 
   it("accepts a valid OPDS token when no cookie is present", async () => {

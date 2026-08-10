@@ -42,6 +42,7 @@ vi.mock("@/lib/prisma", () => ({ prisma: h.prisma }));
 vi.mock("@/auth", () => ({ auth: vi.fn() }));
 
 import { asReader, signOut } from "./helpers/auth-mock";
+import { seedSessionUser } from "./helpers/test-db";
 import { GET } from "@/app/api/books/duplicates/route";
 
 // Small builder so each test reads as data, not boilerplate.
@@ -135,6 +136,10 @@ describe("GET /api/books/duplicates", () => {
     signOut();
     await h.prisma.book.deleteMany();
     await h.prisma.author.deleteMany();
+    // The gate re-reads the User row, so the fake session needs a real account
+  // to resolve to — a session naming a row that does not exist IS the deleted-
+  // account case, and the gate correctly answers 401.
+    await seedSessionUser(h.prisma, "u-reader", "reader");
   });
 
   it("returns duplicate groups derived from seeded rows (200)", async () => {

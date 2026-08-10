@@ -15,6 +15,12 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 // Self-contained, hoisted factories (RESEARCH Pitfall 2).
 vi.mock("@/auth", () => ({ auth: vi.fn() }));
+// The gate re-reads the User row, so the row lookup needs an answer too. This
+// stand-in serves it from the same session the auth mock is driving — see
+// tests/helpers/prisma-user-mock.ts. No other model is available, which keeps
+// this suite honestly about the gate and nothing else.
+vi.mock("@/lib/prisma", () => import("./helpers/prisma-user-mock"));
+
 
 // Scanner modules mocked so the scan admin happy-path returns immediately
 // (no filesystem walk, no real DB). listScanLocations -> [] means the POST's

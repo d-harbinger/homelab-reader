@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { parseJson, withAdmin } from "@/lib/route-helpers";
+import { parseJson, withAdmin, withUser, type IdContext } from "@/lib/route-helpers";
 import { UNSORTED } from "@/lib/library/genre-taxonomy";
 
-export async function GET(
-  _req: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
+// Session-gated like the rest of the catalogue. The PATCH below has always been
+// admin-only; the GET was relying on the middleware alone, which made this file
+// asymmetric about its own access rules.
+export const GET = withUser<IdContext>(async (_user, _req, { params }) => {
   const { id } = await params;
   const book = await prisma.book.findUnique({
     where: { id },
@@ -32,7 +32,7 @@ export async function GET(
     coverUrl: book.coverPath ? `/api/covers/${book.id}` : null,
     addedAt: book.addedAt,
   });
-}
+});
 
 // PATCH /api/books/[id] — curation writes, allowlisted to `genre` (the
 // bookstore shelf). Admin-only like the other curation actions

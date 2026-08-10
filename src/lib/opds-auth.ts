@@ -24,6 +24,24 @@ export type OpdsUser = { id: string; username: string; role: string };
 // and prompt the user for credentials.
 const OPDS_REALM = 'Basic realm="homelab-reader OPDS"';
 
+// How long a freshly minted token works for.
+//
+// These are app passwords living on a phone. Revocation already exists, but
+// revocation only helps the person who remembers to use it, and the usual fate
+// of a token on a lost or replaced handset is to be forgotten rather than
+// revoked. An expiry is the half of the lifecycle that does not depend on
+// anyone noticing.
+//
+// Ninety days is the compromise: long enough that re-pairing a reader is a
+// quarterly chore rather than a weekly one, short enough that a token on a
+// handset that left the house last spring is already dead.
+export const TOKEN_LIFETIME_DAYS = 90;
+
+/** The expiry stamp for a token minted now (or at `from`). */
+export function tokenExpiry(from: Date = new Date()): Date {
+  return new Date(from.getTime() + TOKEN_LIFETIME_DAYS * 24 * 60 * 60 * 1000);
+}
+
 // Pull the opaque token out of the Authorization header, or null when the
 // header is absent or uses a scheme that is neither Basic nor Bearer.
 //
@@ -77,10 +95,16 @@ export async function authenticateOpds(req: Request): Promise<OpdsUser | null> {
     select: {
       id: true,
       tokenHash: true,
+      expiresAt: true,
       user: { select: { id: true, username: true, role: true } },
     },
   });
   if (!row) return null;
+
+  // Expired is indistinguishable from unknown on the wire — the caller turns
+  // both into the same 401 challenge. A client that learns "this token was
+  // real, just old" learns something a stranger holding it should not.
+  if (row.expiresAt.getTime() <= Date.now()) return null;
 
   // Defense-in-depth constant-time confirm. The indexed findUnique already
   // matched on tokenHash; this guards against any timing oracle in the

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { relativeFolder } from "@/lib/library/folder-tree";
+import { withUser } from "@/lib/route-helpers";
 
 // GET /api/books — flat list, newest first by default.
 //
@@ -33,7 +34,10 @@ import { relativeFolder } from "@/lib/library/folder-tree";
 // Note: SQLite's LIKE (what Prisma `contains` compiles to) is already
 // case-insensitive for ASCII, so we don't pass `mode: "insensitive"` —
 // that modifier is unsupported on SQLite and would throw.
-export async function GET(req: Request) {
+// Session-gated: the catalogue is not public. The gate is the shared
+// wrapper rather than the middleware alone, so the route defends itself even
+// if a matcher exemption ever grows to cover it.
+export const GET = withUser(async (_user, req) => {
   const url = new URL(req.url);
   const q = url.searchParams.get("q")?.trim() ?? "";
   const format = url.searchParams.get("format")?.trim() ?? "";
@@ -111,4 +115,4 @@ export async function GET(req: Request) {
       };
     }),
   });
-}
+});

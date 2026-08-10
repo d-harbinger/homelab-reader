@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { withUser } from "@/lib/route-helpers";
 
 // Tags that warrant their own home-view section. The threshold keeps
 // section-per-singleton-tag noise off the home page — a tag needs at
@@ -9,7 +10,10 @@ const MAX_BOOKS_PER_SECTION = 18;
 
 // GET /api/tags/sections — returns array of { tag, books[] } for tags
 // with enough books to warrant a home-view section, ordered by book count.
-export async function GET() {
+// Session-gated: the catalogue is not public. The gate is the shared
+// wrapper rather than the middleware alone, so the route defends itself even
+// if a matcher exemption ever grows to cover it.
+export const GET = withUser(async () => {
   const tags = await prisma.tag.findMany({
     include: {
       books: {
@@ -37,4 +41,4 @@ export async function GET() {
       })),
     })),
   });
-}
+});

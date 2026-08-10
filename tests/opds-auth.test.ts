@@ -22,6 +22,7 @@ import {
   afterAll,
   vi,
 } from "vitest";
+import { tokenExpiry, TOKEN_LIFETIME_DAYS } from "@/lib/opds-auth";
 import { execFileSync } from "node:child_process";
 import { rmSync } from "node:fs";
 import { createHash } from "node:crypto";
@@ -81,13 +82,13 @@ beforeAll(async () => {
   // Alice's token, Bob's token, and a token whose plaintext contains colons
   // (owned by Alice) to prove the first-colon Basic split keeps the token whole.
   await h.prisma.opdsToken.create({
-    data: { userId: a.id, tokenHash: sha(TOKEN_A), label: "alice-laptop" },
+    data: { userId: a.id, tokenHash: sha(TOKEN_A), label: "alice-laptop", expiresAt: tokenExpiry() },
   });
   await h.prisma.opdsToken.create({
-    data: { userId: b.id, tokenHash: sha(TOKEN_B), label: "bob-phone" },
+    data: { userId: b.id, tokenHash: sha(TOKEN_B), label: "bob-phone", expiresAt: tokenExpiry() },
   });
   await h.prisma.opdsToken.create({
-    data: { userId: a.id, tokenHash: sha(TOKEN_WITH_COLON), label: "alice-colon" },
+    data: { userId: a.id, tokenHash: sha(TOKEN_WITH_COLON), label: "alice-colon", expiresAt: tokenExpiry() },
   });
 
   seed = { userA: a.id, userB: b.id, bookId: book.id };
@@ -301,5 +302,67 @@ describe("OPDS progress write attributed to the token owner (OPDS-03)", () => {
     );
     const count = await h.prisma.progress.count({ where: { bookId: book.id } });
     expect(count).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Expiry — the half of the lifecycle that does not depend on anyone noticing.
+// ---------------------------------------------------------------------------
+//
+// These tokens are password-equivalent and live on a phone. Revocation already
+// worked, but revocation only helps the person who remembers to use it, and the
+// usual fate of a token on a lost or replaced handset is to be forgotten. The
+// column is NOT NULL (prisma/schema.prisma) so "never expires" is not a state
+// the database can hold; the guard enforces the date it names.
+describe("token expiry", () => {
+  const EXPIRED = "expired-token-value-abc123";
+  const FRESH = "fresh-token-value-xyz789";
+
+  beforeAll(async () => {
+    await h.prisma.opdsToken.create({
+      data: {
+        userId: seed.userA,
+        tokenHash: sha(EXPIRED),
+        label: "an old phone",
+        expiresAt: new Date(Date.now() - 60_000),
+      },
+    });
+    await h.prisma.opdsToken.create({
+      data: {
+        userId: seed.userA,
+        tokenHash: sha(FRESH),
+        label: "the current phone",
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+    });
+  });
+
+  it("refuses an expired token", async () => {
+    expect(await authenticateOpds(reqWith(bearer(EXPIRED)))).toBeNull();
+    expect(await authenticateOpds(reqWith(basic("alice", EXPIRED)))).toBeNull();
+  });
+
+  it("accepts a token that has not expired yet", async () => {
+    const user = await authenticateOpds(reqWith(bearer(FRESH)));
+    expect(user?.id).toBe(seed.userA);
+  });
+
+  it("is indistinguishable from an unknown token on the wire", async () => {
+    // An expired credential must not be confirmable as "real, just old" — that
+    // tells a stranger holding it that it is worth attacking the clock or the
+    // account. Both cases produce the same null, and the same 401 above it.
+    const expired = await authenticateOpds(reqWith(bearer(EXPIRED)));
+    const nonsense = await authenticateOpds(reqWith(bearer("no-such-token")));
+    expect(expired).toEqual(nonsense);
+  });
+
+  it("stamps a finite lifetime, which is what the mint uses", async () => {
+    // tokenExpiry() is the single expression the mint route calls, so pinning
+    // it here pins what every new token gets. (The route itself is cookie-gated
+    // and covered in tests/opds-tokens.test.ts.)
+    expect(TOKEN_LIFETIME_DAYS).toBe(90);
+    expect(tokenExpiry(new Date("2026-01-01T00:00:00Z")).toISOString()).toBe(
+      "2026-04-01T00:00:00.000Z",
+    );
   });
 });

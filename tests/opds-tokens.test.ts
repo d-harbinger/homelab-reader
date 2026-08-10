@@ -22,6 +22,7 @@ import {
   beforeEach,
   vi,
 } from "vitest";
+import { tokenExpiry } from "@/lib/opds-auth";
 import { execFileSync } from "node:child_process";
 import { rmSync } from "node:fs";
 import { createHash } from "node:crypto";
@@ -73,7 +74,7 @@ beforeAll(async () => {
     data: { username: "user-b", passwordHash: "x", role: "reader" },
   });
   const bRow = await h.prisma.opdsToken.create({
-    data: { userId: b.id, tokenHash: sha("b-secret-token"), label: "b-phone" },
+    data: { userId: b.id, tokenHash: sha("b-secret-token"), label: "b-phone", expiresAt: tokenExpiry() },
   });
 
   seed = { userA: a.id, userB: b.id };
@@ -181,7 +182,7 @@ describe("GET /api/opds-tokens — list (OPDS-04 disclosure)", () => {
       expect(t.tokenHash).toBeUndefined();
       expect(t.token).toBeUndefined();
       expect(Object.keys(t).sort()).toEqual(
-        ["createdAt", "id", "label", "lastUsedAt"].sort(),
+        ["createdAt", "expired", "expiresAt", "id", "label", "lastUsedAt"].sort(),
       );
     }
     // Defensive: B's hash must not appear anywhere in A's serialized list.
@@ -202,7 +203,7 @@ describe("GET /api/opds-tokens — list (OPDS-04 disclosure)", () => {
 describe("DELETE /api/opds-tokens/[id] — per-user revoke (OPDS-01, T-02-06)", () => {
   it("deletes the caller's own token (204, row gone)", async () => {
     const mine = await h.prisma.opdsToken.create({
-      data: { userId: seed.userA, tokenHash: sha("a-own-token"), label: "a-own" },
+      data: { userId: seed.userA, tokenHash: sha("a-own-token"), label: "a-own", expiresAt: tokenExpiry() },
     });
     const { DELETE } = await import("@/app/api/opds-tokens/[id]/route");
     const res = await DELETE(

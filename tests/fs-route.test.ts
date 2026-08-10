@@ -34,11 +34,24 @@ import {
   afterEach,
   vi,
 } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, chmodSync } from "node:fs";
+import {
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  rmSync,
+  chmodSync,
+  symlinkSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 vi.mock("@/auth", () => ({ auth: vi.fn() }));
+// The gate re-reads the User row, so the row lookup needs an answer too. This
+// stand-in serves it from the same session the auth mock is driving — see
+// tests/helpers/prisma-user-mock.ts. No other model is available, which keeps
+// this suite honestly about the gate and nothing else.
+vi.mock("@/lib/prisma", () => import("./helpers/prisma-user-mock"));
+
 
 import { asAdmin, asReader, signOut } from "./helpers/auth-mock";
 import { GET } from "@/app/api/fs/route";
@@ -176,6 +189,45 @@ describe("GET /api/fs — jail enforcement", () => {
     } finally {
       chmodSync(locked, 0o700);
       rmSync(locked, { recursive: true, force: true });
+    }
+  });
+
+  // path.resolve normalises ".." lexically and stops there — it does not follow
+  // symlinks. So a link planted inside the books mount passed the jail check
+  // while pointing anywhere on the server. The route now compares realpath()s
+  // as well. (The music sibling already did; this is the port.)
+  it("refuses a symlink inside the jail that points outside it", async () => {
+    asAdmin("a-1");
+    const outside = mkdtempSync(path.join(tmpdir(), "hlr-outside-"));
+    mkdirSync(path.join(outside, "secrets"));
+    const escape = path.join(root, "escape-hatch");
+    symlinkSync(outside, escape, "dir");
+    try {
+      const res = await GET(req(escape));
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: "Can't read that directory" });
+
+      // And the same through a child of the link, so the check is not merely
+      // refusing the link node itself.
+      const viaLink = await GET(req(path.join(escape, "secrets")));
+      expect(viaLink.status).toBe(400);
+    } finally {
+      rmSync(escape, { force: true });
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("still allows a symlink that stays inside the jail", async () => {
+    // The check must not be "no symlinks" — it is "no escaping". A link to a
+    // sibling folder in the same jail is ordinary and has to keep working.
+    asAdmin("a-1");
+    const link = path.join(root, "alias-to-alpha");
+    symlinkSync(path.join(root, "alpha"), link, "dir");
+    try {
+      const res = await GET(req(link));
+      expect(res.status).toBe(200);
+    } finally {
+      rmSync(link, { force: true });
     }
   });
 

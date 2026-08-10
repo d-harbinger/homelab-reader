@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { withAdmin } from "@/lib/route-helpers";
+import { withAdmin, withUser } from "@/lib/route-helpers";
+import { redactWatcherStatus } from "@/lib/scanner/status-privacy";
 import { walkAndScan } from "@/lib/scanner";
 import { backfillGenres } from "@/lib/library/genre-backfill";
 import { markFullScan, watcherStatus } from "@/lib/scanner/watcher";
@@ -49,7 +50,20 @@ export const POST = withAdmin(async () => {
 });
 
 // GET /api/scan — status payload, for convenience.
-export async function GET() {
+//
+// Signed-in only, and path-private for anyone who is not an admin. The library
+// roots are absolute filesystem paths on the server; on a homelab those are
+// home-directory paths, and a `reader` account has no business reading the
+// operator's directory layout. Admins already browse those paths in Settings,
+// so they still get them; everyone else gets counts. The sibling
+// /api/library/folders takes the same line.
+export const GET = withUser(async (user) => {
+  const isAdmin = user.role === "admin";
   const paths = await enabledLocationPaths();
-  return NextResponse.json({ ...watcherStatus(), configuredPaths: paths });
-}
+  return NextResponse.json({
+    ...redactWatcherStatus(watcherStatus(), isAdmin),
+    ...(isAdmin
+      ? { configuredPaths: paths }
+      : { configuredCount: paths.length }),
+  });
+});

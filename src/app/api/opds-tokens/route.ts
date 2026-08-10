@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createHash, randomBytes } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { parseJson, withUser } from "@/lib/route-helpers";
+import { TOKEN_LIFETIME_DAYS, tokenExpiry } from "@/lib/opds-auth";
 
 // OPDS token management REST, under the COOKIE session (the web UI). These are
 // the per-user "app passwords" OPDS clients (android-reader and standard
@@ -19,11 +20,26 @@ export const GET = withUser(async (user) => {
   // selected, so it can never reach the client even by accident.
   const tokens = await prisma.opdsToken.findMany({
     where: { userId: user.id },
-    select: { id: true, label: true, createdAt: true, lastUsedAt: true },
+    select: {
+      id: true,
+      label: true,
+      createdAt: true,
+      lastUsedAt: true,
+      expiresAt: true,
+    },
     orderBy: { createdAt: "desc" },
   });
 
-  return NextResponse.json({ tokens });
+  // `expired` is computed here rather than left to the browser: the server owns
+  // the clock that the guard actually checks against, and a client whose clock
+  // is wrong would otherwise show a live token as dead or the reverse.
+  const now = Date.now();
+  return NextResponse.json({
+    tokens: tokens.map((t) => ({
+      ...t,
+      expired: t.expiresAt.getTime() <= now,
+    })),
+  });
 });
 
 // POST /api/opds-tokens — mint a token for the caller.
@@ -45,12 +61,27 @@ export const POST = withUser(async (user, req) => {
   const tokenHash = createHash("sha256").update(token).digest("hex");
 
   const row = await prisma.opdsToken.create({
-    data: { userId: user.id, tokenHash, label: label.slice(0, 200) },
+    data: {
+      userId: user.id,
+      tokenHash,
+      label: label.slice(0, 200),
+      // Every token gets an end date at birth. See TOKEN_LIFETIME_DAYS.
+      expiresAt: tokenExpiry(),
+    },
   });
 
-  // The plaintext `token` leaves the server here and nowhere else.
+  // The plaintext `token` leaves the server here and nowhere else. The expiry
+  // rides along so the one-time reveal can say how long it is good for — the
+  // moment the user is pairing a device is the moment that matters.
   return NextResponse.json(
-    { id: row.id, label: row.label, createdAt: row.createdAt, token },
+    {
+      id: row.id,
+      label: row.label,
+      createdAt: row.createdAt,
+      expiresAt: row.expiresAt,
+      lifetimeDays: TOKEN_LIFETIME_DAYS,
+      token,
+    },
     { status: 201 },
   );
 });

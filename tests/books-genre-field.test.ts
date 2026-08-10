@@ -42,6 +42,14 @@ const h = await vi.hoisted(async () => {
 
 // Inject the ephemeral client wherever the route imports prisma.
 vi.mock("@/lib/prisma", () => ({ prisma: h.prisma }));
+// GET /api/books is session-gated now (it was relying on the middleware alone),
+// so the suite has to sign in. Mocking the @/auth seam lets the real gate logic
+// run — including the User-row re-read, which is why beforeEach seeds an
+// account for the id the session names.
+vi.mock("@/auth", () => ({ auth: vi.fn() }));
+
+import { asReader, signOut } from "./helpers/auth-mock";
+import { seedSessionUser } from "./helpers/test-db";
 
 import { GET } from "@/app/api/books/route";
 
@@ -63,6 +71,9 @@ beforeEach(async () => {
   await h.prisma.book.deleteMany();
   await h.prisma.author.deleteMany();
   await h.prisma.scanLocation.deleteMany();
+  signOut();
+  await seedSessionUser(h.prisma, "u-reader", "reader");
+  asReader("u-reader");
 });
 
 // Seed one scan root, a book nested under python/web, and a book directly

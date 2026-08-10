@@ -39,7 +39,12 @@ export const authConfig = {
   // every request with UntrustedHost.
   trustHost: true,
   pages: { signIn: "/login" },
-  session: { strategy: "jwt" },
+  // Seven-day sessions. Auth.js defaults to thirty days when maxAge is left
+  // unset, which is a long time for a credential nothing can recall. The gate
+  // in src/lib/current-user.ts re-reads the user row on every call, so a
+  // demoted or deleted account loses access immediately regardless; this bound
+  // limits how long a stolen or forgotten token stays usable at all.
+  session: { strategy: "jwt", maxAge: 7 * 24 * 60 * 60 },
   // These MUST live in this shared config, not in auth.ts alone: the Edge
   // middleware builds its own NextAuth instance from this file, and a
   // middleware that does not know the cookie name looks for the default,
@@ -73,9 +78,16 @@ export const authConfig = {
       // per-user HTTP Basic/Bearer token — not the browser session cookie.
       // It stays out of the cookie gate; auth is enforced in-route by
       // authenticateOpds (src/lib/opds-auth.ts), which 401s any request
-      // without a valid token. Every OPDS route, current and future, must
+      // without a valid token. Every OPDS feed route, current and future, must
       // call that guard.
-      if (pathname.startsWith("/api/opds")) return true;
+      //
+      // The match is the exact path or a child of it, NOT a `/api/opds` prefix.
+      // A bare prefix also swallowed /api/opds-TOKENS — the surface that MINTS
+      // those credentials — and lifted the cookie gate off it. Those routes are
+      // cookie-session routes (see src/app/api/opds-tokens/route.ts); they are
+      // not part of the token-authenticated feed and must stay gated.
+      if (pathname === "/api/opds" || pathname.startsWith("/api/opds/"))
+        return true;
 
       // The OPDS acquisition feed links book bytes at /api/books/[id]/file and
       // covers at /api/covers/[id], so both are fetched by OPDS clients (token,
@@ -98,8 +110,13 @@ export const authConfig = {
       // and never navigates). A signed-in POST happens in real life — two
       // tabs, a session restored mid-form — and signing in again is the
       // correct, harmless outcome, so let the action run.
-      if (pathname.startsWith("/setup")) return true;
-      if (pathname.startsWith("/login")) {
+      //
+      // Exact-or-child again, for the same reason: `startsWith("/setup")` also
+      // matched /setupfoo and `startsWith("/login")` also matched /loginbar, so
+      // any future route whose name merely begins with one of these words would
+      // have been born unauthenticated.
+      if (pathname === "/setup" || pathname.startsWith("/setup/")) return true;
+      if (pathname === "/login" || pathname.startsWith("/login/")) {
         if (loggedIn && request.method === "GET")
           return Response.redirect(new URL("/", nextUrl));
         return true;

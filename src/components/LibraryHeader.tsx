@@ -4,14 +4,14 @@ import { BookOpen } from "lucide-react";
 import { HeaderControls } from "@/components/HeaderControls";
 
 interface HeaderProps {
-  watchedPaths: string[];
+  watchedCount: number;
   bookCount: number;
   lastError: string | null;
   onRescan: () => void | Promise<void>;
 }
 
 export function LibraryHeader({
-  watchedPaths,
+  watchedCount,
   bookCount,
   lastError,
   onRescan,
@@ -35,11 +35,10 @@ export function LibraryHeader({
             {bookCount === 0
               ? "Nothing here yet"
               : `${bookCount} ${bookCount === 1 ? "book" : "books"}`}
-            {watchedPaths.length > 0 && (
+            {watchedCount > 0 && (
               <span className="text-zinc-700">
                 {"  ·  "}
-                {watchedPaths.length}{" "}
-                {watchedPaths.length === 1 ? "folder" : "folders"}
+                {watchedCount} {watchedCount === 1 ? "folder" : "folders"}
               </span>
             )}
           </p>

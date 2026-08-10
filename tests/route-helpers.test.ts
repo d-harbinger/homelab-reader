@@ -24,8 +24,13 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { NextResponse } from "next/server";
 
 vi.mock("@/auth", () => ({ auth: vi.fn() }));
+// The gate re-reads the User row, so the row lookup needs an answer too. This
+// stand-in serves it from the same session the auth mock is driving — see
+// tests/helpers/prisma-user-mock.ts. No other model is available, which keeps
+// this suite honestly about the gate and nothing else.
+vi.mock("@/lib/prisma", () => import("./helpers/prisma-user-mock"));
 
-import { auth } from "@/auth";
+
 import {
   parseJson,
   withUser,
@@ -33,14 +38,10 @@ import {
   type IdContext,
 } from "@/lib/route-helpers";
 import type { CurrentUser } from "@/lib/current-user";
-
-type FakeRole = "admin" | "reader";
-function setSession(session: { user: { id: string; role: FakeRole } } | null) {
-  vi.mocked(auth).mockResolvedValue(session as never);
-}
-const signOut = () => setSession(null);
-const asReader = (id: string) => setSession({ user: { id, role: "reader" } });
-const asAdmin = (id: string) => setSession({ user: { id, role: "admin" } });
+// The shared helpers, not a local copy: setting a session now has to drive BOTH
+// halves of the seam (the auth() claim and the User row the gate re-reads), and
+// a private setSession that only did the first would authenticate nobody.
+import { signOut, asReader, asAdmin } from "./helpers/auth-mock";
 
 const jsonReq = (body: unknown) =>
   new Request("http://test/api", {
@@ -97,7 +98,9 @@ describe("withUser", () => {
     expect(res.status).toBe(200);
     expect(handler).toHaveBeenCalledTimes(1);
     const [user, , ctx] = handler.mock.calls[0];
-    expect(user).toEqual({ id: "u-1", role: "reader" });
+    // The resolved user is the DATABASE ROW, not the token claim — hence the
+    // username, which only the row carries.
+    expect(user).toEqual({ id: "u-1", username: "session-u-1", role: "reader" });
     expect(await ctx.params).toEqual({ id: "ctx-id" });
   });
 
@@ -127,7 +130,11 @@ describe("withAdmin", () => {
 
     expect(res.status).toBe(200);
     expect(handler).toHaveBeenCalledTimes(1);
-    expect(handler.mock.calls[0][0]).toEqual({ id: "a-1", role: "admin" });
+    expect(handler.mock.calls[0][0]).toEqual({
+      id: "a-1",
+      username: "session-a-1",
+      role: "admin",
+    });
   });
 
   it("reader -> 403 and the handler is NOT called", async () => {

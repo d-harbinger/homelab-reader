@@ -127,7 +127,7 @@ function state(): WatcherState {
   return globalForWatcher.__homelabReaderWatcher;
 }
 
-interface WatcherStatus {
+export interface WatcherStatus {
   running: boolean;
   watchedPaths: string[];
   lastError: string | null;

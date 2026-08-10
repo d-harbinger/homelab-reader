@@ -59,6 +59,13 @@ model OpdsToken {
   label      String
   createdAt  DateTime @default(now())
   lastUsedAt DateTime?
+  // When this credential stops working. NOT NULL and with no database default:
+  // a token is password-equivalent and lives on a phone, so "forever" is not an
+  // option the schema should be able to express. Every row must name its own
+  // end date, and the guard in src/lib/opds-auth.ts refuses the token once that
+  // date has passed. The mint sets it (see TOKEN_LIFETIME_DAYS in
+  // src/lib/opds-auth.ts).
+  expiresAt  DateTime
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

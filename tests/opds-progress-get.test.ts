@@ -15,6 +15,7 @@
 // not the cookie session.
 
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { tokenExpiry } from "@/lib/opds-auth";
 import { execFileSync } from "node:child_process";
 import { rmSync } from "node:fs";
 import { createHash } from "node:crypto";
@@ -71,10 +72,10 @@ beforeAll(async () => {
     data: { username: "user-b", passwordHash: "x", role: "reader" },
   });
   await h.prisma.opdsToken.create({
-    data: { userId: a.id, tokenHash: sha(TOKEN_A), label: "a-device" },
+    data: { userId: a.id, tokenHash: sha(TOKEN_A), label: "a-device", expiresAt: tokenExpiry() },
   });
   await h.prisma.opdsToken.create({
-    data: { userId: b.id, tokenHash: sha(TOKEN_B), label: "b-device" },
+    data: { userId: b.id, tokenHash: sha(TOKEN_B), label: "b-device", expiresAt: tokenExpiry() },
   });
   const book = await h.prisma.book.create({
     data: {
