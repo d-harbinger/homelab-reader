@@ -19,6 +19,17 @@ export default defineConfig({
     environment: "node",
     globals: false,
     setupFiles: ["./tests/setup.ts"],
+    // Most suites here build a throwaway database in beforeAll, which shells
+    // out to `prisma migrate deploy` — around seven seconds on an idle machine
+    // and longer while fifty-odd other files compete for it. Vitest allows ten
+    // seconds by default, so a busy run could fail a file before a single test
+    // in it executed, and the failure would look like the feature under test
+    // rather than the clock. Raised here rather than file by file: the timeout
+    // belongs to how these suites get their database, which is shared, and
+    // thirty files each carrying their own copy of the number is how the two
+    // drift apart. This buys no time for a genuinely hung test — an assertion
+    // still fails on its own timeout.
+    hookTimeout: 60_000,
     // The end-to-end suite (e2e/) runs under Playwright, whose `test` export is
     // incompatible with Vitest's runner. Keep Vitest to the unit/route tests.
     exclude: [...configDefaults.exclude, "e2e/**"],
