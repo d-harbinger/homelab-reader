@@ -130,7 +130,26 @@ export type SerializeAnchorResult =
  * without a size bound. Pure: no Prisma, no next/server.
  */
 export function serializeAnchorBounded(anchor: unknown): SerializeAnchorResult {
-  const json = JSON.stringify(anchor);
+  // JSON.stringify has two failure modes on an `unknown`, and this function is
+  // handed `unknown` precisely because the anchor arrives in a request body
+  // written by another device. It RETURNS UNDEFINED for a value with no JSON
+  // representation (undefined itself, a function, a symbol), and it THROWS for
+  // a circular structure, a BigInt, or an object whose toJSON throws. Left
+  // unhandled the first made `json.length` a TypeError and the second escaped
+  // this function, and either one surfaces on the sync route as a 500 — one
+  // unstorable anchor from one device failing a whole request instead of being
+  // refused on its own. An anchor with no JSON form is not storable, which is
+  // the same answer as an anchor that is too large: refuse this one, and let
+  // the caller keep the rest of the batch.
+  let json: string | undefined;
+  try {
+    json = JSON.stringify(anchor);
+  } catch {
+    return { ok: false, error: "anchor could not be serialized" };
+  }
+  if (typeof json !== "string") {
+    return { ok: false, error: "anchor could not be serialized" };
+  }
   if (json.length > ANCHOR_JSON_MAX_LENGTH) {
     return { ok: false, error: "anchor exceeds the maximum size" };
   }

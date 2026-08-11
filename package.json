@@ -53,6 +53,7 @@
     "@types/yauzl": "^2.10.3",
     "eslint": "^9",
     "eslint-config-next": "^15.5.18",
+    "fast-check": "^4.9.0",
     "prisma": "^6.19.2",
     "tailwindcss": "^4",
     "typescript": "^5",
