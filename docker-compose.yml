@@ -137,6 +137,19 @@ services:
       - AUTH_URL=${AUTH_URL:-}
       - NODE_ENV=production
     restart: unless-stopped
+    # Docker's default log driver has NO size limit: logs grow until they fill
+    # the disk. A busy container can do that in hours, and nothing warns first.
+    # Rotation is the whole fix — three files of 10 MB is days of history for an
+    # app this size and a hard 30 MB ceiling per container.
+    #
+    # json-file rather than the `local` driver, which is otherwise the better
+    # default: json-file is the format log shippers scrape from disk, so keeping
+    # it leaves that option open. The rotation, not the driver, is the point.
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     cap_drop:
       - ALL
     security_opt:
