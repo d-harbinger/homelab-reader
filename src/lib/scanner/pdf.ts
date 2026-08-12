@@ -82,7 +82,10 @@ export async function extractPdf(filePath: string): Promise<PdfExtraction> {
       cover,
     };
   } finally {
-    await doc.destroy();
+    // Tear down through the loading task rather than the document: pdfjs 6
+    // dropped destroy() from the document proxy, and the task owns the
+    // worker the document is only a view onto.
+    await loadingTask.destroy();
   }
 }
 
