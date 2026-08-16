@@ -19,6 +19,7 @@
 openlibrary.org
 
 # Not listed on purpose, because they are not egress: opds-spec.org, purl.org
-# and w3.org appear only as XML namespace identifiers in the OPDS feed, and
+# and w3.org appear only as XML namespace identifiers in the OPDS feed,
+# idpf.org only as the OPF package namespace in the EPUB test fixtures, and
 # specs.opds.io and docs.ankiweb.net only as reference links inside comments.
 # None of them is ever fetched.
