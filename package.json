@@ -13,6 +13,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
+    "pretest": "prisma generate && prisma migrate deploy",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
