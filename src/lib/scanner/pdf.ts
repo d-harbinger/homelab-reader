@@ -1,4 +1,35 @@
 import fs from "node:fs/promises";
+import { existsSync } from "node:fs";
+import path from "node:path";
+
+// pdfjs loads three asset families off disk at runtime rather than bundling
+// them: the standard 14 PDF fonts, the CJK character maps, and the WASM image
+// decoders (OpenJPEG for JPEG 2000, JBIG2). Without an explicit path it looks
+// beside its own module, which does not survive Next's standalone tracer — the
+// tracer only copies what it can see referenced statically, so the directories
+// are absent from the runtime image. The symptom is a scan that logs
+// "Unable to load font data" and "JpxError: OpenJPEG failed to initialize",
+// then renders covers with missing glyphs or no image at all.
+//
+// Resolved once, against the first location that actually exists, so the same
+// code works from source (repo node_modules) and inside the image (/app).
+let assetDirs: { standardFontDataUrl: string; cMapUrl: string; wasmUrl: string } | null = null;
+
+function pdfjsAssetDirs() {
+  if (assetDirs) return assetDirs;
+  const roots = [
+    path.join(process.cwd(), "node_modules", "pdfjs-dist"),
+    path.join(process.cwd(), "..", "node_modules", "pdfjs-dist"),
+  ];
+  const root = roots.find((r) => existsSync(path.join(r, "standard_fonts"))) ?? roots[0];
+  // Trailing separator is required — pdfjs concatenates the filename directly.
+  assetDirs = {
+    standardFontDataUrl: path.join(root, "standard_fonts") + path.sep,
+    cMapUrl: path.join(root, "cmaps") + path.sep,
+    wasmUrl: path.join(root, "wasm") + path.sep,
+  };
+  return assetDirs;
+}
 
 export interface PdfExtraction {
   title?: string;
@@ -41,6 +72,7 @@ export async function extractPdf(filePath: string): Promise<PdfExtraction> {
     disableFontFace: true,
     useWorkerFetch: false,
     useSystemFonts: false,
+    ...pdfjsAssetDirs(),
   });
 
   const doc = await loadingTask.promise;

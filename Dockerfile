@@ -48,6 +48,15 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
+# pdfjs runtime assets. The scanner renders PDF covers in Node, and pdfjs reads
+# these three directories off disk by path — the standard 14 fonts, the CJK
+# character maps, and the WASM image decoders (OpenJPEG, JBIG2). Next's
+# standalone tracer cannot see a runtime path lookup, so it copies none of them
+# and covers render with missing glyphs, or not at all for JPEG 2000 images.
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/pdfjs-dist/standard_fonts ./node_modules/pdfjs-dist/standard_fonts
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/pdfjs-dist/cmaps ./node_modules/pdfjs-dist/cmaps
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/pdfjs-dist/wasm ./node_modules/pdfjs-dist/wasm
+
 # Prisma — schema for migrate deploy, generated client for runtime.
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.prisma ./node_modules/.prisma
