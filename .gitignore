@@ -113,3 +113,7 @@ test-library/
 
 # Theme e2e reference shots (regenerated per run)
 e2e/screenshots/
+# privacy-guard: wireless capture log — holds live-air network identifiers
+*.kismet
+# privacy-guard: wireless capture journal — same content, same rule
+*.kismet-journal
