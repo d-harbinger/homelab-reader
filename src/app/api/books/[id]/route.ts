@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { parseJson, withAdmin, withUser, type IdContext } from "@/lib/route-helpers";
 import { UNSORTED } from "@/lib/library/genre-taxonomy";
+import { BASE } from "@/lib/base-path";
 
 // Session-gated like the rest of the catalogue. The PATCH below has always been
 // admin-only; the GET was relying on the middleware alone, which made this file
@@ -29,7 +30,7 @@ export const GET = withUser<IdContext>(async (_user, _req, { params }) => {
     isbn: book.isbn,
     pageCount: book.pageCount,
     fileSizeBytes: book.fileSizeBytes,
-    coverUrl: book.coverPath ? `/api/covers/${book.id}` : null,
+    coverUrl: book.coverPath ? `${BASE}/api/covers/${book.id}` : null,
     addedAt: book.addedAt,
   });
 });

@@ -14,6 +14,7 @@ import {
   type HighlightColor,
 } from "@/lib/highlight-colors";
 import { fetcher } from "@/lib/fetcher";
+import { BASE } from "@/lib/base-path";
 
 interface ScanStatus {
   running: boolean;
@@ -132,7 +133,7 @@ export default function Home() {
   }
 
   async function manualScan() {
-    await fetch("/api/scan", { method: "POST" });
+    await fetch(`${BASE}/api/scan`, { method: "POST" });
     // The folder rail derives from books' paths, so a rescan can add or
     // remove folders — revalidate it alongside the grids or it goes stale.
     await Promise.all([

@@ -4,6 +4,7 @@ import { useState } from "react";
 import useSWR from "swr";
 import { Check, Sparkles, X } from "lucide-react";
 import { fetcher } from "@/lib/fetcher";
+import { BASE } from "@/lib/base-path";
 
 interface Suggestion {
   id: string;
@@ -38,8 +39,7 @@ export function SuggestionsPanel({ bookId }: { bookId: string }) {
   async function resolve(sid: string, action: "accept" | "dismiss", force = false) {
     setBusy(sid);
     setError(null);
-    const res = await fetch(
-      `/api/books/${encodeURIComponent(bookId)}/suggestions/${encodeURIComponent(sid)}`,
+    const res = await fetch(`${BASE}/api/books/${encodeURIComponent(bookId)}/suggestions/${encodeURIComponent(sid)}`,
       action === "accept"
         ? {
             method: "POST",

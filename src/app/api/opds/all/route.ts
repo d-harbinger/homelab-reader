@@ -6,6 +6,7 @@ import {
   type OpdsBookEntry,
 } from "@/lib/opds";
 import { authenticateOpds, opdsChallenge } from "@/lib/opds-auth";
+import { BASE } from "@/lib/base-path";
 
 // GET /api/opds/all — full library as an OPDS acquisition feed.
 // Pagination is a later phase; KOReader handles long feeds gracefully.
@@ -38,7 +39,7 @@ export async function GET(req: Request) {
   const xml = feedXml({
     id: "tag:homelab-reader:all",
     title: "All Books",
-    selfHref: "/api/opds/all",
+    selfHref: `${BASE}/api/opds/all`,
     entries,
   });
 

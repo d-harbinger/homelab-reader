@@ -52,6 +52,11 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  // Sub-path mount, build-time only: empty (the origin root) unless the
+  // NEXT_PUBLIC_BASE_PATH build argument names a prefix such as /books. The
+  // same variable feeds src/lib/base-path.ts for the URLs Next.js does not
+  // prefix itself.
+  basePath: (process.env.NEXT_PUBLIC_BASE_PATH ?? "").replace(/\/+$/, ""),
   // pdfjs-dist + yauzl are server-side only; let Next leave them as
   // native node_modules instead of bundling. @napi-rs/canvas ships a native
   // .node addon (used by pdf.ts for the pdfjs DOMMatrix/ImageData/Path2D

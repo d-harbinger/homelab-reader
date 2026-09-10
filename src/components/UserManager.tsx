@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 import useSWR from "swr";
 import { KeyRound, Shield, ShieldOff, Trash2, UserPlus } from "lucide-react";
 import { fetcher } from "@/lib/fetcher";
+import { BASE } from "@/lib/base-path";
 
 interface ManagedUser {
   id: string;
@@ -58,7 +59,7 @@ function AddUserForm({ onCreated }: { onCreated: () => void }) {
     setError(null);
     setBusy(true);
     try {
-      const r = await fetch("/api/users", {
+      const r = await fetch(`${BASE}/api/users`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password, role }),
@@ -144,7 +145,7 @@ function UserRow({
   async function patch(body: Record<string, unknown>) {
     setBusy(true);
     try {
-      const r = await fetch(`/api/users/${user.id}`, {
+      const r = await fetch(`${BASE}/api/users/${user.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -175,7 +176,7 @@ function UserRow({
       return;
     setBusy(true);
     try {
-      const r = await fetch(`/api/users/${user.id}`, { method: "DELETE" });
+      const r = await fetch(`${BASE}/api/users/${user.id}`, { method: "DELETE" });
       if (!r.ok && r.status !== 204) {
         const b = await r.json().catch(() => ({}));
         alert(b.error ?? "Delete failed.");

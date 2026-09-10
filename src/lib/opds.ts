@@ -4,6 +4,8 @@
 // Content-type strings matter — Atom-aware readers (KOReader, Moon+,
 // Aldiko Next, etc.) dispatch off them.
 
+import { BASE } from "@/lib/base-path";
+
 export const OPDS_NAV =
   "application/atom+xml;profile=opds-catalog;kind=navigation";
 export const OPDS_ACQ =
@@ -45,7 +47,7 @@ export function feedXml(opts: OpdsFeedOpts): string {
   const now = new Date().toISOString();
   const baseLinks: OpdsLink[] = [
     { rel: "self", href: opts.selfHref, type: OPDS_NAV },
-    { rel: "start", href: "/api/opds", type: OPDS_NAV },
+    { rel: "start", href: `${BASE}/api/opds`, type: OPDS_NAV },
     ...(opts.links ?? []),
   ];
 
@@ -104,14 +106,14 @@ export function bookEntryXml(b: OpdsBookEntry): string {
     lines.push(`    <summary type="text">${xmlText(b.description)}</summary>`);
   if (b.coverPath) {
     lines.push(
-      `    <link rel="http://opds-spec.org/image" href="/api/covers/${xmlAttr(b.id)}" type="image/jpeg"/>`,
+      `    <link rel="http://opds-spec.org/image" href="${BASE}/api/covers/${xmlAttr(b.id)}" type="image/jpeg"/>`,
     );
     lines.push(
-      `    <link rel="http://opds-spec.org/image/thumbnail" href="/api/covers/${xmlAttr(b.id)}" type="image/jpeg"/>`,
+      `    <link rel="http://opds-spec.org/image/thumbnail" href="${BASE}/api/covers/${xmlAttr(b.id)}" type="image/jpeg"/>`,
     );
   }
   lines.push(
-    `    <link rel="http://opds-spec.org/acquisition" href="/api/books/${xmlAttr(b.id)}/file" type="${acquisitionMime}"/>`,
+    `    <link rel="http://opds-spec.org/acquisition" href="${BASE}/api/books/${xmlAttr(b.id)}/file" type="${acquisitionMime}"/>`,
   );
   lines.push(`  </entry>`);
   return lines.join("\n");

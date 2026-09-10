@@ -6,6 +6,7 @@ import useSWR from "swr";
 import { ArrowLeft, Sparkles } from "lucide-react";
 import { fetcher } from "@/lib/fetcher";
 import { GenreShelf } from "@/components/GenreShelf";
+import { BASE } from "@/lib/base-path";
 
 interface AutoResult {
   processed: number;
@@ -70,7 +71,7 @@ export default function SortPage() {
     let batches = 0;
     try {
       for (;;) {
-        const res = await fetch("/api/shelves/auto", { method: "POST" });
+        const res = await fetch(`${BASE}/api/shelves/auto`, { method: "POST" });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const r = (await res.json()) as AutoResult;
         batches += 1;

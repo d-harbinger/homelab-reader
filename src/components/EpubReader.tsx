@@ -57,6 +57,7 @@ import {
   type PanelNote,
 } from "./HighlightsPanel";
 import { HighlightMenu, NoteEditorPopover } from "./HighlightPopover";
+import { BASE } from "@/lib/base-path";
 
 interface Props {
   bookId: string;
@@ -387,8 +388,8 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
   const loadHighlights = useCallback(async () => {
     try {
       const [hRes, nRes] = await Promise.all([
-        fetch(`/api/highlights?bookId=${encodeURIComponent(bookId)}`),
-        fetch(`/api/notes?bookId=${encodeURIComponent(bookId)}`),
+        fetch(`${BASE}/api/highlights?bookId=${encodeURIComponent(bookId)}`),
+        fetch(`${BASE}/api/notes?bookId=${encodeURIComponent(bookId)}`),
       ]);
       if (hRes.ok) {
         const data = (await hRes.json()) as { highlights: StoredHighlight[] };
@@ -433,7 +434,7 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
         anchor.progression = context.progression;
       }
       try {
-        const r = await fetch("/api/highlights", {
+        const r = await fetch(`${BASE}/api/highlights`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ bookId, anchor, text, color }),
@@ -458,7 +459,7 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
   // book — a page-anchored one has no page here to sit on.
   const loadInk = useCallback(async () => {
     try {
-      const r = await fetch(`/api/ink?bookId=${encodeURIComponent(bookId)}`);
+      const r = await fetch(`${BASE}/api/ink?bookId=${encodeURIComponent(bookId)}`);
       if (r.ok) {
         const data = (await r.json()) as { strokes: InkStroke[] };
         setInkStrokes(data.strokes.filter((s) => s.anchor?.kind === "block"));
@@ -497,7 +498,7 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
       };
       setInkStrokes((prev) => [...prev, optimistic]);
       try {
-        const r = await fetch("/api/ink", {
+        const r = await fetch(`${BASE}/api/ink`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -524,7 +525,7 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
     setInkStrokes((prev) => prev.filter((s) => s.id !== id));
     if (id.startsWith("tmp-")) return; // never persisted
     try {
-      await fetch(`/api/ink/${id}`, { method: "DELETE" });
+      await fetch(`${BASE}/api/ink/${id}`, { method: "DELETE" });
     } catch {
       /* the row will reappear on next load if this failed; acceptable */
     }
@@ -535,7 +536,7 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
       if (prev.length === 0) return prev;
       const last = prev[prev.length - 1];
       if (!last.id.startsWith("tmp-")) {
-        fetch(`/api/ink/${last.id}`, { method: "DELETE" }).catch(() => {});
+        fetch(`${BASE}/api/ink/${last.id}`, { method: "DELETE" }).catch(() => {});
       }
       return prev.slice(0, -1);
     });
@@ -696,7 +697,7 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
 
         if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
         saveTimerRef.current = setTimeout(() => {
-          fetch("/api/progress", {
+          fetch(`${BASE}/api/progress`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -981,7 +982,7 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
           // session — this session's mark still stands.
           const payload = buildUpgradePayload(cfi);
           if (payload) {
-            fetch(`/api/highlights/${h.id}`, {
+            fetch(`${BASE}/api/highlights/${h.id}`, {
               method: "PATCH",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify(payload),
@@ -1205,7 +1206,7 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
 
   async function changeColor(id: string, color: HighlightColor) {
     try {
-      const r = await fetch(`/api/highlights/${id}`, {
+      const r = await fetch(`${BASE}/api/highlights/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ color }),
@@ -1225,7 +1226,7 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
   const deleteHighlight = useCallback(async (id: string) => {
     const h = highlightsRef.current.get(id);
     try {
-      await fetch(`/api/highlights/${id}`, { method: "DELETE" });
+      await fetch(`${BASE}/api/highlights/${id}`, { method: "DELETE" });
       highlightsRef.current.delete(id);
       // A hand-deleted highlight leaves the undo stack too, so Ctrl+Z never
       // re-deletes something already gone.
@@ -1263,7 +1264,7 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
   ) {
     try {
       if (existingId) {
-        const r = await fetch(`/api/notes/${existingId}`, {
+        const r = await fetch(`${BASE}/api/notes/${existingId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ body }),
@@ -1274,7 +1275,7 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
           prev.map((n) => (n.id === existingId ? { ...n, body: row.body } : n)),
         );
       } else {
-        const r = await fetch("/api/notes", {
+        const r = await fetch(`${BASE}/api/notes`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -1298,7 +1299,7 @@ export function EpubReader({ bookId, title, fileUrl, initialCfi }: Props) {
 
   async function deleteNote(id: string) {
     try {
-      await fetch(`/api/notes/${id}`, { method: "DELETE" });
+      await fetch(`${BASE}/api/notes/${id}`, { method: "DELETE" });
       setNotes((prev) => prev.filter((n) => n.id !== id));
     } catch {
       /* transient */

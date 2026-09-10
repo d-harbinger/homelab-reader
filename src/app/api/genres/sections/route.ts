@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withUser } from "@/lib/route-helpers";
 import { groupByGenre, applyGenrePrefs, type GenrePrefLike } from "@/lib/library/genre-sections";
+import { BASE } from "@/lib/base-path";
 
 // Folders that warrant their own home-view section. The threshold keeps
 // section-per-singleton-folder noise off the home page — a folder needs at
@@ -43,7 +44,7 @@ export const GET = withUser(async () => {
       format: b.format,
       authors: b.authors.map((a) => a.name),
       pageCount: b.pageCount,
-      coverUrl: b.coverPath ? `/api/covers/${b.id}` : null,
+      coverUrl: b.coverPath ? `${BASE}/api/covers/${b.id}` : null,
     })),
   }));
   return NextResponse.json({ sections });

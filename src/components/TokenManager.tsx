@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 import useSWR from "swr";
 import { Check, Copy, KeyRound, Plus, Trash2 } from "lucide-react";
 import { fetcher } from "@/lib/fetcher";
+import { BASE } from "@/lib/base-path";
 
 interface TokenRow {
   id: string;
@@ -150,7 +151,7 @@ function MintForm({ onMinted }: { onMinted: (m: MintedToken) => void }) {
     setError(null);
     setBusy(true);
     try {
-      const r = await fetch("/api/opds-tokens", {
+      const r = await fetch(`${BASE}/api/opds-tokens`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ label }),
@@ -221,7 +222,7 @@ function TokenRowItem({
       return;
     setBusy(true);
     try {
-      const r = await fetch(`/api/opds-tokens/${token.id}`, {
+      const r = await fetch(`${BASE}/api/opds-tokens/${token.id}`, {
         method: "DELETE",
       });
       if (!r.ok && r.status !== 204) {

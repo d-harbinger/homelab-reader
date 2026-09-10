@@ -4,6 +4,7 @@ import { useState } from "react";
 import useSWR from "swr";
 import { ArrowUp, Folder, FolderPlus, Power, Trash2 } from "lucide-react";
 import { fetcher } from "@/lib/fetcher";
+import { BASE } from "@/lib/base-path";
 
 interface Location {
   id: string;
@@ -69,7 +70,7 @@ function LocationRow({
   async function toggle() {
     setBusy(true);
     try {
-      await fetch(`/api/locations/${loc.id}`, {
+      await fetch(`${BASE}/api/locations/${loc.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ enabled: !loc.enabled }),
@@ -89,7 +90,7 @@ function LocationRow({
       return;
     setBusy(true);
     try {
-      await fetch(`/api/locations/${loc.id}`, { method: "DELETE" });
+      await fetch(`${BASE}/api/locations/${loc.id}`, { method: "DELETE" });
       onChanged();
     } finally {
       setBusy(false);
@@ -165,7 +166,7 @@ function FolderBrowser({
     setAdding(true);
     setError(null);
     try {
-      const r = await fetch("/api/locations", {
+      const r = await fetch(`${BASE}/api/locations`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ path: data.path }),

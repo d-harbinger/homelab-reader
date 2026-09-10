@@ -6,6 +6,7 @@ import {
   type OpdsBookEntry,
 } from "@/lib/opds";
 import { authenticateOpds, opdsChallenge } from "@/lib/opds-auth";
+import { BASE } from "@/lib/base-path";
 
 // GET /api/opds/recent — last 50 books added, newest first.
 //
@@ -38,7 +39,7 @@ export async function GET(req: Request) {
   const xml = feedXml({
     id: "tag:homelab-reader:recent",
     title: "Recently Added",
-    selfHref: "/api/opds/recent",
+    selfHref: `${BASE}/api/opds/recent`,
     entries,
   });
 

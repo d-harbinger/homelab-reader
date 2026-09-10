@@ -4,6 +4,7 @@ import { useState } from "react";
 import useSWR from "swr";
 import { AlertTriangle, X } from "lucide-react";
 import { fetcher } from "@/lib/fetcher";
+import { BASE } from "@/lib/base-path";
 
 interface FailureHint {
   meaning: string;
@@ -43,7 +44,7 @@ export function FailedImportsBanner() {
   const [open, setOpen] = useState<string | null>(null);
 
   async function ignore(id: string) {
-    await fetch(`/api/scan/failures/${id}`, { method: "PATCH" }).catch(() => {});
+    await fetch(`${BASE}/api/scan/failures/${id}`, { method: "PATCH" }).catch(() => {});
     await mutate();
   }
 

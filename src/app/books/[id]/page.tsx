@@ -8,6 +8,7 @@ import { CiteButton } from "@/components/CiteButton";
 import { HeaderControls } from "@/components/HeaderControls";
 import { GenreShelf } from "@/components/GenreShelf";
 import { SuggestionsPanel } from "@/components/SuggestionsPanel";
+import { BASE } from "@/lib/base-path";
 
 function formatBytes(n: number | null | undefined): string | null {
   if (!n) return null;
@@ -29,8 +30,8 @@ export default async function BookDetail({
   });
   if (!book) notFound();
 
-  const coverUrl = book.coverPath ? `/api/covers/${book.id}` : null;
-  const fileUrl = `/api/books/${book.id}/file`;
+  const coverUrl = book.coverPath ? `${BASE}/api/covers/${book.id}` : null;
+  const fileUrl = `${BASE}/api/books/${book.id}/file`;
   const readHref = `/books/${book.id}/read`;
   const readLabel = "Read";
   const fileSize = formatBytes(book.fileSizeBytes);
@@ -102,13 +103,13 @@ export default async function BookDetail({
             </a>
             <CiteButton bookId={book.id} />
             <a
-              href={`/api/books/${book.id}/annotations`}
+              href={`${BASE}/api/books/${book.id}/annotations`}
               className="rounded-md border border-zinc-800 px-5 py-2 text-sm text-zinc-300 transition-colors hover:border-zinc-700 hover:text-zinc-100"
             >
               Export annotations
             </a>
             <a
-              href={`/api/books/${book.id}/flashcards`}
+              href={`${BASE}/api/books/${book.id}/flashcards`}
               title="Highlights as an Anki-importable deck, tagged by the color key"
               className="rounded-md border border-zinc-800 px-5 py-2 text-sm text-zinc-300 transition-colors hover:border-zinc-700 hover:text-zinc-100"
             >

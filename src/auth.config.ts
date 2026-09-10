@@ -1,4 +1,5 @@
 import type { NextAuthConfig } from "next-auth";
+import { BASE } from "@/lib/base-path";
 
 // Edge-safe auth config: shared by the middleware (Edge runtime) and the
 // full server instance in auth.ts. Nothing here may import bcrypt or
@@ -38,7 +39,11 @@ export const authConfig = {
   // Auth.js must trust the incoming Host header. Without this it rejects
   // every request with UntrustedHost.
   trustHost: true,
-  pages: { signIn: "/login" },
+  // Under a sub-path mount the handler answers at <base>/api/auth and the
+  // sign-in page at <base>/login; both are root-relative to Auth.js, which
+  // knows nothing of next.config's basePath (see src/lib/base-path.ts).
+  basePath: `${BASE}/api/auth`,
+  pages: { signIn: `${BASE}/login` },
   // Seven-day sessions. Auth.js defaults to thirty days when maxAge is left
   // unset, which is a long time for a credential nothing can recall. The gate
   // in src/lib/current-user.ts re-reads the user row on every call, so a
@@ -118,7 +123,7 @@ export const authConfig = {
       if (pathname === "/setup" || pathname.startsWith("/setup/")) return true;
       if (pathname === "/login" || pathname.startsWith("/login/")) {
         if (loggedIn && request.method === "GET")
-          return Response.redirect(new URL("/", nextUrl));
+          return Response.redirect(new URL(`${BASE}/`, nextUrl));
         return true;
       }
 

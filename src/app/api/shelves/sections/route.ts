@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withUser } from "@/lib/route-helpers";
 import { GENRES, UNSORTED } from "@/lib/library/genre-taxonomy";
+import { BASE } from "@/lib/base-path";
 
 // GET /api/shelves/sections — the BOOKSTORE view: home rows grouped by
 // the metadata-assigned Book.genre (lib/library/genre-taxonomy), NOT by
@@ -50,7 +51,7 @@ export const GET = withUser(async () => {
           format: b.format,
           authors: b.authors.map((a) => a.name),
           pageCount: b.pageCount,
-          coverUrl: b.coverPath ? `/api/covers/${b.id}` : null,
+          coverUrl: b.coverPath ? `${BASE}/api/covers/${b.id}` : null,
         })),
     }));
 

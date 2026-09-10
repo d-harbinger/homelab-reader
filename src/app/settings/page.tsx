@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { getCurrentUser } from "@/lib/current-user";
 import { HeaderControls } from "@/components/HeaderControls";
+import { BASE } from "@/lib/base-path";
 
 // The settings hub — one front door for everything that used to be a
 // pile of header icons and scattered in-page links. Every entry says
@@ -77,7 +78,7 @@ const ENTRIES: Entry[] = [
     icon: <Copy size={16} />,
   },
   {
-    href: "/api/library/organize-plan",
+    href: `${BASE}/api/library/organize-plan`,
     title: "Organize script",
     desc: "Downloads a reviewable script that moves files into folders matching their shelves. Run it on the server, then rescan — notes and progress survive the moves.",
     icon: <Download size={16} />,

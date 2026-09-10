@@ -33,6 +33,10 @@ COPY . .
 ENV DATABASE_URL="file:/app/data/homelab-reader.db"
 # prebuild hook regenerates prisma client and copies pdfjs worker into
 # /public. Both are required for the runtime image.
+# Sub-path mount, build-time only (next.config.ts reads it). The default keeps
+# the image what a standalone deployment runs; eotw-box builds with /books.
+ARG NEXT_PUBLIC_BASE_PATH=""
+ENV NEXT_PUBLIC_BASE_PATH=${NEXT_PUBLIC_BASE_PATH}
 RUN npm run build
 
 # ── Runtime ───────────────────────────────────────────────────

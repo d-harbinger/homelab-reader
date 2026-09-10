@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import useSWR from "swr";
 import { GripVertical, ArrowUp, ArrowDown, Eye, EyeOff } from "lucide-react";
 import { fetcher } from "@/lib/fetcher";
+import { BASE } from "@/lib/base-path";
 
 interface GenreRow {
   key: string;
@@ -55,7 +56,7 @@ export function GenreManager() {
   async function save() {
     setSaving(true);
     try {
-      const res = await fetch("/api/genres", {
+      const res = await fetch(`${BASE}/api/genres`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

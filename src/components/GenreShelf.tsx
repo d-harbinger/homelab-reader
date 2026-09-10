@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { shelfPickerOptions, UNSORTED } from "@/lib/library/genre-taxonomy";
+import { BASE } from "@/lib/base-path";
 
 // The book's bookstore shelf, shown on the detail page. Admins get a
 // select (the taxonomy list + Unsorted; a custom owner-set shelf stays
@@ -27,7 +28,7 @@ export function GenreShelf({
     setSaving(true);
     setError("");
     try {
-      const res = await fetch(`/api/books/${bookId}`, {
+      const res = await fetch(`${BASE}/api/books/${bookId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ genre: value }),

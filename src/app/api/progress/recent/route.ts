@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withUser } from "@/lib/route-helpers";
+import { BASE } from "@/lib/base-path";
 
 // GET /api/progress/recent — books with active reading progress, newest
 // first. Drives the "Continue reading" row. Returns an empty list while
@@ -24,7 +25,7 @@ export const GET = withUser(async (user) => {
       format: p.book.format,
       authors: p.book.authors.map((a) => a.name),
       pageCount: p.book.pageCount,
-      coverUrl: p.book.coverPath ? `/api/covers/${p.book.id}` : null,
+      coverUrl: p.book.coverPath ? `${BASE}/api/covers/${p.book.id}` : null,
       percent: p.percent,
     })),
   });

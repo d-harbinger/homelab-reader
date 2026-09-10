@@ -8,6 +8,7 @@ import { HIGHLIGHT_COLORS, type HighlightColor } from "@/lib/highlight-colors";
 import { fetcher } from "@/lib/fetcher";
 import { notesByHighlight, orphanNotes } from "@/lib/annotations";
 import { HighlightColorKey } from "./HighlightColorKey";
+import { BASE } from "@/lib/base-path";
 
 interface Anchor {
   type: string;
@@ -50,7 +51,7 @@ export function BookAnnotations({ bookId }: { bookId: string }) {
   const freeformNotes = orphanNotes(highlights, notes);
 
   async function addFreeformNote(body: string) {
-    await fetch("/api/notes", {
+    await fetch(`${BASE}/api/notes`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ bookId, anchor: { type: "book" }, body }),
@@ -58,7 +59,7 @@ export function BookAnnotations({ bookId }: { bookId: string }) {
     mutateN();
   }
   async function saveNote(id: string, body: string) {
-    await fetch(`/api/notes/${id}`, {
+    await fetch(`${BASE}/api/notes/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ body }),
@@ -66,11 +67,11 @@ export function BookAnnotations({ bookId }: { bookId: string }) {
     mutateN();
   }
   async function deleteNote(id: string) {
-    await fetch(`/api/notes/${id}`, { method: "DELETE" });
+    await fetch(`${BASE}/api/notes/${id}`, { method: "DELETE" });
     mutateN();
   }
   async function deleteHighlight(id: string) {
-    await fetch(`/api/highlights/${id}`, { method: "DELETE" });
+    await fetch(`${BASE}/api/highlights/${id}`, { method: "DELETE" });
     mutateH();
   }
 
@@ -146,7 +147,7 @@ export function BookAnnotations({ bookId }: { bookId: string }) {
                 ) : (
                   <AttachNote
                     onAdd={(b) =>
-                      fetch("/api/notes", {
+                      fetch(`${BASE}/api/notes`, {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({

@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { relativeFolder } from "@/lib/library/folder-tree";
 import { withUser } from "@/lib/route-helpers";
+import { BASE } from "@/lib/base-path";
 
 // GET /api/books — flat list, newest first by default.
 //
@@ -109,7 +110,7 @@ export const GET = withUser(async (_user, req) => {
         language: b.language ?? null,
         pageCount: b.pageCount ?? null,
         fileSizeBytes: b.fileSizeBytes ?? null,
-        coverUrl: b.coverPath ? `/api/covers/${b.id}` : null,
+        coverUrl: b.coverPath ? `${BASE}/api/covers/${b.id}` : null,
         addedAt: b.addedAt,
         genre,
       };

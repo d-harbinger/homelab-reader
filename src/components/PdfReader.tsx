@@ -39,6 +39,7 @@ import {
 import { HighlightMenu, NoteEditorPopover } from "./HighlightPopover";
 import { InkLayer } from "./InkLayer";
 import { InkToolbar } from "./InkToolbar";
+import { BASE } from "@/lib/base-path";
 import {
   INK_COLORS,
   INK_OPACITIES,
@@ -51,7 +52,7 @@ import {
   type InkKind,
 } from "@/lib/ink";
 
-pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+pdfjs.GlobalWorkerOptions.workerSrc = `${BASE}/pdf.worker.min.mjs`;
 
 interface Props {
   bookId: string;
@@ -217,8 +218,8 @@ export function PdfReader({
   const loadAnnotations = useCallback(async () => {
     try {
       const [hRes, nRes] = await Promise.all([
-        fetch(`/api/highlights?bookId=${encodeURIComponent(bookId)}`),
-        fetch(`/api/notes?bookId=${encodeURIComponent(bookId)}`),
+        fetch(`${BASE}/api/highlights?bookId=${encodeURIComponent(bookId)}`),
+        fetch(`${BASE}/api/notes?bookId=${encodeURIComponent(bookId)}`),
       ]);
       if (hRes.ok) {
         const data = (await hRes.json()) as {
@@ -249,7 +250,7 @@ export function PdfReader({
   // Load saved ink strokes; each paints on its page as that page mounts.
   const loadInk = useCallback(async () => {
     try {
-      const r = await fetch(`/api/ink?bookId=${encodeURIComponent(bookId)}`);
+      const r = await fetch(`${BASE}/api/ink?bookId=${encodeURIComponent(bookId)}`);
       if (r.ok) {
         const data = (await r.json()) as { strokes: InkStroke[] };
         setInkStrokes(data.strokes);
@@ -285,7 +286,7 @@ export function PdfReader({
       };
       setInkStrokes((prev) => [...prev, optimistic]);
       try {
-        const r = await fetch("/api/ink", {
+        const r = await fetch(`${BASE}/api/ink`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -312,7 +313,7 @@ export function PdfReader({
     setInkStrokes((prev) => prev.filter((s) => s.id !== id));
     if (id.startsWith("tmp-")) return; // never persisted
     try {
-      await fetch(`/api/ink/${id}`, { method: "DELETE" });
+      await fetch(`${BASE}/api/ink/${id}`, { method: "DELETE" });
     } catch {
       /* the row will reappear on next load if this failed; acceptable */
     }
@@ -323,7 +324,7 @@ export function PdfReader({
       if (prev.length === 0) return prev;
       const last = prev[prev.length - 1];
       if (!last.id.startsWith("tmp-")) {
-        fetch(`/api/ink/${last.id}`, { method: "DELETE" }).catch(() => {});
+        fetch(`${BASE}/api/ink/${last.id}`, { method: "DELETE" }).catch(() => {});
       }
       return prev.slice(0, -1);
     });
@@ -336,7 +337,7 @@ export function PdfReader({
     if (!loaded || numPages === 0) return;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
-      fetch("/api/progress", {
+      fetch(`${BASE}/api/progress`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -545,7 +546,7 @@ export function PdfReader({
       rects: selection.rects,
     };
     try {
-      const r = await fetch("/api/highlights", {
+      const r = await fetch(`${BASE}/api/highlights`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ bookId, anchor, text: selection.text, color }),
@@ -583,7 +584,7 @@ export function PdfReader({
 
   async function changeColor(id: string, color: HighlightColor) {
     try {
-      const r = await fetch(`/api/highlights/${id}`, {
+      const r = await fetch(`${BASE}/api/highlights/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ color }),
@@ -601,7 +602,7 @@ export function PdfReader({
 
   const deleteHighlight = useCallback(async (id: string) => {
     try {
-      await fetch(`/api/highlights/${id}`, { method: "DELETE" });
+      await fetch(`${BASE}/api/highlights/${id}`, { method: "DELETE" });
       highlightsRef.current.delete(id);
       // A hand-deleted highlight leaves the undo stack too, so Ctrl+Z never
       // re-deletes something already gone.
@@ -643,7 +644,7 @@ export function PdfReader({
   ) {
     try {
       if (existingId) {
-        const r = await fetch(`/api/notes/${existingId}`, {
+        const r = await fetch(`${BASE}/api/notes/${existingId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ body }),
@@ -654,7 +655,7 @@ export function PdfReader({
           prev.map((n) => (n.id === existingId ? { ...n, body: row.body } : n)),
         );
       } else {
-        const r = await fetch("/api/notes", {
+        const r = await fetch(`${BASE}/api/notes`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -677,7 +678,7 @@ export function PdfReader({
 
   async function deleteNote(id: string) {
     try {
-      await fetch(`/api/notes/${id}`, { method: "DELETE" });
+      await fetch(`${BASE}/api/notes/${id}`, { method: "DELETE" });
       setNotes((prev) => prev.filter((n) => n.id !== id));
     } catch {
       /* transient */

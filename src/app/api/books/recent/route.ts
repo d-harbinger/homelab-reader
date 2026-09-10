@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withUser } from "@/lib/route-helpers";
+import { BASE } from "@/lib/base-path";
 
 const LIMIT = 18;
 
@@ -24,7 +25,7 @@ export const GET = withUser(async () => {
       format: b.format as "epub" | "pdf",
       authors: b.authors.map((a) => a.name),
       pageCount: b.pageCount,
-      coverUrl: b.coverPath ? `/api/covers/${b.id}` : null,
+      coverUrl: b.coverPath ? `${BASE}/api/covers/${b.id}` : null,
     })),
   });
 });

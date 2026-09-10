@@ -5,6 +5,7 @@ import useSWR from "swr";
 import { useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import { fetcher } from "@/lib/fetcher";
+import { BASE } from "@/lib/base-path";
 
 // Settings → Privacy: the one place that controls what this install may
 // send to the internet, stated in the same plain language the setup
@@ -25,7 +26,7 @@ export default function PrivacySettingsPage() {
     setBusy(true);
     setError("");
     try {
-      const res = await fetch("/api/settings/privacy", {
+      const res = await fetch(`${BASE}/api/settings/privacy`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ onlineLookups: enable }),
@@ -46,7 +47,7 @@ export default function PrivacySettingsPage() {
     setBusy(true);
     setPurgeMsg("");
     try {
-      const res = await fetch("/api/settings/privacy", { method: "DELETE" });
+      const res = await fetch(`${BASE}/api/settings/privacy`, { method: "DELETE" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const r = (await res.json()) as { purged: number };
       setPurgeMsg(`Removed ${r.purged} result${r.purged === 1 ? "" : "s"}.`);

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/current-user";
 import { EpubReader } from "@/components/EpubReader";
 import { PdfReaderLazy } from "@/components/PdfReaderLazy";
+import { BASE } from "@/lib/base-path";
 
 interface EpubAnchor {
   type: "epub-cfi";
@@ -36,7 +37,7 @@ export default async function ReadPage({
       <EpubReader
         bookId={book.id}
         title={book.title}
-        fileUrl={`/api/books/${book.id}/file`}
+        fileUrl={`${BASE}/api/books/${book.id}/file`}
         initialCfi={initialCfi}
       />
     );
@@ -49,7 +50,7 @@ export default async function ReadPage({
       <PdfReaderLazy
         bookId={book.id}
         title={book.title}
-        fileUrl={`/api/books/${book.id}/file`}
+        fileUrl={`${BASE}/api/books/${book.id}/file`}
         initialPage={initialPage}
         scannerPageCount={book.pageCount}
       />

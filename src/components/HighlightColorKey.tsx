@@ -9,6 +9,7 @@ import {
   type HighlightColor,
 } from "@/lib/highlight-colors";
 import { fetcher } from "@/lib/fetcher";
+import { BASE } from "@/lib/base-path";
 
 // The book's highlight color key — the legend on a textbook's inside cover.
 // Each palette color gets an optional meaning ("yellow = key terms, blue =
@@ -40,7 +41,7 @@ export function HighlightColorKey({ bookId }: { bookId: string }) {
       return next;
     });
     if (trimmed === (key[color] ?? "")) return;
-    const r = await fetch("/api/highlight-key", {
+    const r = await fetch(`${BASE}/api/highlight-key`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ bookId, color, label: trimmed }),
