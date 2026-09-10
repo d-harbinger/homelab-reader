@@ -1,5 +1,5 @@
 import type { NextAuthConfig } from "next-auth";
-import { BASE } from "@/lib/base-path";
+import { BASE, stripBase } from "@/lib/base-path";
 
 // Edge-safe auth config: shared by the middleware (Edge runtime) and the
 // full server instance in auth.ts. Nothing here may import bcrypt or
@@ -77,7 +77,9 @@ export const authConfig = {
     authorized({ auth, request }) {
       const { nextUrl } = request;
       const loggedIn = !!auth?.user;
-      const { pathname } = nextUrl;
+      // App-relative: under a sub-path mount Auth.js rebuilds the request from
+      // AUTH_URL and the path arrives with the base on it (see lib/base-path.ts).
+      const pathname = stripBase(nextUrl.pathname);
 
       // OPDS is the bridge to mobile clients, which authenticate with a
       // per-user HTTP Basic/Bearer token — not the browser session cookie.

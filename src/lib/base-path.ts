@@ -12,3 +12,10 @@
 // and gets no prefix from the framework, so every such site is written as
 // `${BASE}/...`. NEXT_PUBLIC_ makes the value visible to client components.
 export const BASE: string = (process.env.NEXT_PUBLIC_BASE_PATH ?? "").replace(/\/+$/, "");
+
+/** Remove the base from a request pathname, so "/media/setup" reads "/setup". */
+export function stripBase(pathname: string): string {
+  if (!BASE) return pathname;
+  if (pathname === BASE) return "/";
+  return pathname.startsWith(BASE + "/") ? pathname.slice(BASE.length) : pathname;
+}
