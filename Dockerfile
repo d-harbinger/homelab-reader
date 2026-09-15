@@ -20,10 +20,14 @@ RUN npx prisma generate
 # copies this — never the deps stage's full node_modules, which carries the
 # whole dev+test toolchain (~1.1 GB: typescript, playwright-core, vitest,
 # eslint, tailwind) as dead surface in the image that holds the library of
-# record. Version pinned to the lockfile's resolved prisma.
+# record. Version pinned to the lockfile's resolved prisma. The override
+# repeats the one in package.json: prisma pins deepmerge-ts to a release with
+# an open high advisory, and this install does not read the lockfile.
 FROM base AS prisma-cli
 WORKDIR /cli
-RUN npm init -y >/dev/null 2>&1 && npm install --no-audit --no-fund prisma@6.19.3
+RUN npm init -y >/dev/null 2>&1 \
+ && npm pkg set overrides.deepmerge-ts='^8.0.2' \
+ && npm install --no-audit --no-fund prisma@6.19.3
 
 # ── Build ─────────────────────────────────────────────────────
 FROM base AS builder
